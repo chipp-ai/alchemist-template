@@ -1,0 +1,83 @@
+# Grafana Contact Point: Alchemist Dispatcher
+#
+# Sends alert notifications to the Alchemist platform dispatcher via webhook.
+# The dispatcher creates tickets (bug or performance) that Claude Code
+# autonomously picks up and fixes.
+#
+# Required env vars:
+#   ALCHEMIST_DISPATCHER_URL   - Base URL of the dispatcher API
+#   ALCHEMIST_DISPATCHER_TOKEN - Bearer token for authentication
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: alchemist-dispatcher
+    receivers:
+      - uid: alchemist-dispatcher-webhook
+        type: webhook
+        settings:
+          url: ${ALCHEMIST_DISPATCHER_URL}/loki/webhook
+          httpMethod: POST
+          authorization_scheme: Bearer
+          authorization_credentials: ${ALCHEMIST_DISPATCHER_TOKEN}
+          maxAlerts: 10
+        disableResolveMessage: false
+
+# ── Notification Policy ──
+# Routes all alerts from the "Alchemist Tenant Alerts" folder to the
+# alchemist-dispatcher contact point. Grouped by tenant_id so a single
+# notification contains all firing alerts for one tenant.
+
+policies:
+  - orgId: 1
+    receiver: alchemist-dispatcher
+    group_by:
+      - tenant_id
+      - app_slug
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    matchers:
+      - label: severity
+        match: =~
+        value: critical|warning
+    routes: []
+
+# ── Message Template ──
+# Structures the webhook payload so the dispatcher can extract tenant context,
+# severity, and ticket type without parsing free-text fields.
+
+templates:
+  - orgId: 1
+    name: alchemist-dispatcher-payload
+    template: |
+      {{ define "alchemist-dispatcher-payload" }}
+      {
+        "alerts": [
+          {{ range $i, $alert := .Alerts }}
+          {{ if $i }},{{ end }}
+          {
+            "tenant_id": "{{ index $alert.Labels "tenant_id" }}",
+            "app_slug": "{{ index $alert.Labels "app_slug" }}",
+            "severity": "{{ index $alert.Labels "severity" }}",
+            "ticket_type": "{{ if index $alert.Labels "ticket_type" }}{{ index $alert.Labels "ticket_type" }}{{ else }}bug{{ end }}",
+            "alert_name": "{{ $alert.Labels.alertname }}",
+            "summary": "{{ $alert.Annotations.summary }}",
+            "description": "{{ $alert.Annotations.description }}",
+            "logql_query": "{{ $alert.Annotations.logql_query }}",
+            "status": "{{ $alert.Status }}",
+            "starts_at": "{{ $alert.StartsAt }}",
+            "ends_at": "{{ $alert.EndsAt }}",
+            "generator_url": "{{ $alert.GeneratorURL }}"
+          }
+          {{ end }}
+        ],
+        "group_labels": {
+          "tenant_id": "{{ index .GroupLabels "tenant_id" }}",
+          "app_slug": "{{ index .GroupLabels "app_slug" }}"
+        },
+        "status": "{{ .Status }}",
+        "external_url": "{{ .ExternalURL }}"
+      }
+      {{ end }}

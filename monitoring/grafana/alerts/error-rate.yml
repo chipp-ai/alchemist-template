@@ -1,0 +1,115 @@
+# Grafana Alert Rules: Error Rate
+#
+# Two rules:
+# 1. Tenant Error Rate    -- > 5 errors in 5 min, pending 1 min
+# 2. Tenant Error Spike   -- > 20 errors in 1 min, fires immediately
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: tenant-error-rate
+    folder: Alchemist Tenant Alerts
+    interval: 1m
+    rules:
+      # ── Tenant Error Rate ──
+      # Fires when a tenant accumulates more than 5 errors in a 5-minute window.
+      # Pending for 1 minute to avoid single-burst false positives.
+      - uid: tenant-error-rate
+        title: Tenant Error Rate
+        condition: error_count
+        for: 1m
+        annotations:
+          summary: >-
+            Tenant {{ $labels.tenant_id }} ({{ $labels.app_slug }}) has
+            {{ $values.error_count }} errors in the last 5 minutes.
+          description: >-
+            The error rate for app {{ $labels.app_slug }} exceeded the threshold
+            of 5 errors per 5 minutes. Investigate recent deployments or
+            configuration changes.
+          logql_query: >-
+            {tenant_id="{{ $labels.tenant_id }}", level="error"}
+          runbook_url: ""
+        labels:
+          severity: critical
+          ticket_type: bug
+        data:
+          - refId: error_count
+            relativeTimeRange:
+              from: 300  # 5 minutes
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >-
+                sum(count_over_time(
+                  {tenant_id=~".+", level="error"}[5m]
+                )) by (tenant_id, app_slug)
+              instant: true
+              refId: error_count
+          - refId: threshold
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: error_count
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 5
+                  operator:
+                    type: and
+              refId: threshold
+
+      # ── Tenant Error Spike ──
+      # Fires immediately (no pending period) when a tenant has > 20 errors
+      # in a 1-minute window. This catches catastrophic failures like crash
+      # loops or cascading errors that need immediate attention.
+      - uid: tenant-error-spike
+        title: Tenant Error Spike
+        condition: spike_count
+        for: 0s
+        annotations:
+          summary: >-
+            SPIKE: Tenant {{ $labels.tenant_id }} ({{ $labels.app_slug }}) has
+            {{ $values.spike_count }} errors in the last minute.
+          description: >-
+            Catastrophic error spike detected for app {{ $labels.app_slug }}.
+            More than 20 errors in 1 minute indicates a crash loop, bad deploy,
+            or cascading failure. Immediate investigation required.
+          logql_query: >-
+            {tenant_id="{{ $labels.tenant_id }}", level="error"}
+        labels:
+          severity: critical
+          ticket_type: bug
+        data:
+          - refId: spike_count
+            relativeTimeRange:
+              from: 60  # 1 minute
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >-
+                sum(count_over_time(
+                  {tenant_id=~".+", level="error"}[1m]
+                )) by (tenant_id, app_slug)
+              instant: true
+              refId: spike_count
+          - refId: threshold
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: spike_count
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 20
+                  operator:
+                    type: and
+              refId: threshold

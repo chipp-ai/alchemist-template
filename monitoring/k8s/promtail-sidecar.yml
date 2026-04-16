@@ -1,0 +1,182 @@
+# Kubernetes Resources for Promtail Sidecar
+#
+# Two resources:
+# 1. ConfigMap wrapping the Promtail config (monitoring/promtail/config.yml)
+# 2. Partial container/volume spec to merge into the customer app Deployment
+#
+# The Alchemist platform merges the sidecar spec into the customer's Deployment
+# at provisioning time. This file documents the exact shape.
+
+---
+# ── ConfigMap: Promtail Configuration ──
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  labels:
+    app.kubernetes.io/component: promtail
+    app.kubernetes.io/part-of: alchemist-monitoring
+data:
+  promtail.yml: |
+    server:
+      http_listen_port: 3101
+      grpc_listen_port: 0
+      log_level: warn
+
+    positions:
+      filename: /tmp/positions.yaml
+
+    clients:
+      - url: ${LOKI_URL}/loki/api/v1/push
+        batchwait: 1s
+        batchsize: 1048576
+        backoff_config:
+          min_period: 500ms
+          max_period: 5m
+          max_retries: 10
+        timeout: 10s
+        external_labels:
+          job: alchemist-tenant
+          cluster: production
+
+    scrape_configs:
+      - job_name: tenant-pods
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              __path__: /var/log/pods/*/*/*.log
+              tenant_id: ${ALCHEMIST_TENANT_ID}
+              app_slug: ${ALCHEMIST_APP_SLUG}
+        pipeline_stages:
+          - cri: {}
+          - json:
+              expressions:
+                level: level
+                source: source
+                feature: feature
+                error_message: error_message
+                version: version
+                msg: msg
+          - labels:
+              level:
+          - match:
+              selector: '{level="debug"}'
+              action: drop
+              drop_counter_reason: debug_log_dropped
+          - output:
+              source: msg
+
+      - job_name: tenant-app-files
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              __path__: /var/log/app/*.log
+              tenant_id: ${ALCHEMIST_TENANT_ID}
+              app_slug: ${ALCHEMIST_APP_SLUG}
+        pipeline_stages:
+          - json:
+              expressions:
+                level: level
+                source: source
+                feature: feature
+                error_message: error_message
+                version: version
+                msg: msg
+          - labels:
+              level:
+          - match:
+              selector: '{level="debug"}'
+              action: drop
+              drop_counter_reason: debug_log_dropped
+          - output:
+              source: msg
+
+---
+# ── Sidecar Container Spec ──
+# Merge this into the customer app Deployment's spec.template.spec.
+#
+# Usage: The Alchemist platform's provisioner reads this file and injects
+# the container + volumes into the customer's Deployment manifest.
+#
+# The app container must also mount the shared-logs volume at /var/log/app/
+# if it writes file-based logs (in addition to stdout).
+
+# spec.template.spec.containers[] -- add this container:
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tenant-app  # placeholder -- replaced by provisioner
+spec:
+  template:
+    metadata:
+      labels:
+        alchemist-tenant-id: "${ALCHEMIST_TENANT_ID}"
+    spec:
+      containers:
+        # ── Customer app container (placeholder) ──
+        - name: app
+          # ... customer app image and config ...
+          volumeMounts:
+            - name: shared-logs
+              mountPath: /var/log/app
+
+        # ── Promtail sidecar ──
+        - name: promtail
+          image: grafana/promtail:3.3.0
+          args:
+            - -config.file=/etc/promtail/promtail.yml
+            - -config.expand-env=true
+          env:
+            - name: ALCHEMIST_TENANT_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['alchemist-tenant-id']
+            - name: ALCHEMIST_APP_SLUG
+              valueFrom:
+                configMapKeyRef:
+                  name: tenant-config
+                  key: app-slug
+            - name: LOKI_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: monitoring-config
+                  key: loki-url
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - name: promtail-config
+              mountPath: /etc/promtail
+              readOnly: true
+            - name: shared-logs
+              mountPath: /var/log/app
+              readOnly: true
+            - name: pod-logs
+              mountPath: /var/log/pods
+              readOnly: true
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65534  # nobody
+
+      volumes:
+        - name: promtail-config
+          configMap:
+            name: promtail-config
+        - name: shared-logs
+          emptyDir: {}
+        - name: pod-logs
+          hostPath:
+            path: /var/log/pods
+            type: Directory

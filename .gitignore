@@ -1,0 +1,40 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+.npm/
+
+# Build output
+dist/
+build/
+web/dist/
+
+# Deno cache
+.deno/
+
+# Scratch space (ephemeral work — gitkeep keeps the dir, contents are ignored)
+.scratch/*
+!.scratch/.gitkeep
+!.scratch/logs/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+coverage/
+
+# Logs
+*.log
+
+# Temp files
+/tmp/

@@ -1,0 +1,111 @@
+# Promtail Configuration for Alchemist Tenant Apps
+#
+# Ships structured NDJSON logs from customer app pods to the shared Loki instance.
+# Runs as a sidecar container alongside the customer app.
+#
+# Required env vars:
+#   LOKI_URL              - Loki push endpoint (e.g., http://loki-gateway.monitoring.svc.cluster.local:3100)
+#   ALCHEMIST_TENANT_ID   - Customer tenant UUID
+#   ALCHEMIST_APP_SLUG    - Customer app slug
+#   HOSTNAME              - Pod name (set automatically by K8s)
+
+server:
+  http_listen_port: 3101
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: ${LOKI_URL}/loki/api/v1/push
+    batchwait: 1s
+    batchsize: 1048576  # 1 MB
+    backoff_config:
+      min_period: 500ms
+      max_period: 5m
+      max_retries: 10
+    timeout: 10s
+    external_labels:
+      job: alchemist-tenant
+      cluster: production
+
+scrape_configs:
+  # ── Primary: K8s pod logs ──
+  # Scrapes logs from pods that have the alchemist-tenant-id label.
+  - job_name: tenant-pods
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          __path__: /var/log/pods/*/*/*.log
+          tenant_id: ${ALCHEMIST_TENANT_ID}
+          app_slug: ${ALCHEMIST_APP_SLUG}
+
+    pipeline_stages:
+      # ── Step 1: Parse the CRI container log format ──
+      # K8s wraps each log line: "<timestamp> <stream> <flags> <log>"
+      # Extract the actual log content from the CRI wrapper.
+      - cri: {}
+
+      # ── Step 2: Parse JSON log lines ──
+      # The app logger emits NDJSON in production. Extract structured fields.
+      - json:
+          expressions:
+            level: level
+            source: source
+            feature: feature
+            error_message: error_message
+            version: version
+            msg: msg
+
+      # ── Step 3: Promote level to a stream label ──
+      # level is low-cardinality (debug/info/warn/error) -- safe as a label.
+      - labels:
+          level:
+
+      # ── Step 4: Drop debug logs in production ──
+      # Debug logs are dev-only. If they somehow appear in prod, drop them
+      # to save Loki storage.
+      - match:
+          selector: '{level="debug"}'
+          action: drop
+          drop_counter_reason: debug_log_dropped
+
+      # ── Step 5: Set the log line to the message field ──
+      # Loki stores the full JSON as the log line, but we set the display
+      # line to just the message for readability in Grafana Explore.
+      - output:
+          source: msg
+
+  # ── Secondary: App log files ──
+  # For apps that also write to /var/log/app/ (shared volume with sidecar).
+  - job_name: tenant-app-files
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          __path__: /var/log/app/*.log
+          tenant_id: ${ALCHEMIST_TENANT_ID}
+          app_slug: ${ALCHEMIST_APP_SLUG}
+
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            source: source
+            feature: feature
+            error_message: error_message
+            version: version
+            msg: msg
+
+      - labels:
+          level:
+
+      - match:
+          selector: '{level="debug"}'
+          action: drop
+          drop_counter_reason: debug_log_dropped
+
+      - output:
+          source: msg

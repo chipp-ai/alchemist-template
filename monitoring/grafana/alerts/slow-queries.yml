@@ -1,0 +1,128 @@
+# Grafana Alert Rules: Slow Database Queries
+#
+# Two rules:
+# 1. Tenant Slow DB Queries   -- > 3 queries over 2s in 5 min, pending 2 min
+# 2. Tenant DB Pool Abuse     -- > 5 pool/statement timeouts in 5 min, immediate
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: tenant-slow-queries
+    folder: Alchemist Tenant Alerts
+    interval: 1m
+    rules:
+      # ── Tenant Slow DB Queries ──
+      # Fires when a tenant has more than 3 database queries exceeding 2 seconds
+      # in a 5-minute window. Creates a performance ticket (not a bug ticket).
+      # Pending for 2 minutes to avoid false positives from startup cold queries
+      # and migration runs.
+      - uid: tenant-slow-db-queries
+        title: Tenant Slow DB Queries
+        condition: slow_count
+        for: 2m
+        annotations:
+          summary: >-
+            Tenant {{ $labels.tenant_id }} ({{ $labels.app_slug }}) has
+            {{ $values.slow_count }} slow DB queries (>2s) in the last 5 minutes.
+          description: >-
+            Multiple slow database queries detected for app {{ $labels.app_slug }}.
+            This may indicate missing indexes, N+1 queries, or queries scanning
+            large tables without proper filtering. Check the source and feature
+            fields in the logs for which code paths are affected.
+          logql_query: >-
+            {tenant_id="{{ $labels.tenant_id }}"} | json | source="db" | latency_ms > 2000
+        labels:
+          severity: warning
+          ticket_type: performance
+        data:
+          - refId: slow_count
+            relativeTimeRange:
+              from: 300  # 5 minutes
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >-
+                sum(count_over_time(
+                  {tenant_id=~".+"}
+                  | json
+                  | source="db"
+                  | latency_ms > 2000
+                  [5m]
+                )) by (tenant_id, app_slug)
+              instant: true
+              refId: slow_count
+          - refId: threshold
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: slow_count
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 3
+                  operator:
+                    type: and
+              refId: threshold
+
+      # ── Tenant DB Pool Abuse ──
+      # Fires immediately when a tenant generates > 5 statement timeout or
+      # pool timeout errors in 5 minutes. Pool exhaustion is critical because
+      # it cascades to other tenants in the shared cluster -- the offending
+      # queries hold connections, starving everyone else.
+      - uid: tenant-db-pool-abuse
+        title: Tenant DB Pool Abuse
+        condition: timeout_count
+        for: 0s
+        annotations:
+          summary: >-
+            CRITICAL: Tenant {{ $labels.tenant_id }} ({{ $labels.app_slug }}) has
+            {{ $values.timeout_count }} DB pool/statement timeouts in the last 5 minutes.
+          description: >-
+            Database pool or statement timeouts detected for app {{ $labels.app_slug }}.
+            This is critical in a shared cluster -- pool exhaustion cascades to
+            other tenants. The offending queries must be identified and bounded
+            with withTimeout() or raceTimeout(). Check for missing indexes,
+            unbounded queries, or N+1 patterns.
+          logql_query: >-
+            {tenant_id="{{ $labels.tenant_id }}"} | json | source="db" | error_message =~ ".*statement timeout.*|.*pool.*timeout.*"
+        labels:
+          severity: critical
+          ticket_type: performance
+        data:
+          - refId: timeout_count
+            relativeTimeRange:
+              from: 300  # 5 minutes
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >-
+                sum(count_over_time(
+                  {tenant_id=~".+"}
+                  | json
+                  | source="db"
+                  | error_message =~ ".*statement timeout.*|.*pool.*timeout.*"
+                  [5m]
+                )) by (tenant_id, app_slug)
+              instant: true
+              refId: timeout_count
+          - refId: threshold
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: timeout_count
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 5
+                  operator:
+                    type: and
+              refId: threshold

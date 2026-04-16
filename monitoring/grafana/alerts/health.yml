@@ -1,0 +1,129 @@
+# Grafana Alert Rules: Service Health
+#
+# Two rules:
+# 1. Tenant App Down        -- Zero logs for 3 min, pending 2 min
+# 2. Tenant Startup Failure -- Any startup error, fires immediately
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: tenant-health
+    folder: Alchemist Tenant Alerts
+    interval: 1m
+    rules:
+      # ── Tenant App Down ──
+      # Fires when a tenant's app produces zero log lines for 3 minutes.
+      # This is a heartbeat-style detection: healthy apps always emit
+      # at least health check or request logs. Zero logs means the pod
+      # is crashed, OOM-killed, or stuck in CrashLoopBackOff.
+      #
+      # Pending for 2 minutes to tolerate brief gaps during rolling
+      # deployments (new pod starts, old pod drains).
+      - uid: tenant-app-down
+        title: Tenant App Down
+        condition: log_count
+        for: 2m
+        annotations:
+          summary: >-
+            Tenant {{ $labels.tenant_id }} ({{ $labels.app_slug }}) has produced
+            zero logs in the last 3 minutes. The app may be down.
+          description: >-
+            No log output detected for app {{ $labels.app_slug }} in the last
+            3 minutes. This typically indicates the pod has crashed, been
+            OOM-killed, or is stuck in CrashLoopBackOff. Check pod status
+            with kubectl and review recent deployment events.
+          logql_query: >-
+            {tenant_id="{{ $labels.tenant_id }}"}
+        labels:
+          severity: critical
+          ticket_type: bug
+        data:
+          # Query: count all logs for this tenant in the last 3 minutes.
+          # If the result is 0 (or absent), the app is down.
+          - refId: log_count
+            relativeTimeRange:
+              from: 180  # 3 minutes
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >-
+                sum(count_over_time(
+                  {tenant_id=~".+"}[3m]
+                )) by (tenant_id, app_slug)
+              instant: true
+              refId: log_count
+          - refId: threshold
+            relativeTimeRange:
+              from: 180
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: log_count
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+              refId: threshold
+
+      # ── Tenant Startup Failure ──
+      # Fires immediately when a tenant's app emits any error log with
+      # source="startup". Startup errors are always critical -- the app
+      # cannot serve requests until the issue is resolved.
+      #
+      # Common causes: missing env vars, DB connection failure, invalid
+      # config, migration error, port already in use.
+      - uid: tenant-startup-failure
+        title: Tenant Startup Failure
+        condition: startup_errors
+        for: 0s
+        annotations:
+          summary: >-
+            Tenant {{ $labels.tenant_id }} ({{ $labels.app_slug }}) has a
+            startup failure.
+          description: >-
+            Startup error detected for app {{ $labels.app_slug }}. The app
+            failed to initialize and cannot serve requests. Common causes:
+            missing environment variables, database connection failure,
+            invalid configuration, or failed migrations.
+          logql_query: >-
+            {tenant_id="{{ $labels.tenant_id }}", level="error"} | json | source="startup"
+        labels:
+          severity: critical
+          ticket_type: bug
+        data:
+          - refId: startup_errors
+            relativeTimeRange:
+              from: 120  # 2 minutes
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >-
+                sum(count_over_time(
+                  {tenant_id=~".+", level="error"}
+                  | json
+                  | source="startup"
+                  [2m]
+                )) by (tenant_id, app_slug)
+              instant: true
+              refId: startup_errors
+          - refId: threshold
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: startup_errors
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+              refId: threshold
