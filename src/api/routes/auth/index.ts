@@ -19,6 +19,7 @@ import { log } from "@/lib/logger.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
 import { BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
 import { createSessionToken, requireAuth, getUser } from "@/api/middleware/auth.ts";
+import { sendOtpEmail } from "@/services/email.ts";
 
 const authRoutes = new Hono();
 
@@ -102,8 +103,10 @@ authRoutes.post("/send-otp", zValidator("json", sendOtpSchema, validationHook), 
     })
     .execute();
 
-  // In dev mode, log the OTP to console for testing
-  console.log(`[auth] OTP for ${email}: ${otpCode}`);
+  // Send the OTP email (falls back to console.log when SMTP not configured)
+  sendOtpEmail(email, otpCode).catch((err) => {
+    log.error("Failed to send OTP email", { source: "auth", email }, err as Error);
+  });
 
   log.info("OTP sent", { source: "auth", email });
 
