@@ -1,13 +1,19 @@
 /**
  * Auth Routes
  *
- * POST /send-otp           - Send a one-time code to an email
- * POST /verify-otp         - Verify the code and create a session
- * POST /logout             - Clear session
- * GET  /me                 - Current user + org
- * GET  /config             - Public auth config
- * GET  /google             - Initiate Google OAuth
- * GET  /google/callback    - Handle Google OAuth callback
+ * OTP login is always-on (works as long as SMTP is configured — and the
+ * platform injects SMTP creds for free). OAuth providers (Google,
+ * Microsoft, GitHub, …) are opt-in: set the per-provider client-id and
+ * secret env vars and the routes + Login button auto-register.
+ *
+ * Endpoints:
+ *   POST /send-otp                  Send a one-time code to an email
+ *   POST /verify-otp                Verify the code and create a session
+ *   POST /logout                    Clear session
+ *   GET  /me                        Current user + org
+ *   GET  /config                    Public auth config (which providers are wired up)
+ *   GET  /:provider                 Initiate OAuth for a configured provider
+ *   GET  /:provider/callback        Handle OAuth callback
  */
 
 import { Hono } from "hono";
@@ -20,6 +26,13 @@ import { validationHook } from "@/utils/zod-validation-hook.ts";
 import { BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
 import { createSessionToken, requireAuth, getUser } from "@/api/middleware/auth.ts";
 import { sendOtpEmail } from "@/services/email.ts";
+import {
+  fetchGitHubPrimaryEmail,
+  findProvider,
+  getConfiguredProviders,
+  isProviderConfigured,
+  type OAuthProvider,
+} from "@/lib/oauth-providers.ts";
 
 const authRoutes = new Hono();
 
@@ -27,10 +40,22 @@ const SESSION_COOKIE = "session_id";
 const IS_PROD = Deno.env.get("NODE_ENV") === "production";
 
 // ── Config (public, no auth) ──
+// Reports which OAuth providers are configured at runtime so the SPA
+// can render a button per provider. OTP is always available as long as
+// SMTP is configured — which the platform handles automatically.
 
 authRoutes.get("/config", (c) => {
+  const providers = getConfiguredProviders().map((p) => ({
+    id: p.id,
+    label: p.label,
+    color: p.color,
+  }));
   return c.json({
-    googleEnabled: !!Deno.env.get("GOOGLE_CLIENT_ID"),
+    otpEnabled: true, // always; sender domain is platform-managed
+    providers,
+    // `googleEnabled` is kept for backward compat with any existing
+    // SPA bundle that hasn't yet picked up the providers array.
+    googleEnabled: providers.some((p) => p.id === "google"),
   });
 });
 
@@ -276,32 +301,53 @@ authRoutes.get("/me", requireAuth, async (c) => {
   });
 });
 
-/**
- * GET /google
- * Initiates Google OAuth flow.
- * Redirects to Google's consent screen.
- */
-authRoutes.get("/google", (c) => {
-  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
-  if (!clientId) {
-    throw new BadRequestError("Google OAuth not configured");
+// ── OAuth (provider-driven) ────────────────────────────────────────────────
+// One pair of routes (`/:provider` + `/:provider/callback`) handles every
+// provider in src/lib/oauth-providers.ts. Adding a new provider is one
+// entry in that file plus matching env vars — no code change here.
+
+function buildAuthorizeUrl(provider: OAuthProvider, state: string): string {
+  const params = new URLSearchParams({
+    client_id: Deno.env.get(provider.clientIdEnv)!,
+    redirect_uri:
+      `${Deno.env.get("APP_URL") ?? "http://localhost:8000"}/api/auth/${provider.id}/callback`,
+    response_type: "code",
+    scope: provider.scopes,
+    state,
+  });
+  if (provider.id === "google") {
+    // Google-only knobs: refresh tokens + re-consent.
+    params.set("access_type", "offline");
+    params.set("prompt", "consent");
+  }
+  return `${provider.authUrl}?${params.toString()}`;
+}
+
+authRoutes.get("/:provider", (c) => {
+  const providerId = c.req.param("provider");
+  // Reserved internal paths under the same router. If a future provider
+  // ever happens to collide, rename the provider id.
+  if (
+    providerId === "send-otp" || providerId === "verify-otp" ||
+    providerId === "logout" || providerId === "me" ||
+    providerId === "config"
+  ) {
+    return c.notFound();
+  }
+  const provider = findProvider(providerId);
+  if (!provider) {
+    throw new BadRequestError(`Unknown OAuth provider: ${providerId}`);
+  }
+  if (!isProviderConfigured(provider)) {
+    throw new BadRequestError(
+      `${provider.label} is not configured (set ${provider.clientIdEnv} and ${provider.clientSecretEnv})`,
+    );
   }
 
-  const redirectUri = `${Deno.env.get("APP_URL") ?? "http://localhost:8000"}/api/auth/google/callback`;
   const state = crypto.randomUUID();
-
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: "code",
-    scope: "openid email profile",
-    state,
-    access_type: "offline",
-    prompt: "consent",
-  });
-
-  // Store state in a cookie for CSRF validation
-  setCookie(c, "oauth_state", state, {
+  // Cookie name is provider-suffixed so concurrent OAuth flows in
+  // different tabs don't clobber each other's state.
+  setCookie(c, `oauth_state_${provider.id}`, state, {
     httpOnly: true,
     secure: IS_PROD,
     sameSite: "Lax",
@@ -309,36 +355,40 @@ authRoutes.get("/google", (c) => {
     maxAge: 600, // 10 minutes
   });
 
-  return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+  return c.redirect(buildAuthorizeUrl(provider, state));
 });
 
-/**
- * GET /google/callback
- * Handles the OAuth callback from Google.
- */
-authRoutes.get("/google/callback", async (c) => {
+authRoutes.get("/:provider/callback", async (c) => {
+  const providerId = c.req.param("provider");
+  const provider = findProvider(providerId);
+  if (!provider) throw new BadRequestError(`Unknown OAuth provider: ${providerId}`);
+  if (!isProviderConfigured(provider)) {
+    throw new BadRequestError(`${provider.label} is not configured`);
+  }
+
   const code = c.req.query("code");
   const state = c.req.query("state");
-  const storedState = getCookie(c, "oauth_state");
+  const storedState = getCookie(c, `oauth_state_${provider.id}`);
 
   if (!code || !state || state !== storedState) {
     throw new BadRequestError("Invalid OAuth callback");
   }
+  deleteCookie(c, `oauth_state_${provider.id}`, { path: "/" });
 
-  deleteCookie(c, "oauth_state", { path: "/" });
+  const clientId = Deno.env.get(provider.clientIdEnv)!;
+  const clientSecret = Deno.env.get(provider.clientSecretEnv)!;
+  const redirectUri =
+    `${Deno.env.get("APP_URL") ?? "http://localhost:8000"}/api/auth/${provider.id}/callback`;
 
-  const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
-  const clientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
-  const redirectUri = `${Deno.env.get("APP_URL") ?? "http://localhost:8000"}/api/auth/google/callback`;
-
-  if (!clientId || !clientSecret) {
-    throw new BadRequestError("Google OAuth not configured");
-  }
-
-  // Exchange code for tokens
-  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+  // ── Exchange code for tokens ─────────────────────────────────────────
+  // GitHub returns `application/x-www-form-urlencoded` by default; setting
+  // `Accept: application/json` makes every provider return parseable JSON.
+  const tokenResponse = await fetch(provider.tokenUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json",
+    },
     body: new URLSearchParams({
       code,
       client_id: clientId,
@@ -349,46 +399,77 @@ authRoutes.get("/google/callback", async (c) => {
   });
 
   if (!tokenResponse.ok) {
-    log.warn("Google token exchange failed", {
-      source: "auth",
-      status: tokenResponse.status,
-    });
+    const body = await tokenResponse.text().catch(() => "<unreadable>");
+    log.warn(
+      `${provider.id} token exchange failed`,
+      {
+        source: "auth",
+        feature: `oauth-${provider.id}-token`,
+        status: tokenResponse.status,
+        body: body.slice(0, 300),
+      },
+    );
     throw new BadRequestError("Failed to exchange authorization code");
   }
 
-  const tokens = await tokenResponse.json();
-
-  // Get user info
-  const userInfoResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-    headers: { Authorization: `Bearer ${tokens.access_token}` },
-  });
-
-  if (!userInfoResponse.ok) {
-    throw new BadRequestError("Failed to get user info from Google");
+  const tokens = await tokenResponse.json() as {
+    access_token?: string;
+    error?: string;
+    error_description?: string;
+  };
+  if (!tokens.access_token) {
+    throw new BadRequestError(
+      tokens.error_description ?? tokens.error ?? "OAuth token exchange returned no access_token",
+    );
   }
 
-  const googleUser = await userInfoResponse.json();
-  const googleEmail = (googleUser.email as string).toLowerCase().trim();
-  const googleName = googleUser.name as string | null;
-  const picture = googleUser.picture as string | null;
-  const googleId = googleUser.id as string;
+  // ── Fetch userinfo ───────────────────────────────────────────────────
+  // GitHub requires a User-Agent (otherwise it 403s). Send one for every
+  // provider; harmless for those that ignore it.
+  const userInfoResponse = await fetch(provider.userInfoUrl, {
+    headers: {
+      Authorization: `Bearer ${tokens.access_token}`,
+      "User-Agent": "alchemist-template",
+      Accept: "application/json",
+    },
+  });
+  if (!userInfoResponse.ok) {
+    throw new BadRequestError(`Failed to get user info from ${provider.label}`);
+  }
+  const rawUser = await userInfoResponse.json();
+  let mapped = provider.mapUser(rawUser);
 
-  // Check if user exists
+  // GitHub-specific: when the user has a private email, the `email` field
+  // on /user is null. Recover the primary verified email from /user/emails.
+  if (provider.id === "github" && !mapped.email) {
+    const recovered = await fetchGitHubPrimaryEmail(tokens.access_token);
+    if (!recovered) {
+      throw new BadRequestError(
+        "Couldn't read your GitHub email — make sure you have at least one verified address.",
+      );
+    }
+    mapped = { ...mapped, email: recovered };
+  }
+  if (!mapped.email) {
+    throw new BadRequestError(`${provider.label} did not return an email address.`);
+  }
+
+  // ── Find or create user ──────────────────────────────────────────────
   let user = await db
     .selectFrom("app.users")
     .select(["id", "email", "name", "role", "organizationId"])
-    .where("email", "=", googleEmail)
+    .where("email", "=", mapped.email)
     .executeTakeFirst();
 
   if (!user) {
-    // Create new user with org
-    const orgSlug = slugify(googleName ?? googleEmail.split("@")[0]);
+    const displayName = mapped.name ?? mapped.email.split("@")[0];
+    const orgSlug = slugify(displayName);
 
     const result = await db.transaction().execute(async (trx) => {
       const org = await trx
         .insertInto("app.organizations")
         .values({
-          name: `${googleName ?? googleEmail}'s Organization`,
+          name: `${displayName}'s Organization`,
           slug: orgSlug,
           subscriptionTier: "FREE",
           creditsExhausted: false,
@@ -399,11 +480,11 @@ authRoutes.get("/google/callback", async (c) => {
       const newUser = await trx
         .insertInto("app.users")
         .values({
-          email: googleEmail,
-          name: googleName,
-          picture,
-          oauthProvider: "google",
-          oauthId: googleId,
+          email: mapped.email,
+          name: mapped.name,
+          picture: mapped.picture,
+          oauthProvider: provider.id,
+          oauthId: mapped.providerUserId,
           role: "owner",
           organizationId: org.id,
           emailVerified: true,
@@ -416,13 +497,15 @@ authRoutes.get("/google/callback", async (c) => {
 
     user = result;
   } else {
-    // Link Google OAuth if not already linked
+    // Link / update OAuth identity on the existing user. Provider switch
+    // (e.g. user previously signed in with Google, now coming back via
+    // GitHub on the same email) is allowed and updates the linkage.
     await db
       .updateTable("app.users")
       .set({
-        oauthProvider: "google",
-        oauthId: googleId,
-        picture,
+        oauthProvider: provider.id,
+        oauthId: mapped.providerUserId,
+        picture: mapped.picture ?? null,
         lastLoginAt: new Date(),
         emailVerified: true,
       })
@@ -437,16 +520,15 @@ authRoutes.get("/google/callback", async (c) => {
     organizationId: user.organizationId!,
     role: user.role,
   });
-
   setSessionCookie(c, token);
 
-  log.info("Google OAuth login", {
+  log.info(`OAuth login (${provider.id})`, {
     source: "auth",
+    feature: `oauth-${provider.id}-login`,
     userId: user.id,
     email: user.email,
   });
 
-  // Redirect to the web app
   const webUrl = Deno.env.get("WEB_APP_URL") ?? "http://localhost:5173";
   return c.redirect(webUrl);
 });
