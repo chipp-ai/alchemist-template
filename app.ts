@@ -9,10 +9,10 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { compress } from "hono/compress";
 import { timing } from "hono/timing";
-import { logger } from "hono/logger";
 import { serveStatic } from "hono/deno";
 import { AppError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
+import { requestTimingMiddleware } from "@/api/middleware/request-timing.ts";
 
 // Route imports
 import { healthRoutes } from "@/api/routes/health/index.ts";
@@ -66,11 +66,12 @@ app.use("*", compress());
 // Timing (Server-Timing header)
 app.use("*", timing());
 
-// Request logger (dev only)
-const IS_DEV = Deno.env.get("NODE_ENV") !== "production";
-if (IS_DEV) {
-  app.use("*", logger());
-}
+// Request-timing middleware — emits one NDJSON log line per request
+// via the platform logger so Loki/Grafana can alert on error rate +
+// p95 latency degradation. Mounted AFTER the body-touching middleware
+// (CORS / secureHeaders / compress / timing) so it sees the final
+// status the client receives, not the pre-mutation one.
+app.use("*", requestTimingMiddleware);
 
 // ── Routes ──
 
@@ -87,11 +88,21 @@ app.route("/api/billing", billingRoutes);
 // (output goes to web/dist/). Mounted AFTER the API routes so /api/*
 // requests still hit their handlers, and BEFORE app.notFound so visiting
 // the customer URL in a browser returns the SPA shell instead of the
-// API's JSON 404 fallback. The second line is the SPA fallback — any
-// path that doesn't match a static file (e.g. /feed deep links on hard
-// refresh) gets index.html so the client-side router can resolve it.
+// API's JSON 404 fallback.
+//
+// The SPA fallback (line 2 below) MUST exclude /api/* paths — Hono's
+// serveStatic with `path:` matches every unmatched route, so without
+// this gate it would intercept malformed API requests and return the
+// SPA shell with a 200 status, swallowing real 4xx/5xx from API
+// handlers. The first-line bare-asset serveStatic is already path-
+// scoped (only matches when web/dist/<path> exists), so it's safe.
 app.use("/*", serveStatic({ root: "./web/dist" }));
-app.use("/*", serveStatic({ path: "./web/dist/index.html" }));
+app.use("/*", async (c, next) => {
+  // /api/* requests must NOT receive the SPA shell — they need to
+  // surface real 4xx/5xx + JSON bodies to the SPA fetch caller.
+  if (c.req.path.startsWith("/api/")) return next();
+  return serveStatic({ path: "./web/dist/index.html" })(c, next);
+});
 
 // ── Global error handler ──
 
