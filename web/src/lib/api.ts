@@ -14,10 +14,23 @@ class ApiError extends Error {
   }
 }
 
+interface RequestOptions {
+  /**
+   * If true, do NOT redirect to /login on a 401 response. Required for the
+   * `checkAuth()` call on app mount — without it, the very first /auth/me
+   * fires before any session exists, returns 401, and the redirect kicks
+   * the user from /signup back to /login the moment they land. Also useful
+   * for optional auth checks on public pages (share URLs, marketing pages
+   * that conditionally render a logged-in CTA).
+   */
+  silent401?: boolean;
+}
+
 async function request<T = unknown>(
   method: string,
   path: string,
   body?: unknown,
+  opts: RequestOptions = {},
 ): Promise<T> {
   const url = path.startsWith("/api") ? path : `/api${path}`;
 
@@ -34,9 +47,11 @@ async function request<T = unknown>(
   });
 
   if (response.status === 401) {
-    // Session expired or not authenticated -- redirect to login.
-    // Avoid circular import: set user to null directly and navigate.
-    window.location.hash = "#/login";
+    if (!opts.silent401) {
+      // Session expired or not authenticated -- redirect to login.
+      // Avoid circular import: set user to null directly and navigate.
+      window.location.hash = "#/login";
+    }
     throw new ApiError(401, "Unauthorized");
   }
 
@@ -59,24 +74,24 @@ async function request<T = unknown>(
 }
 
 export const api = {
-  get<T = unknown>(path: string): Promise<T> {
-    return request<T>("GET", path);
+  get<T = unknown>(path: string, opts?: RequestOptions): Promise<T> {
+    return request<T>("GET", path, undefined, opts);
   },
 
-  post<T = unknown>(path: string, body?: unknown): Promise<T> {
-    return request<T>("POST", path, body);
+  post<T = unknown>(path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+    return request<T>("POST", path, body, opts);
   },
 
-  patch<T = unknown>(path: string, body?: unknown): Promise<T> {
-    return request<T>("PATCH", path, body);
+  patch<T = unknown>(path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+    return request<T>("PATCH", path, body, opts);
   },
 
-  put<T = unknown>(path: string, body?: unknown): Promise<T> {
-    return request<T>("PUT", path, body);
+  put<T = unknown>(path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+    return request<T>("PUT", path, body, opts);
   },
 
-  delete<T = unknown>(path: string): Promise<T> {
-    return request<T>("DELETE", path);
+  delete<T = unknown>(path: string, opts?: RequestOptions): Promise<T> {
+    return request<T>("DELETE", path, undefined, opts);
   },
 };
 

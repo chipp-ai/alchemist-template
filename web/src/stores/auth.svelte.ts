@@ -33,7 +33,13 @@ async function checkAuth(): Promise<void> {
   isLoading = true;
   error = null;
   try {
-    const data = await api.get<{ user: User }>("/auth/me");
+    // silent401: we expect this to 401 when no session exists yet (e.g.
+    // the very first page load after a fresh open, or right after the
+    // user lands on /signup). Without the silent flag, the api client
+    // redirects to /login on 401 — which fights with App.svelte's own
+    // routing and bounces a freshly-signed-up user from /signup back to
+    // /login the moment checkAuth runs on mount.
+    const data = await api.get<{ user: User }>("/auth/me", { silent401: true });
     user = data.user;
   } catch (err) {
     // 401 is expected when not logged in
