@@ -10,6 +10,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { compress } from "hono/compress";
 import { timing } from "hono/timing";
 import { logger } from "hono/logger";
+import { serveStatic } from "hono/deno";
 import { AppError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
 
@@ -80,6 +81,17 @@ app.route("/", healthRoutes);
 app.route("/api/auth", authRoutes);
 app.route("/api/org", orgRoutes);
 app.route("/api/billing", billingRoutes);
+
+// ── Static SPA ──
+// Serves the Svelte frontend built in the Dockerfile's web-builder stage
+// (output goes to web/dist/). Mounted AFTER the API routes so /api/*
+// requests still hit their handlers, and BEFORE app.notFound so visiting
+// the customer URL in a browser returns the SPA shell instead of the
+// API's JSON 404 fallback. The second line is the SPA fallback — any
+// path that doesn't match a static file (e.g. /feed deep links on hard
+// refresh) gets index.html so the client-side router can resolve it.
+app.use("/*", serveStatic({ root: "./web/dist" }));
+app.use("/*", serveStatic({ path: "./web/dist/index.html" }));
 
 // ── Global error handler ──
 

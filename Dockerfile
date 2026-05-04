@@ -1,4 +1,22 @@
-# ── Build stage: cache dependencies ──
+# ── SPA build stage ──
+# Builds the Svelte frontend in web/ into web/dist/ so the runtime image
+# can serve static assets at /. Without this, visiting the customer URL
+# in a browser hits the API's 404 fallback because Hono only has API
+# routes registered. The Vite output goes to web/dist/.
+FROM node:20-alpine AS web-builder
+
+WORKDIR /web
+
+# Cache dependencies — copy package manifests first so layer caching
+# survives source-only changes.
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# Build the SPA
+COPY web/ ./
+RUN npm run build
+
+# ── Build stage: cache Deno dependencies ──
 FROM denoland/deno:2.3.1 AS builder
 
 WORKDIR /app
@@ -12,6 +30,10 @@ RUN deno cache --allow-import deno.json || true
 # Copy source
 COPY . .
 
+# Pull in the built SPA from the web-builder stage so `deno check` and
+# the runtime image both see web/dist/ as part of the application.
+COPY --from=web-builder /web/dist ./web/dist
+
 # Typecheck + cache the full application graph
 RUN deno check main.ts
 
@@ -24,7 +46,8 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 deno-app && \
     adduser --system --uid 1001 --ingroup deno-app deno-app
 
-# Copy compiled application
+# Copy compiled application (includes web/dist/ from the SPA build stage,
+# folded in during the Deno builder stage above).
 COPY --chown=deno-app:deno-app --from=builder /app .
 # Copy cached Deno dependencies
 COPY --chown=deno-app:deno-app --from=builder /root/.cache/deno /home/deno-app/.cache/deno

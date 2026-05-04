@@ -23,6 +23,7 @@
     "hono/secure-headers": "npm:hono@^4.6.0/secure-headers",
     "hono/timing": "npm:hono@^4.6.0/timing",
     "hono/compress": "npm:hono@^4.6.0/compress",
+    "hono/deno": "npm:hono@^4.6.0/deno",
     "hono/streaming": "npm:hono@^4.6.0/streaming",
     "hono/factory": "npm:hono@^4.6.0/factory",
     "hono/http-exception": "npm:hono@^4.6.0/http-exception",
