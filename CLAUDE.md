@@ -355,6 +355,89 @@ Before reporting any implementation as complete:
 
 **If ANY check fails: fix, re-run, proceed only when green.**
 
+## Dev affordances — DO NOT reverse-engineer auth from scratch
+
+When NODE_ENV is anything other than `production` (which is the case in
+the local dev stack AND inside the agent's E2B sandbox), the platform
+mounts a small set of **dev-only routes** at `/api/dev/*` so you can
+verify auth-gated flows without driving the OTP send + email + verify
+cycle. SMTP is not configured in the sandbox, so the OTP email goes to
+console — agents that try to verify the signup flow without these
+routes will spend tokens screen-scraping the log. Don't.
+
+### Available endpoints
+
+```
+GET  /api/dev/info     # Capability advertisement (safe to call first to
+                       # confirm the routes are live).
+POST /api/dev/login    # Body: { email, name? }
+                       # Looks up or creates user + org, sets the same
+                       # session_id cookie /verify-otp would set.
+                       # Returns { user, organization, session_cookie }.
+POST /api/dev/seed     # Body: { users?: [{email, name?}], raw?: [{table, rows}] }
+                       # Bulk-create users with their own orgs, AND/OR
+                       # ad-hoc inserts into any app./billing./jobs.
+                       # table. Both modes run in one transaction.
+POST /api/dev/reset    # Body: { tables?: [...] } (default = all
+                       # app/billing/jobs tables). TRUNCATE CASCADE.
+                       # Use BEFORE seeding for a known starting point.
+```
+
+### Recipe — verify a route that requires auth
+
+```bash
+# Inside the sandbox after ensure_local_dev_server succeeded:
+
+# 1. Reset to a clean DB (optional but recommended).
+curl -sS -X POST -H 'Content-Type: application/json' \
+  -d '{}' http://localhost:8000/api/dev/reset
+
+# 2. Instant-login as the user you want to be.
+curl -sS -X POST -H 'Content-Type: application/json' \
+  -d '{"email":"agent@dev.local"}' \
+  http://localhost:8000/api/dev/login \
+  -c /tmp/jar.txt
+
+# 3. Hit the auth-gated route with the cookie jar.
+curl -sS -b /tmp/jar.txt http://localhost:8000/api/auth/me
+# → { user: { id, email, name }, organization: {...} }
+```
+
+### Recipe — verify the same flow in the headless browser
+
+The dev login sets a real `session_id` cookie that's identical to
+what `/verify-otp` would set, so once you've POSTed to
+`/api/dev/login` from the page (e.g. via `browser_evaluate`), the SPA
+behaves as if the user is logged in.
+
+```ts
+browser_navigate({ url: "http://localhost:8000/" })
+
+// Bypass OTP — set the session via dev-login from the page itself.
+browser_evaluate({
+  expression: `(async () => {
+    const r = await fetch('/api/dev/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email: 'agent@dev.local' }),
+    });
+    return r.status;
+  })()`
+})
+
+browser_navigate({ url: "http://localhost:8000/dashboard" })  // now authed
+browser_screenshot()  // capture the proof
+```
+
+### Production safety
+
+The whole dev router is wrapped in a guard middleware that throws
+`NotFoundError` when `NODE_ENV === "production"`. The deployed
+customer pod always has `NODE_ENV=production` (set by the rollout
+controller) so the routes return 404 the same as if they had never
+been registered. Don't remove this guard — the routes bypass auth.
+
 ## Library version idioms — fight your training-data defaults
 
 Every dependency below is pinned to a major version where the API changed in a way that LLM training data still gets wrong by default. Read this section *before* reaching for muscle memory on any of these libraries. When training data and this section disagree, **this section wins** — the build will fail at deploy time if you guess wrong.

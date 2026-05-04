@@ -19,6 +19,7 @@ import { healthRoutes } from "@/api/routes/health/index.ts";
 import { authRoutes } from "@/api/routes/auth/index.ts";
 import { orgRoutes } from "@/api/routes/org/index.ts";
 import { billingRoutes } from "@/api/routes/billing/index.ts";
+import { devRoutes } from "@/api/routes/dev/index.ts";
 
 // ── App types ──
 
@@ -82,6 +83,12 @@ app.route("/", healthRoutes);
 app.route("/api/auth", authRoutes);
 app.route("/api/org", orgRoutes);
 app.route("/api/billing", billingRoutes);
+
+// Dev-only routes (instant login + DB seeding for agent verification).
+// The whole router self-404s in production via its own middleware, so
+// it's safe to register unconditionally — the routes simply don't
+// exist when NODE_ENV=production. See src/api/routes/dev/index.ts.
+app.route("/api/dev", devRoutes);
 
 // ── Static SPA ──
 // Serves the Svelte frontend built in the Dockerfile's web-builder stage
