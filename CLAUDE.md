@@ -276,20 +276,27 @@ Route catch blocks should re-throw `AppError` subclasses without logging (the gl
 
 ## Frontend Conventions
 
-### Svelte 5
+### Svelte 5 — runes only, NOT Svelte 4
 
-This project uses Svelte 5 runes syntax:
+`web/package.json` pins `"svelte": "^5.0.0"`, which compiles in runes mode and **rejects Svelte 4 syntax outright**. Most LLM training data is Svelte 4 — consciously override your defaults when writing or editing `*.svelte` files.
 
-```svelte
-<script lang="ts">
-  let count = $state(0);
-  let doubled = $derived(count * 2);
+| Concept | Svelte 5 (use this) | Svelte 4 (do NOT use) |
+|---|---|---|
+| Props | `let { foo, bar }: { foo: string; bar?: number } = $props();` | `export let foo: string;` |
+| Local state | `let count = $state(0);` | `let count = 0;` (becomes non-reactive in runes mode) |
+| Derived | `let doubled = $derived(count * 2);` | `$: doubled = count * 2;` |
+| Side effect | `$effect(() => { console.log(count); });` | `$: console.log(count);` |
+| Children/slots | `{@render children()}` with `let { children } = $props();` | `<slot />` |
 
-  $effect(() => {
-    console.log("count changed:", count);
-  });
-</script>
+Unchanged from v4: `bind:value` two-way binding, `$store` access for stores.
+
+**Build gate before push.** Any change touching `web/src/**/*.svelte` MUST be followed by:
+
+```bash
+cd web && npm install --silent && npm run build
 ```
+
+The build MUST succeed and produce `web/dist/index.html`. The runtime Dockerfile's `web-builder` stage runs the same command — failures here mean the deploy will fail AFTER the push lands. If the build errors with `Cannot use 'export let' in runes mode` or similar, fix the syntax — **do NOT downgrade Svelte to v4 in `package.json`**, that breaks the platform contract.
 
 ### Routing
 
@@ -348,6 +355,85 @@ Before reporting any implementation as complete:
 
 **If ANY check fails: fix, re-run, proceed only when green.**
 
+## Library version idioms — fight your training-data defaults
+
+Every dependency below is pinned to a major version where the API changed in a way that LLM training data still gets wrong by default. Read this section *before* reaching for muscle memory on any of these libraries. When training data and this section disagree, **this section wins** — the build will fail at deploy time if you guess wrong.
+
+### Deno 2 (`denoland/deno:2.3.1` runtime)
+
+`Deno.run` was REMOVED in Deno 2. Most training data is Deno 1.x.
+
+| Subprocess | Deno 2 (use this) | Deno 1 (do NOT use) |
+|---|---|---|
+| Spawn + capture | `await new Deno.Command("git", { args: ["status"], stdout: "piped" }).output()` | `Deno.run({ cmd: ["git", "status"], stdout: "piped" })` |
+| Spawn + stream | `new Deno.Command(...).spawn()` | `Deno.run(...)` |
+
+`Deno.serve` is the default HTTP server — already used in `main.ts`. Don't fall back to `Deno.listen` + `serveHttp`.
+
+`Deno.env.get()` is unchanged. `Deno.readTextFile`, `Deno.writeTextFile`, `Deno.readDir` are unchanged. The breakage is concentrated on `Deno.run` and a few Deno-namespace helpers — when in doubt, run `deno doc --builtin Deno.<symbol>` to confirm the symbol still exists.
+
+### Hono 4 (`hono@^4.6.0`)
+
+`app.fire()` was removed. The custom-context typing pattern is now:
+
+```typescript
+type AppEnv = { Variables: { user: User; session: Session } };
+const app = new Hono<AppEnv>();
+
+app.use("*", async (c, next) => {
+  c.set("user", currentUser);
+  await next();
+});
+
+app.get("/me", (c) => c.json({ user: c.get("user") }));
+```
+
+NOT the v3 `Hono.Variables` global augmentation pattern. Middleware that mutates the context type without the `Hono<{ Variables: ... }>` generic will type-check but `c.get(...)` will return `unknown` everywhere.
+
+### Arctic 2 (`arctic@^2.0.0`)
+
+Arctic 2.0 was a near-total rewrite (Sept 2024). The OOTB providers in `src/lib/oauth-providers.ts` are already on v2 — DO NOT rewrite them. If a ticket asks for a new provider, mirror the v2 pattern from the existing files, NOT the older v1 pattern from public docs.
+
+The v2 idiom for token validation:
+
+```typescript
+const tokens = await provider.validateAuthorizationCode(code, codeVerifier);
+const accessToken = tokens.accessToken();
+const accessTokenExpiresAt = tokens.accessTokenExpiresAt();
+const refreshToken = tokens.hasRefreshToken() ? tokens.refreshToken() : null;
+```
+
+NOT `tokens.accessToken` (property), NOT `OAuth2Tokens` returned as a plain object, NOT v1's `validateAuthorizationCode(code)` two-arg-less signature.
+
+### date-fns 3 (`date-fns@^3.0.0`)
+
+The default export was DROPPED. Use named imports only.
+
+```typescript
+// Correct
+import { format, parseISO, differenceInDays } from "date-fns";
+format(new Date(), "yyyy-MM-dd");
+
+// Wrong — silently typechecks under Deno's npm: types but throws at runtime
+import dateFns from "date-fns";
+dateFns.format(new Date(), "yyyy-MM-dd");
+```
+
+date-fns 3 is also ESM-first. If you need locale support: `import { enUS } from "date-fns/locale"` (no `/dist/`).
+
+### Stripe 17 (`stripe@^17.0.0`)
+
+Pin the API version when constructing the client — the SDK major version and the API version must agree, otherwise the `Stripe.Checkout.Session.create({...})` call will type-check but fail at runtime with `parameter_invalid` for fields the older API didn't know about.
+
+```typescript
+import Stripe from "stripe";
+const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, {
+  apiVersion: "2025-02-24.acacia" as Stripe.LatestApiVersion,
+});
+```
+
+The platform-injected `STRIPE_SECRET_KEY` belongs to the customer's connected Stripe account. Do not hardcode another key.
+
 ## Self-Improvement Loop (Non-Negotiable)
 
 After ANY correction from the user, **immediately** update this `CLAUDE.md` with the pattern. Write rules for yourself that prevent the same mistake. Review this file at session start for the relevant project area.
@@ -366,3 +452,9 @@ This section grows as mistakes are discovered. Check it before writing code.
 - **SPA error redirects use `replace()`, not `push()`** -- prevents back-button loops
 - **Hard reload after frontend changes** -- HMR is disabled
 - **Test isolation requires `createIsolatedUser()`** -- shared users cause FK violations in parallel tests
+- **Deno 2: `Deno.run` removed** -- use `new Deno.Command(...)` (Deno 1 idiom is the default in training data)
+- **Hono 4: custom context via `Hono<{ Variables: ... }>` generic** -- not v3 global `Hono.Variables` augmentation
+- **Arctic 2: tokens are objects with method calls** -- `tokens.accessToken()`, not `tokens.accessToken`
+- **date-fns 3: no default export** -- `import { format } from "date-fns"`, not `import dateFns from "date-fns"`
+- **Stripe 17: pin `apiVersion` on the client** -- SDK major and API version must agree
+- **Svelte 5 runes only** -- `$props()`, `$state()`, `$derived`, `$effect`, `{@render children()}`. NEVER `export let` (compile error)
