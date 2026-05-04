@@ -64,6 +64,15 @@ deno lint
 deno test --env --no-check --allow-all src/__tests__/services/my_test.ts
 ```
 
+## Public Endpoints
+
+These endpoints are unauthenticated and safe to probe from outside the cluster:
+
+| Method | Path | Returns |
+|--------|------|---------|
+| GET | `/health` | Liveness/readiness check |
+| GET | `/api/info` | `{ template, git_sha }` -- template name and the build SHA from the `GIT_SHA` env var (falls back to `"dev"` when unset) |
+
 ## Deployment
 
 Deploy via Alchemist AI (autonomous CI/CD) or self-host on any Kubernetes cluster.
@@ -72,6 +81,7 @@ The project includes:
 - Docker-compatible Deno runtime
 - PostgreSQL migrations (auto-applied before deploy)
 - Health check endpoint at `/health`
+- Build-info endpoint at `/api/info` (set `GIT_SHA` at build time to surface the deployed commit)
 - Structured NDJSON logging for production log aggregation
 - Cloudflare Worker support for edge proxy (optional)
 
