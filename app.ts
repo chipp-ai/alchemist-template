@@ -20,6 +20,7 @@ import { authRoutes } from "@/api/routes/auth/index.ts";
 import { orgRoutes } from "@/api/routes/org/index.ts";
 import { billingRoutes } from "@/api/routes/billing/index.ts";
 import { devRoutes } from "@/api/routes/dev/index.ts";
+import { infoRoutes } from "@/api/routes/info/index.ts";
 
 // ── App types ──
 
@@ -83,6 +84,7 @@ app.route("/", healthRoutes);
 app.route("/api/auth", authRoutes);
 app.route("/api/org", orgRoutes);
 app.route("/api/billing", billingRoutes);
+app.route("/api/info", infoRoutes);
 
 // Dev-only routes (instant login + DB seeding for agent verification).
 // The whole router self-404s in production via its own middleware, so
