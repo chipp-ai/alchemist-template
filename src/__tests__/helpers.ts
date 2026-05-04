@@ -1,12 +1,11 @@
 /**
- * Test Helpers
+ * Test helpers for isolated test execution.
  *
- * Utilities for writing isolated, parallel-safe tests.
+ * USAGE:
  *
- * Usage:
  *   import { createIsolatedUser, getTestDb, withTestServer } from "../helpers.ts";
  *
- *   Deno.test("my test", async () => {
+ *   Deno.test("creates an item", async () => {
  *     const { user, org, cleanup } = await createIsolatedUser("owner");
  *     try {
  *       // ... test logic
@@ -29,12 +28,12 @@ export interface IsolatedTestContext {
     email: string;
     name: string | null;
     role: string;
-    organizationId: string;
+    organizationId: string | null;
   };
   org: {
     id: string;
     name: string;
-    slug: string;
+    slug: string | null;
   };
   cleanup: () => Promise<void>;
 }
