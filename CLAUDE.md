@@ -343,6 +343,115 @@ HMR is disabled. After any frontend change, hard reload: **Cmd+Shift+R** (Mac) o
 - **When committing, always use `git add -A`** to stage all changes. Multiple agents may run side by side -- include everything.
 - **NEVER use `--no-verify` or `--no-gpg-sign`** on any git command.
 
+## File storage — use `storage.service.ts`, never write to R2 directly
+
+The platform injects shared R2 credentials (`R2_ENDPOINT` /
+`R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`) plus a
+per-customer `R2_KEY_PREFIX` (`customer-${projectId}/`). The whole
+fleet shares one bucket; cross-tenant isolation lives in the path
+layer. **Every R2 key MUST start with `R2_KEY_PREFIX`.** Don't
+write your own R2 helpers — `src/services/storage.service.ts` does
+this for you and structurally prevents prefix escape.
+
+### What's available
+
+```ts
+import {
+  putObject,                // server-side upload
+  getObject,                // server-side fetch
+  deleteObject,             // server-side delete
+  getSignedDownloadUrl,     // browser-facing read URL (default 1h, max 7d)
+  getSignedUploadUrl,       // browser direct PUT URL (default 15m, max 7d)
+  isStorageConfigured,
+  describeStorageConfig,
+  scopedKey,                // utility — auto-prefixes a relative key
+  assertOwnedKey,           // utility — validates a stored full key
+} from "@/services/storage.service.ts";
+```
+
+### Recipe — user uploads an image
+
+```ts
+// Server: issue a presigned PUT URL the browser can use directly.
+const { uploadUrl, key, expiresAt } = await fetch("/api/files/upload-url", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    key: `users/${user.id}/avatars/${crypto.randomUUID()}.jpg`,
+    contentType: "image/jpeg",
+  }),
+}).then((r) => r.json());
+
+// Browser: PUT the file bytes directly to R2. Server never sees them.
+await fetch(uploadUrl, {
+  method: "PUT",
+  headers: { "Content-Type": "image/jpeg" },
+  body: file,
+});
+
+// Server: store `key` (RELATIVE — without the prefix) in your DB.
+await db.insertInto("app.user_avatars").values({ userId: user.id, key }).execute();
+```
+
+### Recipe — serve the image later
+
+```ts
+// Server: read the relative key from the DB row, hand back a fresh
+// signed URL. The R2_KEY_PREFIX gets prepended in the helper.
+const url = getSignedDownloadUrl(row.key, 3600);
+return c.json({ avatarUrl: url });
+```
+
+### Cross-tenant isolation contract
+
+`scopedKey()` (called by every public helper) **rejects**:
+- Empty / missing keys
+- Leading slash (would defeat prefix)
+- `..` segments (path traversal)
+- `.` segments (no-op but suspicious)
+- Empty segments (double slash)
+- Backslashes (Windows-style traversal)
+- Keys longer than 900 chars
+
+Application code passes RELATIVE keys (e.g. `images/foo.jpg`) — the
+prefix is invisible to your code and impossible to escape using these
+helpers. **Do NOT store the full prefixed key in your DB** — store
+the relative key. That way if the prefix scheme ever changes (it
+won't, but defensively), your data is portable.
+
+### Reading an externally-supplied stored full key
+
+If your DB stores the FULL prefixed key (legacy), validate it with
+`assertOwnedKey()` before passing to any helper that accepts a raw
+key. This is the only safe way to handle a fully-qualified R2 key
+that came from outside your own write path.
+
+### Built-in routes
+
+`POST /api/files/upload-url` — body `{ key, contentType, expiresInSeconds? }`,
+returns `{ uploadUrl, key, expiresAt, requiredHeaders }`. Auth required.
+
+`POST /api/files/download-url` — body `{ key, expiresInSeconds?, downloadFilename? }`,
+returns `{ downloadUrl, key, expiresAt }`. Auth required. Set
+`downloadFilename` to force `Content-Disposition: attachment`.
+
+`POST /api/files/upload` — multipart server-side proxy upload (8 MB cap).
+Use this for small files when you don't want browser PUT. Body fields:
+`file` (the bytes) + `key` (the relative key string).
+
+`DELETE /api/files` — body `{ key }`. Auth required. Idempotent.
+
+`GET /api/files/info` — diagnostic; returns `{ configured, bucket, prefix }`.
+
+### CORS
+
+For browser direct uploads to work, the R2 bucket needs CORS
+configured to accept the customer's app origin. The platform handles
+this for `*.adaas.dev` automatically — see chipp-ai/alchemist-ai
+`scripts/bootstrap-r2-cors.sh`. For custom domains, the platform
+adds the origin to the bucket-level rule when the customer registers
+the domain (see `R2 Bucket CORS` in alchemist-ai/CLAUDE.md).
+
 ## Verification Checklist
 
 Before reporting any implementation as complete:

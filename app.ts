@@ -20,6 +20,7 @@ import { authRoutes } from "@/api/routes/auth/index.ts";
 import { orgRoutes } from "@/api/routes/org/index.ts";
 import { billingRoutes } from "@/api/routes/billing/index.ts";
 import { devRoutes } from "@/api/routes/dev/index.ts";
+import { fileRoutes } from "@/api/routes/files/index.ts";
 
 // ── App types ──
 
@@ -83,6 +84,12 @@ app.route("/", healthRoutes);
 app.route("/api/auth", authRoutes);
 app.route("/api/org", orgRoutes);
 app.route("/api/billing", billingRoutes);
+
+// File storage (R2 — tenant-isolated via R2_KEY_PREFIX, see
+// src/services/storage.service.ts). Auth-required. Provides
+// presigned upload + download URLs so the browser can talk to R2
+// directly without proxying file bytes through this server.
+app.route("/api/files", fileRoutes);
 
 // Dev-only routes (instant login + DB seeding for agent verification).
 // The whole router self-404s in production via its own middleware, so
