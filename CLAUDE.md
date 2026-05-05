@@ -384,6 +384,112 @@ The client automatically:
 
 HMR is disabled. After any frontend change, hard reload: **Cmd+Shift+R** (Mac) or **Ctrl+Shift+R** (Windows/Linux).
 
+### Roles and team management
+
+Customer apps inherit a 4-role hierarchy + an email-driven invite
+flow. The role hierarchy lives in **one** file — `src/lib/roles.ts`
+on the server, mirrored EXACTLY in `web/src/lib/permissions.ts`
+on the client. A regression test
+(`src/__tests__/team.test.ts → "client mirror"`) lints the two
+files for the same capability list and roles.
+
+**Roles**
+
+| Role | Count | Powers |
+|---|---|---|
+| `owner` | 1 per org | Full control. Set at org creation. CANNOT be invited (transfer is a separate flow, deferred). |
+| `admin` | N per org | Manage team (invite, change roles, remove) + edit org settings + everything an editor can do. |
+| `editor` | N per org | Write app data. Cannot manage team or org settings. The default invitee role. |
+| `viewer` | N per org | Read-only across the board. |
+
+The schema enum still allows the legacy `member` value for backward
+compat with rows that pre-date migration 003. `member` is a synonym
+for `editor` in code — same hierarchy rank, same capabilities.
+Migration 003 backfills `member` rows to `editor` so fresh databases
+never produce them.
+
+**Capabilities**
+
+Routes gate via the `requireCapability` middleware (in
+`src/api/middleware/auth.ts`):
+
+```typescript
+import { requireAuth, requireCapability } from "@/api/middleware/auth.ts";
+
+orgRoutes.post(
+  "/invites",
+  requireCapability("team.invite"),
+  zValidator("json", inviteSchema, validationHook),
+  handler,
+);
+```
+
+The capability set lives in `src/lib/roles.ts`:
+
+| Capability | Min role |
+|---|---|
+| `team.invite` | admin |
+| `team.update_role` | admin |
+| `team.remove` | admin |
+| `org.update` | admin |
+| `app.write` | editor |
+| `app.read` | viewer |
+
+Use the `can(role, capability)` helper for inline checks; never
+compare role strings directly. The hierarchy enforces "fail closed"
+for unknown roles — `rankOf("nonexistent")` returns 0, so `can()`
+returns false on schema drift.
+
+**Manage-vs-target rules**
+
+The `canManage(actor, target)` helper enforces:
+
+- Owner is untouchable. Only the explicit ownership-transfer flow
+  (deferred) can change owner.
+- Admins cannot manage other admins — only the owner can. Prevents
+  lateral demotion wars between admins.
+- Viewers and editors can never manage anyone.
+
+The Settings → Team UI uses `canManage` to gate role-edit dropdowns
+and remove buttons per-row, so an admin sees "edit role" on editors
+and viewers but a static badge on other admins.
+
+**Invite flow**
+
+```
+POST /api/org/invites    → admin creates invite (sends email)
+GET  /api/org/invites    → admin lists pending invites
+DELETE /api/org/invites/:id → admin revokes a pending invite
+PATCH /api/org/members/:userId/role → admin changes role
+DELETE /api/org/members/:userId → admin SOFT-DISCONNECTS member
+
+GET  /api/invite/:token            → public preview (no auth)
+POST /api/invite/:token/accept     → consume token (auth required;
+                                     authenticated email must match
+                                     invite email)
+```
+
+Frontend route: `/#/invite/:token` → `web/src/routes/InviteAccept.svelte`.
+Logged-out users get a "sign in to accept" page that pre-fills the
+invited email; logged-in users with a matching email get auto-accept.
+
+**CRITICAL: removing a member is SOFT-DISCONNECT, not hard-delete.**
+
+The DELETE /members/:userId route sets `users.organization_id = NULL`
+and `role = 'viewer'`. The user row itself is preserved — sessions,
+oauth bindings, and any FK'd domain data persist. Re-inviting a
+removed user lands cleanly via the same flow as a new invite. A
+regression test (`src/__tests__/team.test.ts → "DELETE
+/members/:userId soft-disconnects"`) lints the route file for
+`organizationId: null` and forbids `db.deleteFrom("users")`.
+
+**Email rendering**
+
+Invite emails go through `src/services/email.ts → sendInviteEmail`.
+Falls back to console.log in dev (when SMTP isn't configured) so
+the agent can grab the accept URL during local testing without a
+real mailbox. The `APP_URL` env var determines the link host.
+
 ### Stores and the DevPanel — `defineStore` is mandatory for shared state
 
 Every shared client-side store MUST be declared via `defineStore` from

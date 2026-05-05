@@ -9,7 +9,8 @@ import { getCookie } from "hono/cookie";
 import * as jose from "jose";
 import { db, withTimeout } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
-import { UnauthorizedError } from "@/utils/errors.ts";
+import { ForbiddenError, UnauthorizedError } from "@/utils/errors.ts";
+import { can, type Capability } from "@/lib/roles.ts";
 
 // ── Types ──
 
@@ -169,4 +170,46 @@ export function getUser(c: { get: (key: string) => unknown }): AuthUser {
     throw new UnauthorizedError("Authentication required");
   }
   return user;
+}
+
+/**
+ * Capability-gated middleware. Apply AFTER `requireAuth` on any route
+ * that should only be reachable by users above the named capability's
+ * minimum role.
+ *
+ * @example
+ *   orgRoutes.post(
+ *     "/invite",
+ *     requireAuth,
+ *     requireCapability("team.invite"),
+ *     handler,
+ *   );
+ *
+ * The capability set + role hierarchy lives in `src/lib/roles.ts` —
+ * the SAME file the client-side store/UI mirrors. Add new
+ * capabilities by extending the `Capability` union there, not here.
+ *
+ * Behavior:
+ *   - Throws 401 (UnauthorizedError) if no user is in context (i.e.
+ *     `requireAuth` wasn't applied first — defensive).
+ *   - Throws 403 (ForbiddenError) if the user lacks the capability.
+ *   - Otherwise calls next().
+ *
+ * The error message names the missing capability so client-side
+ * error handlers can surface useful copy ("You need admin permission
+ * to invite members") instead of a generic "Forbidden".
+ */
+export function requireCapability(cap: Capability) {
+  return createMiddleware(async (c, next) => {
+    const user = c.get("user") as AuthUser | undefined;
+    if (!user) {
+      throw new UnauthorizedError("Authentication required");
+    }
+    if (!can(user.role, cap)) {
+      throw new ForbiddenError(
+        `Your role (${user.role}) does not have the "${cap}" permission.`,
+      );
+    }
+    await next();
+  });
 }

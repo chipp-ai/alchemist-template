@@ -1,7 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { authStore } from "../stores/auth.svelte";
-  import { orgStore } from "../stores/organization.svelte";
+  import { orgStore, type AssignableRole } from "../stores/organization.svelte";
+  import {
+    ASSIGNABLE_ROLES,
+    can,
+    canManage,
+    roleLabel,
+  } from "../lib/permissions";
   import { api, ApiError } from "../lib/api";
 
   // ---------- Tabs ----------
@@ -38,17 +44,26 @@
   // ---------- Team state ----------
 
   let inviteEmail = $state("");
-  let inviteRole = $state("member");
+  let inviteRole = $state<AssignableRole>("editor");
   let isInviting = $state(false);
-  let inviteMessage = $state<string | null>(null);
+  let inviteSuccessMessage = $state<string | null>(null);
+
+  // Capability-derived UI flags. Recomputed reactively as the
+  // current user's role changes (e.g. they get promoted/demoted
+  // from another tab).
+  const canInvite = $derived(can(authStore.user?.role ?? "", "team.invite"));
+  const canChangeRoles = $derived(can(authStore.user?.role ?? "", "team.update_role"));
+  const canRemove = $derived(can(authStore.user?.role ?? "", "team.remove"));
 
   // One-shot data fetch on mount. Use onMount, NOT $effect — see
   // CLAUDE.md → "Stores: $effect on mount is a trap; use onMount".
-  // fetchOrg / fetchMembers write store state; inside an $effect those
-  // writes would attribute as deps and loop the fetches.
+  // fetchOrg / fetchMembers / fetchInvites write store state; inside
+  // an $effect those writes would attribute as deps and loop the
+  // fetches.
   onMount(() => {
     orgStore.fetchOrg();
     orgStore.fetchMembers();
+    orgStore.fetchInvites();
   });
 
   async function handleInvite(e: Event) {
@@ -56,17 +71,37 @@
     if (!inviteEmail.trim()) return;
 
     isInviting = true;
-    inviteMessage = null;
+    inviteSuccessMessage = null;
     try {
       await orgStore.inviteMember(inviteEmail, inviteRole);
-      inviteMessage = `Invitation sent to ${inviteEmail}.`;
+      inviteSuccessMessage = `Invitation sent to ${inviteEmail}.`;
       inviteEmail = "";
-    } catch (err) {
-      inviteMessage =
-        err instanceof Error ? err.message : "Failed to send invite.";
+    } catch {
+      // Error is in orgStore.error — UI already renders it via {#if orgStore.error}.
     } finally {
       isInviting = false;
     }
+  }
+
+  async function handleRevoke(inviteId: string) {
+    await orgStore.revokeInvite(inviteId);
+  }
+
+  async function handleRoleChange(userId: string, role: AssignableRole) {
+    await orgStore.updateMemberRole(userId, role);
+  }
+
+  async function handleRemove(userId: string, memberName: string) {
+    if (!confirm(`Remove ${memberName} from this organization?`)) return;
+    await orgStore.removeMember(userId);
+  }
+
+  function formatRelativeExpiry(expiresAt: string): string {
+    const ms = new Date(expiresAt).getTime() - Date.now();
+    const days = Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+    if (days === 0) return "expires today";
+    if (days === 1) return "expires in 1 day";
+    return `expires in ${days} days`;
   }
 
   // ---------- Billing ----------
@@ -175,49 +210,118 @@
     <section class="card settings-section" data-testid="settings-section-team">
       <h2 class="section-title">Team Members</h2>
 
-      <!-- Invite form -->
-      <form onsubmit={handleInvite} class="invite-form">
-        <input
-          class="input"
-          type="email"
-          bind:value={inviteEmail}
-          placeholder="colleague@example.com"
-          required
-          data-testid="settings-team-input-email"
-        />
-        <select
-          class="input invite-role"
-          bind:value={inviteRole}
-          data-testid="settings-team-select-role"
-        >
-          <option value="member">Member</option>
-          <option value="admin">Admin</option>
-        </select>
-        <button
-          type="submit"
-          class="btn btn-primary"
-          disabled={isInviting}
-          data-testid="settings-team-btn-invite"
-        >
-          {isInviting ? "Sending..." : "Invite"}
-        </button>
-      </form>
+      <!-- Invite form (admin+) -->
+      {#if canInvite}
+        <form onsubmit={handleInvite} class="invite-form">
+          <input
+            class="input"
+            type="email"
+            bind:value={inviteEmail}
+            placeholder="colleague@example.com"
+            required
+            data-testid="settings-team-input-email"
+          />
+          <select
+            class="input invite-role"
+            bind:value={inviteRole}
+            data-testid="settings-team-select-role"
+          >
+            {#each ASSIGNABLE_ROLES as r (r)}
+              <option value={r}>{roleLabel(r)}</option>
+            {/each}
+          </select>
+          <button
+            type="submit"
+            class="btn btn-primary"
+            disabled={isInviting}
+            data-testid="settings-team-btn-invite"
+          >
+            {isInviting ? "Sending..." : "Send invite"}
+          </button>
+        </form>
 
-      {#if inviteMessage}
-        <div class="alert alert-success invite-message" data-testid="settings-team-alert">
-          {inviteMessage}
+        {#if inviteSuccessMessage}
+          <div class="alert alert-success invite-message" data-testid="settings-team-alert-success">
+            {inviteSuccessMessage}
+          </div>
+        {/if}
+        {#if orgStore.error}
+          <div class="alert alert-error invite-message" data-testid="settings-team-alert-error">
+            {orgStore.error}
+          </div>
+        {/if}
+      {/if}
+
+      <!-- Pending invites (admin+) -->
+      {#if canInvite && orgStore.pendingInvites.length > 0}
+        <h3 class="subsection-title">Pending invites</h3>
+        <div class="members-list" data-testid="settings-team-pending-invites">
+          {#each orgStore.pendingInvites as invite (invite.id)}
+            <div class="member-row" data-testid="settings-team-invite-{invite.id}">
+              <div class="member-info">
+                <div class="member-name">{invite.email}</div>
+                <div class="member-email">
+                  {roleLabel(invite.role)} · {formatRelativeExpiry(invite.expiresAt)}
+                  · invited by {invite.invitedByName ?? invite.invitedByEmail}
+                </div>
+              </div>
+              <button
+                type="button"
+                class="btn btn-ghost"
+                onclick={() => handleRevoke(invite.id)}
+                data-testid="settings-team-btn-revoke-{invite.id}"
+              >
+                Revoke
+              </button>
+            </div>
+          {/each}
         </div>
       {/if}
 
       <!-- Members list -->
+      <h3 class="subsection-title">Members</h3>
       <div class="members-list" data-testid="settings-team-members">
         {#each orgStore.members as member (member.id)}
+          {@const isSelf = member.id === authStore.user?.id}
+          {@const canManageThis =
+            !isSelf &&
+            canManage(authStore.user?.role ?? "", member.role)}
           <div class="member-row" data-testid="settings-team-member-{member.id}">
             <div class="member-info">
-              <div class="member-name">{member.name}</div>
+              <div class="member-name">
+                {member.name ?? member.email}
+                {#if isSelf}<span class="text-muted">(you)</span>{/if}
+              </div>
               <div class="member-email">{member.email}</div>
             </div>
-            <span class="badge">{member.role}</span>
+            {#if canChangeRoles && canManageThis}
+              <select
+                class="input role-select"
+                value={member.role}
+                onchange={(e) =>
+                  handleRoleChange(
+                    member.id,
+                    (e.currentTarget as HTMLSelectElement).value as AssignableRole,
+                  )}
+                data-testid="settings-team-select-role-{member.id}"
+              >
+                {#each ASSIGNABLE_ROLES as r (r)}
+                  <option value={r}>{roleLabel(r)}</option>
+                {/each}
+              </select>
+            {:else}
+              <span class="badge">{roleLabel(member.role)}</span>
+            {/if}
+            {#if canRemove && canManageThis}
+              <button
+                type="button"
+                class="btn btn-ghost btn-danger"
+                onclick={() => handleRemove(member.id, member.name ?? member.email)}
+                data-testid="settings-team-btn-remove-{member.id}"
+              >
+                Remove
+              </button>
+            {/if}
           </div>
         {:else}
           <p class="text-muted">No team members yet.</p>

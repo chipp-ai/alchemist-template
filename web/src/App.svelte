@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Router, { location, push, replace } from "svelte-spa-router";
-  import routes, { publicRoutes } from "./routes";
+  import routes, { isPublicRoute } from "./routes";
   import { authStore } from "./stores/auth.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import DevPanel from "./components/DevPanel.svelte";
@@ -27,13 +27,13 @@
     if (authStore.isLoading) return;
     const path = $location;
 
-    if (!authStore.isAuthenticated && !publicRoutes.has(path)) {
+    if (!authStore.isAuthenticated && !isPublicRoute(path)) {
       replace("/login");
     }
   });
 
-  const isPublicRoute = $derived(publicRoutes.has($location));
-  const showLayout = $derived(!authStore.isLoading && authStore.isAuthenticated && !isPublicRoute);
+  const onPublicRoute = $derived(isPublicRoute($location));
+  const showLayout = $derived(!authStore.isLoading && authStore.isAuthenticated && !onPublicRoute);
 </script>
 
 {#if authStore.isLoading}

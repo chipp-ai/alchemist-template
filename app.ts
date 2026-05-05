@@ -22,6 +22,7 @@ import { orgRoutes } from "@/api/routes/org/index.ts";
 import { billingRoutes } from "@/api/routes/billing/index.ts";
 import { devRoutes } from "@/api/routes/dev/index.ts";
 import { fileRoutes } from "@/api/routes/files/index.ts";
+import { inviteRoutes } from "@/api/routes/invite/index.ts";
 
 // ── App types ──
 
@@ -101,6 +102,11 @@ app.route("/api/billing", billingRoutes);
 // presigned upload + download URLs so the browser can talk to R2
 // directly without proxying file bytes through this server.
 app.route("/api/files", fileRoutes);
+
+// Invite acceptance (public preview + auth-required accept). NOT
+// nested under /api/org because invitees aren't bound to an org yet
+// when they hit these endpoints. See src/api/routes/invite/index.ts.
+app.route("/api/invite", inviteRoutes);
 
 // Dev-only routes (instant login + DB seeding for agent verification).
 // The whole router self-404s in production via its own middleware, so

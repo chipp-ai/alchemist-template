@@ -1,27 +1,56 @@
 /**
  * Organization Routes
  *
- * All routes require authentication.
+ * Team management — invites, member listing, role transitions, removal.
  *
- * GET    /             - Current org details
- * PATCH  /             - Update org name/slug
- * GET    /members      - List org members
- * POST   /invite       - Invite user by email
- * DELETE /members/:userId - Remove member
+ *   GET    /                       - Current org details
+ *   PATCH  /                       - Update org name/slug          (admin+)
+ *   GET    /members                - List org members              (any auth)
+ *   GET    /invites                - List pending invites          (admin+)
+ *   POST   /invites                - Send invite by email          (admin+)
+ *   DELETE /invites/:id            - Revoke pending invite         (admin+)
+ *   PATCH  /members/:userId/role   - Change member's role          (admin+)
+ *   DELETE /members/:userId        - Remove member from org        (admin+)
+ *
+ * Permissions go through `requireCapability` from the auth middleware,
+ * which keys off the role hierarchy in `src/lib/roles.ts`. The route
+ * file enforces the role-vs-role rules (admin can't manage another
+ * admin, can't remove the owner, can't self-remove) via the
+ * `canManage` helper from the same hierarchy module.
+ *
+ * IMPORTANT: DELETE /members/:userId previously hard-DELETED the user
+ * row. That took sessions, oauth bindings, and any FK'd domain data
+ * with it. The new behavior is SOFT-DISCONNECT — set
+ * users.organization_id = NULL and role = 'viewer'. The user keeps
+ * their account and can be re-invited; their email and name persist.
  */
 
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db } from "@/db/client.ts";
-import { requireAuth, getUser } from "@/api/middleware/auth.ts";
+import {
+  getUser,
+  requireAuth,
+  requireCapability,
+} from "@/api/middleware/auth.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
-import { ForbiddenError, NotFoundError, BadRequestError } from "@/utils/errors.ts";
+import {
+  BadRequestError,
+  ForbiddenError,
+  NotFoundError,
+} from "@/utils/errors.ts";
+import { ASSIGNABLE_ROLES, canManage } from "@/lib/roles.ts";
+import {
+  createInvite,
+  listPendingInvites,
+  revokeInvite,
+} from "@/services/invite.service.ts";
 import { log } from "@/lib/logger.ts";
 
 const orgRoutes = new Hono();
 
-// All org routes require auth
+// All org routes require auth.
 orgRoutes.use("*", requireAuth);
 
 // ── Schemas ──
@@ -38,15 +67,17 @@ const updateOrgSchema = z.object({
 
 const inviteSchema = z.object({
   email: z.string().email().trim().toLowerCase(),
-  role: z.enum(["admin", "member"]).default("member"),
+  // Default to editor (the most common case). owner is intentionally
+  // not in ASSIGNABLE_ROLES — invites can never confer ownership.
+  role: z.enum(ASSIGNABLE_ROLES).default("editor"),
 });
 
-// ── Routes ──
+const updateRoleSchema = z.object({
+  role: z.enum(ASSIGNABLE_ROLES),
+});
 
-/**
- * GET /
- * Returns the current user's organization.
- */
+// ── GET / ─────────────────────────────────────────────────────────────────
+
 orgRoutes.get("/", async (c) => {
   const user = getUser(c);
 
@@ -72,54 +103,49 @@ orgRoutes.get("/", async (c) => {
   return c.json({ data: org });
 });
 
-/**
- * PATCH /
- * Update organization name or slug. Owner/admin only.
- */
-orgRoutes.patch("/", zValidator("json", updateOrgSchema, validationHook), async (c) => {
-  const user = getUser(c);
-  const body = c.req.valid("json");
+// ── PATCH / ───────────────────────────────────────────────────────────────
 
-  if (user.role !== "owner" && user.role !== "admin") {
-    throw new ForbiddenError("Only owners and admins can update the organization");
-  }
+orgRoutes.patch(
+  "/",
+  requireCapability("org.update"),
+  zValidator("json", updateOrgSchema, validationHook),
+  async (c) => {
+    const user = getUser(c);
+    const body = c.req.valid("json");
 
-  if (!body.name && !body.slug) {
-    throw new BadRequestError("At least one field (name or slug) is required");
-  }
-
-  // Check slug uniqueness if updating
-  if (body.slug) {
-    const existingSlug = await db
-      .selectFrom("organizations")
-      .select("id")
-      .where("slug", "=", body.slug)
-      .where("id", "!=", user.organizationId)
-      .executeTakeFirst();
-
-    if (existingSlug) {
-      throw new BadRequestError("This slug is already taken");
+    if (!body.name && !body.slug) {
+      throw new BadRequestError("At least one field (name or slug) is required");
     }
-  }
 
-  const org = await db
-    .updateTable("organizations")
-    .set({
-      ...(body.name && { name: body.name }),
-      ...(body.slug && { slug: body.slug }),
-      updatedAt: new Date(),
-    })
-    .where("id", "=", user.organizationId)
-    .returning(["id", "name", "slug", "subscriptionTier"])
-    .executeTakeFirstOrThrow();
+    if (body.slug) {
+      const existingSlug = await db
+        .selectFrom("organizations")
+        .select("id")
+        .where("slug", "=", body.slug)
+        .where("id", "!=", user.organizationId)
+        .executeTakeFirst();
+      if (existingSlug) {
+        throw new BadRequestError("This slug is already taken");
+      }
+    }
 
-  return c.json({ data: org });
-});
+    const org = await db
+      .updateTable("organizations")
+      .set({
+        ...(body.name && { name: body.name }),
+        ...(body.slug && { slug: body.slug }),
+        updatedAt: new Date(),
+      })
+      .where("id", "=", user.organizationId)
+      .returning(["id", "name", "slug", "subscriptionTier"])
+      .executeTakeFirstOrThrow();
 
-/**
- * GET /members
- * List all members in the organization.
- */
+    return c.json({ data: org });
+  },
+);
+
+// ── GET /members ──────────────────────────────────────────────────────────
+
 orgRoutes.get("/members", async (c) => {
   const user = getUser(c);
 
@@ -133,81 +159,183 @@ orgRoutes.get("/members", async (c) => {
   return c.json({ data: members });
 });
 
-/**
- * POST /invite
- * Invite a user to the organization. Owner/admin only.
- */
-orgRoutes.post("/invite", zValidator("json", inviteSchema, validationHook), async (c) => {
-  const user = getUser(c);
-  const { email, role } = c.req.valid("json");
+// ── GET /invites ──────────────────────────────────────────────────────────
 
-  if (user.role !== "owner" && user.role !== "admin") {
-    throw new ForbiddenError("Only owners and admins can invite members");
-  }
+orgRoutes.get(
+  "/invites",
+  requireCapability("team.invite"),
+  async (c) => {
+    const user = getUser(c);
+    const invites = await listPendingInvites(user.organizationId);
+    return c.json({ data: invites });
+  },
+);
 
-  // Check if user already exists in this org
-  const existing = await db
-    .selectFrom("users")
-    .select("id")
-    .where("email", "=", email)
-    .where("organizationId", "=", user.organizationId)
-    .executeTakeFirst();
+// ── POST /invites ─────────────────────────────────────────────────────────
 
-  if (existing) {
-    throw new BadRequestError("User is already a member of this organization");
-  }
+orgRoutes.post(
+  "/invites",
+  requireCapability("team.invite"),
+  zValidator("json", inviteSchema, validationHook),
+  async (c) => {
+    const user = getUser(c);
+    const { email, role } = c.req.valid("json");
 
-  // For now, create a placeholder user record.
-  // In a real implementation, this would send an invite email.
-  log.info("Org invite sent", {
-    source: "org",
-    invitedEmail: email,
-    role,
-    invitedBy: user.id,
-    orgId: user.organizationId,
-  });
+    const invite = await createInvite({
+      organizationId: user.organizationId,
+      invitedByUserId: user.id,
+      email,
+      role,
+    });
 
-  return c.json({ message: "Invite sent", email, role }, 201);
-});
+    log.info("Org invite sent", {
+      source: "org",
+      feature: "invite",
+      orgId: user.organizationId,
+      invitedBy: user.id,
+      to: email,
+      role,
+    });
 
-/**
- * DELETE /members/:userId
- * Remove a member from the organization. Owner only.
- */
-orgRoutes.delete("/members/:userId", async (c) => {
-  const user = getUser(c);
-  const targetUserId = c.req.param("userId") as string;
+    return c.json({ data: invite }, 201);
+  },
+);
 
-  if (user.role !== "owner") {
-    throw new ForbiddenError("Only the owner can remove members");
-  }
+// ── DELETE /invites/:id ───────────────────────────────────────────────────
 
-  if (targetUserId === user.id) {
-    throw new BadRequestError("Cannot remove yourself from the organization");
-  }
+orgRoutes.delete(
+  "/invites/:id",
+  requireCapability("team.invite"),
+  async (c) => {
+    const user = getUser(c);
+    const inviteId = c.req.param("id") as string;
 
-  const target = await db
-    .selectFrom("users")
-    .select(["id", "role"])
-    .where("id", "=", targetUserId)
-    .where("organizationId", "=", user.organizationId)
-    .executeTakeFirst();
+    await revokeInvite({ inviteId, organizationId: user.organizationId });
 
-  if (!target) {
-    throw new NotFoundError("User", targetUserId);
-  }
+    log.info("Org invite revoked", {
+      source: "org",
+      feature: "invite",
+      orgId: user.organizationId,
+      revokedBy: user.id,
+      inviteId,
+    });
 
-  if (target.role === "owner") {
-    throw new ForbiddenError("Cannot remove the organization owner");
-  }
+    return c.json({ ok: true });
+  },
+);
 
-  // Remove the user record (or mark as removed -- for now, delete)
-  await db
-    .deleteFrom("users")
-    .where("id", "=", targetUserId)
-    .execute();
+// ── PATCH /members/:userId/role ───────────────────────────────────────────
 
-  return c.json({ ok: true });
-});
+orgRoutes.patch(
+  "/members/:userId/role",
+  requireCapability("team.update_role"),
+  zValidator("json", updateRoleSchema, validationHook),
+  async (c) => {
+    const user = getUser(c);
+    const targetUserId = c.req.param("userId") as string;
+    const { role } = c.req.valid("json");
+
+    if (targetUserId === user.id) {
+      throw new BadRequestError(
+        "You cannot change your own role. Ask another admin or the owner.",
+      );
+    }
+
+    const target = await db
+      .selectFrom("users")
+      .select(["id", "role"])
+      .where("id", "=", targetUserId)
+      .where("organizationId", "=", user.organizationId)
+      .executeTakeFirst();
+    if (!target) {
+      throw new NotFoundError("User", targetUserId);
+    }
+
+    if (!canManage(user.role, target.role)) {
+      throw new ForbiddenError(
+        target.role === "owner"
+          ? "Cannot change the role of the organization owner."
+          : "Only the owner can change another admin's role.",
+      );
+    }
+
+    const updated = await db
+      .updateTable("users")
+      .set({ role, updatedAt: new Date() })
+      .where("id", "=", targetUserId)
+      .returning(["id", "email", "name", "role"])
+      .executeTakeFirstOrThrow();
+
+    log.info("Org member role changed", {
+      source: "org",
+      feature: "role-change",
+      orgId: user.organizationId,
+      changedBy: user.id,
+      targetUserId,
+      from: target.role,
+      to: role,
+    });
+
+    return c.json({ data: updated });
+  },
+);
+
+// ── DELETE /members/:userId ───────────────────────────────────────────────
+
+orgRoutes.delete(
+  "/members/:userId",
+  requireCapability("team.remove"),
+  async (c) => {
+    const user = getUser(c);
+    const targetUserId = c.req.param("userId") as string;
+
+    if (targetUserId === user.id) {
+      throw new BadRequestError("Cannot remove yourself from the organization");
+    }
+
+    const target = await db
+      .selectFrom("users")
+      .select(["id", "role"])
+      .where("id", "=", targetUserId)
+      .where("organizationId", "=", user.organizationId)
+      .executeTakeFirst();
+    if (!target) {
+      throw new NotFoundError("User", targetUserId);
+    }
+
+    if (!canManage(user.role, target.role)) {
+      throw new ForbiddenError(
+        target.role === "owner"
+          ? "Cannot remove the organization owner."
+          : "Only the owner can remove another admin.",
+      );
+    }
+
+    // SOFT-DISCONNECT, not hard-delete. The user row stays — sessions,
+    // oauth bindings, audit history all persist. Clearing organizationId
+    // detaches them; resetting role to 'viewer' so the column isn't
+    // misleading if they ever re-join. Re-inviting them lands cleanly via
+    // the same flow as an invite to a never-seen-before email.
+    await db
+      .updateTable("users")
+      .set({
+        organizationId: null,
+        role: "viewer",
+        updatedAt: new Date(),
+      })
+      .where("id", "=", targetUserId)
+      .execute();
+
+    log.info("Org member removed (soft-disconnected)", {
+      source: "org",
+      feature: "remove",
+      orgId: user.organizationId,
+      removedBy: user.id,
+      targetUserId,
+    });
+
+    return c.json({ ok: true });
+  },
+);
 
 export { orgRoutes };

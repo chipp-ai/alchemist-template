@@ -105,12 +105,16 @@ export interface InvitesTable {
   role: string;
   token: string;
   acceptedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  /** Set when an admin revokes a pending invite. NULL = not revoked. */
+  revokedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
   expiresAt: Date;
   createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
 }
 
 export type Invite = Selectable<InvitesTable>;
 export type NewInvite = Insertable<InvitesTable>;
+export type InviteUpdate = Updateable<InvitesTable>;
 
 // ── billing schema ──
 

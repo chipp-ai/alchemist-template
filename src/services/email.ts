@@ -70,6 +70,84 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   }
 }
 
+// ── Invite Email ────────────────────────────────────────────────────────────
+
+interface SendInviteEmailOptions {
+  to: string;
+  /** Inviter's display name; falls back to inviterEmail when null/empty. */
+  inviterName: string | null;
+  inviterEmail: string;
+  organizationName: string;
+  /** UI label for the role being offered ("Editor", "Admin", "Viewer"). */
+  roleLabel: string;
+  acceptUrl: string;
+  expiresAt: Date;
+}
+
+/**
+ * Send an invite email to a prospective team member.
+ *
+ * Falls back to console.log in dev (when SMTP isn't configured) — the
+ * acceptUrl is logged so the agent can grab it during local testing
+ * without a real mailbox.
+ */
+export async function sendInviteEmail(opts: SendInviteEmailOptions): Promise<void> {
+  const appName = Deno.env.get("APP_NAME") ?? "Alchemist";
+  const inviterDisplay = opts.inviterName?.trim() || opts.inviterEmail;
+
+  // "Expires in N days" copy. Floors so a 6.99-day-old invite reads "6 days".
+  const msUntilExpiry = opts.expiresAt.getTime() - Date.now();
+  const daysLeft = Math.max(1, Math.floor(msUntilExpiry / (1000 * 60 * 60 * 24)));
+
+  await sendEmail({
+    to: opts.to,
+    subject: `${inviterDisplay} invited you to ${opts.organizationName} on ${appName}`,
+    text: [
+      `${inviterDisplay} invited you to join ${opts.organizationName} on ${appName}`,
+      `as ${opts.roleLabel}.`,
+      "",
+      "Accept the invite:",
+      opts.acceptUrl,
+      "",
+      `This invite expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}.`,
+      "",
+      `If you don't recognize the sender, you can safely ignore this email.`,
+    ].join("\n"),
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+        <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 8px;">You're invited</h2>
+        <p style="color: #374151; font-size: 14px; margin-bottom: 24px;">
+          <strong>${escapeHtml(inviterDisplay)}</strong> invited you to join
+          <strong>${escapeHtml(opts.organizationName)}</strong> on ${escapeHtml(appName)}
+          as <strong>${escapeHtml(opts.roleLabel)}</strong>.
+        </p>
+        <p style="margin-bottom: 24px;">
+          <a href="${opts.acceptUrl}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 8px; font-weight: 600; font-size: 14px;">Accept invite</a>
+        </p>
+        <p style="color: #6b7280; font-size: 12px; word-break: break-all;">
+          Or paste this link into your browser:<br>
+          <a href="${opts.acceptUrl}" style="color: #2563eb;">${opts.acceptUrl}</a>
+        </p>
+        <p style="color: #9ca3af; font-size: 12px; margin-top: 24px;">
+          This invite expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}.
+          If you don't recognize the sender, you can safely ignore this email.
+        </p>
+      </div>
+    `,
+  });
+}
+
+/** Minimal HTML escape for invite email interpolation. Only safe for
+ *  text nodes + attribute values, which is all we use it for here. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // ── OTP Email ───────────────────────────────────────────────────────────────
 
 export async function sendOtpEmail(to: string, otpCode: string): Promise<void> {
