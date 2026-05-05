@@ -149,14 +149,19 @@ export type NewJobHistory = Insertable<JobHistoryTable>;
 
 // ── Database interface ──
 // Register your domain tables here.
+//
+// Tables are unqualified -- the customer's DB role has its `search_path` set
+// to `<their_schema>, public`, so unqualified queries resolve into their own
+// schema. See `db/migrations/001_initial_schema.sql` for the rationale.
+// Local dev against a single Postgres also works (default search_path).
 
 export interface Database {
-  "app.organizations": OrganizationsTable;
-  "app.users": UsersTable;
-  "app.otps": OtpsTable;
-  "app.sessions": SessionsTable;
-  "app.api_credentials": ApiCredentialsTable;
-  "app.invites": InvitesTable;
-  "billing.token_usage": TokenUsageTable;
-  "jobs.history": JobHistoryTable;
+  organizations: OrganizationsTable;
+  users: UsersTable;
+  otps: OtpsTable;
+  sessions: SessionsTable;
+  api_credentials: ApiCredentialsTable;
+  invites: InvitesTable;
+  token_usage: TokenUsageTable;
+  job_history: JobHistoryTable;
 }

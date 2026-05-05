@@ -52,7 +52,7 @@ billingRoutes.get("/subscription", requireAuth, async (c) => {
   const user = getUser(c);
 
   const org = await db
-    .selectFrom("app.organizations")
+    .selectFrom("organizations")
     .select([
       "id",
       "subscriptionTier",
@@ -112,7 +112,7 @@ billingRoutes.post(
     }
 
     const org = await db
-      .selectFrom("app.organizations")
+      .selectFrom("organizations")
       .select("stripeCustomerId")
       .where("id", "=", user.organizationId)
       .executeTakeFirstOrThrow();
@@ -159,7 +159,7 @@ billingRoutes.post(
     }
 
     const org = await db
-      .selectFrom("app.organizations")
+      .selectFrom("organizations")
       .select(["id", "stripeCustomerId"])
       .where("id", "=", user.organizationId)
       .executeTakeFirstOrThrow();
@@ -182,7 +182,7 @@ billingRoutes.post(
         customerId = customer.id;
 
         await db
-          .updateTable("app.organizations")
+          .updateTable("organizations")
           .set({ stripeCustomerId: customerId })
           .where("id", "=", user.organizationId)
           .execute();
@@ -262,7 +262,7 @@ billingRoutes.post("/webhook", async (c) => {
 
       const tier = mapSubscriptionToTier(subscription);
       await db
-        .updateTable("app.organizations")
+        .updateTable("organizations")
         .set({
           subscriptionTier: tier,
           stripeSubscriptionId: subscription.id,
@@ -287,7 +287,7 @@ billingRoutes.post("/webhook", async (c) => {
       if (!orgId) break;
 
       await db
-        .updateTable("app.organizations")
+        .updateTable("organizations")
         .set({
           subscriptionTier: "FREE",
           stripeSubscriptionId: null,

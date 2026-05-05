@@ -51,7 +51,7 @@ orgRoutes.get("/", async (c) => {
   const user = getUser(c);
 
   const org = await db
-    .selectFrom("app.organizations")
+    .selectFrom("organizations")
     .select([
       "id",
       "name",
@@ -91,7 +91,7 @@ orgRoutes.patch("/", zValidator("json", updateOrgSchema, validationHook), async 
   // Check slug uniqueness if updating
   if (body.slug) {
     const existingSlug = await db
-      .selectFrom("app.organizations")
+      .selectFrom("organizations")
       .select("id")
       .where("slug", "=", body.slug)
       .where("id", "!=", user.organizationId)
@@ -103,7 +103,7 @@ orgRoutes.patch("/", zValidator("json", updateOrgSchema, validationHook), async 
   }
 
   const org = await db
-    .updateTable("app.organizations")
+    .updateTable("organizations")
     .set({
       ...(body.name && { name: body.name }),
       ...(body.slug && { slug: body.slug }),
@@ -124,7 +124,7 @@ orgRoutes.get("/members", async (c) => {
   const user = getUser(c);
 
   const members = await db
-    .selectFrom("app.users")
+    .selectFrom("users")
     .select(["id", "email", "name", "picture", "role", "lastLoginAt", "createdAt"])
     .where("organizationId", "=", user.organizationId)
     .orderBy("createdAt", "asc")
@@ -147,7 +147,7 @@ orgRoutes.post("/invite", zValidator("json", inviteSchema, validationHook), asyn
 
   // Check if user already exists in this org
   const existing = await db
-    .selectFrom("app.users")
+    .selectFrom("users")
     .select("id")
     .where("email", "=", email)
     .where("organizationId", "=", user.organizationId)
@@ -187,7 +187,7 @@ orgRoutes.delete("/members/:userId", async (c) => {
   }
 
   const target = await db
-    .selectFrom("app.users")
+    .selectFrom("users")
     .select(["id", "role"])
     .where("id", "=", targetUserId)
     .where("organizationId", "=", user.organizationId)
@@ -203,7 +203,7 @@ orgRoutes.delete("/members/:userId", async (c) => {
 
   // Remove the user record (or mark as removed -- for now, delete)
   await db
-    .deleteFrom("app.users")
+    .deleteFrom("users")
     .where("id", "=", targetUserId)
     .execute();
 

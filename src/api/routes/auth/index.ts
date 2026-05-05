@@ -112,7 +112,7 @@ authRoutes.post("/send-otp", zValidator("json", sendOtpSchema, validationHook), 
 
   // Delete any existing OTPs for this email
   await db
-    .deleteFrom("app.otps")
+    .deleteFrom("otps")
     .where("email", "=", email)
     .execute();
 
@@ -120,7 +120,7 @@ authRoutes.post("/send-otp", zValidator("json", sendOtpSchema, validationHook), 
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
   await db
-    .insertInto("app.otps")
+    .insertInto("otps")
     .values({
       email,
       otpCode,
@@ -148,7 +148,7 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
 
   // Look up the OTP
   const otp = await db
-    .selectFrom("app.otps")
+    .selectFrom("otps")
     .selectAll()
     .where("email", "=", email)
     .where("expiresAt", ">", new Date())
@@ -161,7 +161,7 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
   // Check max attempts
   if (otp.attempts >= 5) {
     await db
-      .deleteFrom("app.otps")
+      .deleteFrom("otps")
       .where("id", "=", otp.id)
       .execute();
     throw new UnauthorizedError("Too many attempts. Request a new code.");
@@ -171,7 +171,7 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
   if (otp.otpCode !== otpCode) {
     // Increment attempts in a separate query so it commits even if we throw
     await db
-      .updateTable("app.otps")
+      .updateTable("otps")
       .set({ attempts: otp.attempts + 1 })
       .where("id", "=", otp.id)
       .execute();
@@ -180,13 +180,13 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
 
   // Code matches -- delete the OTP
   await db
-    .deleteFrom("app.otps")
+    .deleteFrom("otps")
     .where("id", "=", otp.id)
     .execute();
 
   // Look up or create user
   let user = await db
-    .selectFrom("app.users")
+    .selectFrom("users")
     .select(["id", "email", "name", "role", "organizationId"])
     .where("email", "=", email)
     .executeTakeFirst();
@@ -200,7 +200,7 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
 
     const result = await db.transaction().execute(async (trx) => {
       const org = await trx
-        .insertInto("app.organizations")
+        .insertInto("organizations")
         .values({
           name: `${displayName}'s Organization`,
           slug: orgSlug,
@@ -211,7 +211,7 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
         .executeTakeFirstOrThrow();
 
       const newUser = await trx
-        .insertInto("app.users")
+        .insertInto("users")
         .values({
           email,
           name: displayName,
@@ -230,13 +230,13 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
   } else {
     // Update existing user
     await db
-      .updateTable("app.users")
+      .updateTable("users")
       .set({ emailVerified: true, lastLoginAt: new Date() })
       .where("id", "=", user.id)
       .execute();
 
     organization = await db
-      .selectFrom("app.organizations")
+      .selectFrom("organizations")
       .select(["id", "name", "slug", "subscriptionTier"])
       .where("id", "=", user.organizationId!)
       .executeTakeFirst();
@@ -285,7 +285,7 @@ authRoutes.get("/me", requireAuth, async (c) => {
   const user = getUser(c);
 
   const org = await db
-    .selectFrom("app.organizations")
+    .selectFrom("organizations")
     .select(["id", "name", "slug", "subscriptionTier"])
     .where("id", "=", user.organizationId)
     .executeTakeFirst();
@@ -456,7 +456,7 @@ authRoutes.get("/:provider/callback", async (c) => {
 
   // ── Find or create user ──────────────────────────────────────────────
   let user = await db
-    .selectFrom("app.users")
+    .selectFrom("users")
     .select(["id", "email", "name", "role", "organizationId"])
     .where("email", "=", mapped.email)
     .executeTakeFirst();
@@ -467,7 +467,7 @@ authRoutes.get("/:provider/callback", async (c) => {
 
     const result = await db.transaction().execute(async (trx) => {
       const org = await trx
-        .insertInto("app.organizations")
+        .insertInto("organizations")
         .values({
           name: `${displayName}'s Organization`,
           slug: orgSlug,
@@ -478,7 +478,7 @@ authRoutes.get("/:provider/callback", async (c) => {
         .executeTakeFirstOrThrow();
 
       const newUser = await trx
-        .insertInto("app.users")
+        .insertInto("users")
         .values({
           email: mapped.email,
           name: mapped.name,
@@ -501,7 +501,7 @@ authRoutes.get("/:provider/callback", async (c) => {
     // (e.g. user previously signed in with Google, now coming back via
     // GitHub on the same email) is allowed and updates the linkage.
     await db
-      .updateTable("app.users")
+      .updateTable("users")
       .set({
         oauthProvider: provider.id,
         oauthId: mapped.providerUserId,

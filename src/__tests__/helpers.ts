@@ -71,7 +71,7 @@ export async function createIsolatedUser(
 
   // Create org
   const orgRow = await db
-    .insertInto("app.organizations")
+    .insertInto("organizations")
     .values({
       name: orgName,
       slug: orgSlug,
@@ -83,7 +83,7 @@ export async function createIsolatedUser(
 
   // Create user
   const userRow = await db
-    .insertInto("app.users")
+    .insertInto("users")
     .values({
       email,
       name: `Test User ${id}`,
@@ -98,7 +98,7 @@ export async function createIsolatedUser(
     try {
       // Deleting the org cascades to users and all related records
       await db
-        .deleteFrom("app.organizations")
+        .deleteFrom("organizations")
         .where("id", "=", orgRow.id)
         .execute();
     } catch {

@@ -89,7 +89,7 @@ async function resolveUser(payload: jose.JWTPayload): Promise<AuthUser | null> {
   try {
     const user = await withTimeout(3000, (trx) =>
       trx
-        .selectFrom("app.users")
+        .selectFrom("users")
         .select(["id", "email", "name", "organizationId", "role"])
         .where("id", "=", userId)
         .executeTakeFirst()

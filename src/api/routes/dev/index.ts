@@ -80,14 +80,14 @@ async function findOrCreateUserWithOrg(
 }> {
   // Already exists?
   const existing = await db
-    .selectFrom("app.users")
+    .selectFrom("users")
     .select(["id", "email", "name", "role", "organizationId"])
     .where("email", "=", email)
     .executeTakeFirst();
 
   if (existing && existing.organizationId) {
     const org = await db
-      .selectFrom("app.organizations")
+      .selectFrom("organizations")
       .select(["id", "name", "slug", "subscriptionTier"])
       .where("id", "=", existing.organizationId)
       .executeTakeFirstOrThrow();
@@ -103,7 +103,7 @@ async function findOrCreateUserWithOrg(
 
   return await db.transaction().execute(async (trx) => {
     const org = await trx
-      .insertInto("app.organizations")
+      .insertInto("organizations")
       .values({
         name: `${displayName}'s Organization`,
         slug: orgSlug,
@@ -114,7 +114,7 @@ async function findOrCreateUserWithOrg(
       .executeTakeFirstOrThrow();
 
     const user = await trx
-      .insertInto("app.users")
+      .insertInto("users")
       .values({
         email,
         name: displayName,
@@ -185,10 +185,11 @@ devRoutes.post(
 // (a) `users` — bulk create users with their own orgs. Each entry
 //     follows the same login shape. Returns an array of { user, organization }.
 //
-// (b) `raw` — ad-hoc inserts against any app./billing./jobs. table.
-//     Each entry is { table: "app.foo", rows: [{...}] }. Rows pass
+// (b) `raw` — ad-hoc inserts against any registered table.
+//     Each entry is { table: "users", rows: [{...}] }. Rows pass
 //     through Kysely .values() unchanged — caller is responsible for
-//     column shapes.
+//     column shapes. Tables are unqualified (single-schema customer
+//     runtime; see db/migrations/001_initial_schema.sql).
 //
 // Both modes can be supplied in one call. Operations run inside a
 // single transaction so a failure rolls back everything.
@@ -205,10 +206,10 @@ const seedSchema = z.object({
   raw: z
     .array(
       z.object({
-        // Table name with schema prefix, e.g. "app.users".
+        // Unqualified table name, e.g. "users", "token_usage".
         table: z
           .string()
-          .regex(/^(app|billing|jobs)\.[a-z_][a-z0-9_]*$/i, "table must be schema-qualified (app./billing./jobs.)"),
+          .regex(/^[a-z_][a-z0-9_]*$/i, "table must be a valid unqualified identifier"),
         rows: z.array(z.record(z.string(), z.unknown())).min(1).max(500),
       }),
     )
@@ -232,13 +233,13 @@ devRoutes.post(
           // idempotent across re-runs (handy when the agent reseeds
           // mid-flow without resetting first).
           const existing = await trx
-            .selectFrom("app.users")
+            .selectFrom("users")
             .select(["id", "email", "name", "role", "organizationId"])
             .where("email", "=", u.email)
             .executeTakeFirst();
           if (existing && existing.organizationId) {
             const org = await trx
-              .selectFrom("app.organizations")
+              .selectFrom("organizations")
               .select(["id", "name", "slug"])
               .where("id", "=", existing.organizationId)
               .executeTakeFirstOrThrow();
@@ -248,7 +249,7 @@ devRoutes.post(
           const displayName = u.name ?? u.email.split("@")[0];
           const orgSlug = slugify(displayName) + "-" + Math.random().toString(36).slice(2, 8);
           const org = await trx
-            .insertInto("app.organizations")
+            .insertInto("organizations")
             .values({
               name: `${displayName}'s Organization`,
               slug: orgSlug,
@@ -258,7 +259,7 @@ devRoutes.post(
             .returning(["id", "name", "slug"])
             .executeTakeFirstOrThrow();
           const user = await trx
-            .insertInto("app.users")
+            .insertInto("users")
             .values({
               email: u.email,
               name: displayName,
@@ -301,29 +302,28 @@ devRoutes.post(
 // ── POST /api/dev/reset ──
 //
 // Truncates the schema. Two modes:
-//   (a) Default — wipes app.users / app.organizations / app.otps /
-//       app.sessions / app.invites, billing.token_usage, jobs.history.
-//       Schemas + tables remain; only rows go.
+//   (a) Default — wipes users / organizations / otps / sessions / invites,
+//       token_usage, job_history. Tables remain; only rows go.
 //   (b) `tables: [...]` — caller-specified subset of TRUNCATE-able
-//       tables. Same regex-validated table name shape as /seed.
+//       tables. Same regex-validated unqualified table name shape as /seed.
 
 const resetSchema = z.object({
   tables: z
     .array(
-      z.string().regex(/^(app|billing|jobs)\.[a-z_][a-z0-9_]*$/i),
+      z.string().regex(/^[a-z_][a-z0-9_]*$/i),
     )
     .optional(),
 });
 
 const DEFAULT_TRUNCATE_TABLES = [
-  "billing.token_usage",
-  "jobs.history",
-  "app.api_credentials",
-  "app.invites",
-  "app.sessions",
-  "app.otps",
-  "app.users",
-  "app.organizations",
+  "token_usage",
+  "job_history",
+  "api_credentials",
+  "invites",
+  "sessions",
+  "otps",
+  "users",
+  "organizations",
 ];
 
 devRoutes.post(
