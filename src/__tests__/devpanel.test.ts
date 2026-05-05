@@ -217,6 +217,31 @@ deno("source: app.ts mounts recentActivityMiddleware gated on non-prod", async (
   }
 });
 
+deno("source: push pipeline doesn't dedup on shallow signature (live-bug regression guard)", async () => {
+  // Earlier the push pipeline computed a "shallow signature" of
+  // {route, storeOrder, viewport} to skip pushes that looked
+  // unchanged. That signature excluded actual store CONTENTS — so
+  // when an auth flag flipped or a cart item was added, the route
+  // and storeOrder didn't change, the signature matched, and the
+  // push silently dropped. Smoke test against the live SPA caught it
+  // (see commit message). This test pins the no-dedup invariant so
+  // the optimization can't sneak back without explicit consideration.
+  const src = await Deno.readTextFile(
+    new URL("../../web/src/lib/devpanel/push.svelte.ts", import.meta.url),
+  );
+  if (src.includes("lastPushedHash")) {
+    throw new Error(
+      "push.svelte.ts brings back lastPushedHash dedup — that signature " +
+        "necessarily either (a) excludes store contents (silently drops " +
+        "store-content changes — the load-bearing case), or (b) " +
+        "re-stringifies every store on every push to compare strings " +
+        "(wasteful — the 1s debounce + 5s heartbeat already cap " +
+        "bandwidth). If you have a third option, document why this " +
+        "regression test should be deleted before doing it.",
+    );
+  }
+});
+
 deno("source: dev-routes register POST and GET /app-state", async () => {
   const src = await Deno.readTextFile(
     new URL("../api/routes/dev/index.ts", import.meta.url),

@@ -37,7 +37,6 @@ const HEARTBEAT_MS = 5000;
 let debounceTimer: number | null = null;
 let heartbeatInterval: number | null = null;
 let unsubscribeFromStores: (() => void) | null = null;
-let lastPushedHash: string | null = null;
 
 /**
  * Schedule a push, debounced so a burst of store writes coalesces
@@ -62,19 +61,16 @@ export async function pushNow(): Promise<void> {
 
   try {
     const snapshot = collectClientSnapshot();
-    // Skip if nothing has changed AND we've pushed recently. Cheap
-    // shallow signature: timestamp + first store name + viewport.
-    // Skipping reduces noise in the local dev log.
-    const sig = JSON.stringify({
-      route: snapshot.route.path,
-      stores: snapshot.storeOrder,
-      viewport: snapshot.viewport,
-    });
-    if (sig === lastPushedHash) return;
-    lastPushedHash = sig;
-
     const markdown = formatSnapshotAsMarkdown(snapshot);
 
+    // Earlier versions did a shallow-signature dedup (route + storeOrder +
+    // viewport) to skip "no-change" pushes. That excluded actual store
+    // CONTENTS, so when an auth field flipped or a cart item was added the
+    // signature stayed identical and the push silently dropped — which is
+    // the load-bearing change to surface, not the one to skip. The 1s
+    // debounce + 5s heartbeat already cap wasted bandwidth; computing a
+    // content-aware hash on every snapshot would re-stringify the entire
+    // store graph just to compare strings. Drop the dedup, always send.
     await fetch("/api/dev/app-state", {
       method: "POST",
       credentials: "include",
@@ -136,5 +132,4 @@ export function stopDevPanelPush(): void {
     window.removeEventListener("hashchange", schedulePush);
     window.removeEventListener("resize", schedulePush);
   }
-  lastPushedHash = null;
 }
