@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { push } from "svelte-spa-router";
   import { authStore } from "../stores/auth.svelte";
   import { api } from "../lib/api";
@@ -12,7 +13,11 @@
   let googleEnabled = $state(false);
   let resendMessage = $state<string | null>(null);
 
-  $effect(() => {
+  // One-shot fetch on mount. Use onMount, NOT $effect — see CLAUDE.md
+  // → "Stores: $effect on mount is a trap; use onMount". The .then()
+  // callback writes `googleEnabled` ($state); inside an $effect that
+  // write would attribute as a dep and loop the request.
+  onMount(() => {
     api.get<{ googleEnabled: boolean }>("/auth/config").then((data) => {
       googleEnabled = data.googleEnabled;
     }).catch(() => {});

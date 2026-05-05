@@ -1,8 +1,13 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { authStore } from "../stores/auth.svelte";
   import { orgStore } from "../stores/organization.svelte";
 
-  $effect(() => {
+  // One-shot fetch on mount. Use onMount, NOT $effect — see CLAUDE.md
+  // → "Stores: $effect on mount is a trap; use onMount". fetchOrg()
+  // writes `state.currentOrg`, and inside an $effect that write would
+  // attribute as a dep and re-fetch in a tight loop.
+  onMount(() => {
     orgStore.fetchOrg();
   });
 </script>

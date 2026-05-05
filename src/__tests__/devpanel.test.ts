@@ -217,6 +217,75 @@ deno("source: app.ts mounts recentActivityMiddleware gated on non-prod", async (
   }
 });
 
+deno("source: no $effect-on-mount loops in *.svelte components (live-bug regression guard)", async () => {
+  // Live test caught a pre-existing template bug: components used
+  //   $effect(() => { someStore.fetchSomething(); })
+  // for one-shot mount-time side effects. Synchronously writing to a
+  // $state inside the effect body causes Svelte 5's internal read-for-
+  // comparison to attribute the read to the currently-running effect,
+  // which then re-runs when the value flips back, looping the fetch.
+  // Reproduced: 24K /auth/me requests in 13min before the fix.
+  //
+  // The right tool is `onMount`. This lint scans every component for
+  // the buggy shape: a $effect whose body calls a single store/api
+  // method with no reactive-read guard. Allowed shapes:
+  //   - $effect that EXPLICITLY reads a reactive value at the top:
+  //       $effect(() => { if (authStore.isLoading) return; ... });
+  //   - $effect that RETURNS a cleanup (interval / listener teardown):
+  //       $effect(() => { setInterval(...); return () => clearInterval(...); });
+  //   - $effect with no calls (rare; pure tracker).
+  //
+  // The lint is conservative: any $effect inside a *.svelte file that
+  // imports from `../stores/` or `../lib/api` AND doesn't reference
+  // `onMount` from "svelte" is suspicious unless the effect body
+  // reads a reactive value (heuristic: contains an `if (` referencing
+  // a store field, or returns a teardown).
+  const svelteFiles: string[] = [];
+  async function walk(dir: URL) {
+    for await (const entry of Deno.readDir(dir)) {
+      const sub = new URL(`${entry.name}${entry.isDirectory ? "/" : ""}`, dir);
+      if (entry.isDirectory) await walk(sub);
+      else if (entry.name.endsWith(".svelte")) svelteFiles.push(sub.pathname);
+    }
+  }
+  await walk(new URL("../../web/src/", import.meta.url));
+
+  const offenders: string[] = [];
+  for (const path of svelteFiles) {
+    const src = await Deno.readTextFile(path);
+    // Find every $effect block. Match `$effect(()  =>  { ... })`
+    // non-greedy across newlines. Cheap regex; not a real parser, but
+    // sufficient because every offending shape is `$effect(() => {`.
+    const effects = [...src.matchAll(/\$effect\s*\(\s*\(\s*\)\s*=>\s*\{([\s\S]*?)\}\s*\)\s*;/g)];
+    for (const match of effects) {
+      const body = match[1];
+      // Allowed: body reads reactive state via `if (...)`, returns a
+      // teardown, or is a pure no-op.
+      const hasReactiveGuard = /^\s*if\s*\(/m.test(body);
+      const hasTeardown = /\breturn\s*\(\)\s*=>/m.test(body) ||
+        /\breturn\s+\w+\s*;?\s*$/m.test(body);
+      // Buggy shape: body calls a method on a *Store or api.* and
+      // doesn't fall under either allowance.
+      const callsStoreOrApi = /(?:Store|store)\.\w+\s*\(|api\.\w+\s*\(/m
+        .test(body);
+      if (callsStoreOrApi && !hasReactiveGuard && !hasTeardown) {
+        offenders.push(`${path.split("/web/src/")[1] ?? path}: ${match[0].slice(0, 80)}...`);
+      }
+    }
+  }
+
+  if (offenders.length > 0) {
+    throw new Error(
+      `${offenders.length} $effect-on-mount sites found in *.svelte ` +
+        `files. These call a store/api method without a reactive-read ` +
+        `guard and without a cleanup return — the canonical loop shape ` +
+        `that fired 24K /auth/me requests in 13min during live testing. ` +
+        `Use onMount instead. See CLAUDE.md → "$effect on mount is a ` +
+        `trap; use onMount". Offenders:\n  - ${offenders.join("\n  - ")}`,
+    );
+  }
+});
+
 deno("source: push pipeline doesn't dedup on shallow signature (live-bug regression guard)", async () => {
   // Earlier the push pipeline computed a "shallow signature" of
   // {route, storeOrder, viewport} to skip pushes that looked

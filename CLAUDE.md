@@ -298,6 +298,55 @@ cd web && npm install --silent && npm run build
 
 The build MUST succeed and produce `web/dist/index.html`. The runtime Dockerfile's `web-builder` stage runs the same command — failures here mean the deploy will fail AFTER the push lands. If the build errors with `Cannot use 'export let' in runes mode` or similar, fix the syntax — **do NOT downgrade Svelte to v4 in `package.json`**, that breaks the platform contract.
 
+### `$effect` on mount is a trap — use `onMount` for one-shot side effects
+
+If a side effect should run **once when the component mounts**, use
+`onMount` from `svelte`, NOT `$effect`. The bug this avoids:
+
+```svelte
+<script>
+  // ❌ BAD — runaway loop
+  $effect(() => {
+    authStore.checkAuth();   // synchronously writes state.isLoading = true
+  });
+</script>
+```
+
+Why this loops: Svelte 5's `$effect` tracks reactive reads for re-run.
+When `checkAuth()` synchronously writes `state.isLoading = true`, Svelte
+internally reads the previous value to decide whether to invalidate
+dependents — and that internal read gets attributed to the currently-
+running `$effect` as a tracked dep. When the `finally` block flips
+`state.isLoading = false`, the effect re-runs, calls `checkAuth` again,
+which writes `isLoading = true`, which re-invalidates the effect…
+**unbounded `/auth/me` loop.** (Reproduced live: 24K requests in 13min
+before the fix.)
+
+```svelte
+<script>
+  import { onMount } from "svelte";
+
+  // ✅ GOOD — fires exactly once after mount, no reactive tracking
+  onMount(() => {
+    authStore.checkAuth();
+  });
+</script>
+```
+
+**Rule:** if your `$effect` body would read no reactive value (it just
+calls a fetcher / store action / API method as a one-shot), it's the
+wrong tool. Reach for `onMount`. Reserve `$effect` for code that
+*intentionally* re-runs when reactive state changes (e.g.
+`$effect(() => { if (authStore.isLoading) return; redirectIfNeeded(); })`
+in App.svelte, where reading `isLoading` is the whole point).
+
+The same trap applies to async work that resolves later (e.g.
+`api.get(...).then(data => state.foo = data)` inside an effect): the
+later `.then()` write fires after the tracking phase and *can* be safe,
+but if the synchronous portion of the effect writes ANY reactive value,
+the loop is back. Default to `onMount` for fetchers; reach for `$effect`
+only when the reactivity is intentional.
+
 ### Routing
 
 Hash-based routing via `svelte-spa-router`. Routes defined in `web/src/routes/`.

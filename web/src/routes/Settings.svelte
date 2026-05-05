@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { authStore } from "../stores/auth.svelte";
   import { orgStore } from "../stores/organization.svelte";
   import { api, ApiError } from "../lib/api";
@@ -41,7 +42,11 @@
   let isInviting = $state(false);
   let inviteMessage = $state<string | null>(null);
 
-  $effect(() => {
+  // One-shot data fetch on mount. Use onMount, NOT $effect — see
+  // CLAUDE.md → "Stores: $effect on mount is a trap; use onMount".
+  // fetchOrg / fetchMembers write store state; inside an $effect those
+  // writes would attribute as deps and loop the fetches.
+  onMount(() => {
     orgStore.fetchOrg();
     orgStore.fetchMembers();
   });

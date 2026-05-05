@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { push } from "svelte-spa-router";
   import { authStore } from "../stores/auth.svelte";
   import { api } from "../lib/api";
@@ -17,7 +18,12 @@
   let providers = $state<OAuthProviderConfig[]>([]);
   let resendMessage = $state<string | null>(null);
 
-  $effect(() => {
+  // Fetch the auth config (OAuth providers list) once on mount.
+  // Use onMount, NOT $effect — see CLAUDE.md → "Stores: $effect on
+  // mount is a trap; use onMount". The .then() callback writes to
+  // `providers` ($state), and inside an $effect that write would
+  // attribute itself as a dep, looping the fetch.
+  onMount(() => {
     api.get<{
       otpEnabled: boolean;
       providers: OAuthProviderConfig[];

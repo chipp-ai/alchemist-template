@@ -1,12 +1,24 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import Router, { location, push, replace } from "svelte-spa-router";
   import routes, { publicRoutes } from "./routes";
   import { authStore } from "./stores/auth.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import DevPanel from "./components/DevPanel.svelte";
 
-  // Check auth on mount
-  $effect(() => {
+  // One-shot session check on mount.
+  //
+  // Use onMount, NOT $effect. checkAuth() synchronously writes to the
+  // auth store (`state.isLoading = true`), and Svelte 5's $effect tracks
+  // those writes as deps via its internal read-for-comparison — so the
+  // effect ends up depending on isLoading, the finally-block flips
+  // isLoading back to false, the effect re-runs, calls checkAuth again,
+  // and you get an unbounded /auth/me loop. (Reproduced live: 24K
+  // /auth/me requests in 13min before this fix.) onMount fires exactly
+  // once after mount with no reactive tracking — the right tool for a
+  // one-shot side effect. See CLAUDE.md → "Stores: $effect on mount
+  // is a trap; use onMount".
+  onMount(() => {
     authStore.checkAuth();
   });
 
