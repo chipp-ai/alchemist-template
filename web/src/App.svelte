@@ -3,6 +3,7 @@
   import routes, { publicRoutes } from "./routes";
   import { authStore } from "./stores/auth.svelte";
   import Sidebar from "./components/Sidebar.svelte";
+  import DevPanel from "./components/DevPanel.svelte";
 
   // Check auth on mount
   $effect(() => {
@@ -37,6 +38,14 @@
 {:else}
   <Router {routes} />
 {/if}
+
+<!--
+  Dev panel: floating button + expanded view of every store + recent
+  client errors. Mounts on EVERY route — auth-gated and public alike,
+  so the agent can see app state during signup/login flows too. The
+  component itself short-circuits in production via import.meta.env.PROD.
+-->
+<DevPanel />
 
 <style>
   .loading-screen {

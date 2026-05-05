@@ -368,7 +368,196 @@ devRoutes.get("/info", (c) => {
       "POST /api/dev/reset": {
         body: { tables: "string[]?  // default = all app/billing/jobs tables" },
       },
+      "POST /api/dev/app-state": {
+        purpose:
+          "SPA push endpoint. The dev-panel client (web/src/lib/devpanel/) " +
+          "POSTs the current store snapshot here on every change + 5s heartbeat.",
+        body: { snapshot: "ClientSnapshot", markdown: "string" },
+      },
+      "GET /api/dev/app-state": {
+        purpose:
+          "Read the most recent client snapshot, merged with server-side " +
+          "context (recent requests, recent errors, env). The agent's L1 " +
+          "verification layer hits this BEFORE driving the browser.",
+        returns:
+          "{ client: ClientSnapshot, server: ServerSnapshot, markdown: string }",
+      },
     },
+  });
+});
+
+// ── /app-state — the dev panel's central exchange ──────────────────────────
+//
+// The SPA pushes its current state to POST /app-state on every store
+// change (+ 5s heartbeat). The agent + the in-browser DevPanel read
+// the merged client + server picture from GET /app-state.
+//
+// The endpoint is the contract the alchemist verification + implement
+// agents lean on: "before driving the browser, curl this and read what
+// the running app actually believes."
+//
+// Server-side context the GET response merges in:
+//   - Recent HTTP requests (method, path, status, duration) from the
+//     recent-activity middleware ring buffer.
+//   - Recent errors (message, stack, source) — both request-thrown and
+//     manually recorded.
+//   - Env summary: NODE_ENV, hostname, runtime version.
+//
+// Client snapshots are kept in-memory only (not persisted to disk like
+// chipp-deno's .scratch/app-state.md), because the alchemist customer
+// pod is ephemeral and the agent reads via curl in the same dev
+// session anyway.
+
+import {
+  getRecentRequests,
+  getRecentErrors,
+  type DevRequestRecord,
+  type DevErrorRecord,
+} from "@/lib/dev-activity.ts";
+
+interface ClientSnapshotShape {
+  timestamp: string;
+  route: { hash: string; path: string; params: Record<string, string> };
+  viewport: { width: number; height: number };
+  stores: Record<string, unknown>;
+  recentErrors: Array<{
+    timestamp: string;
+    message: string;
+    stack?: string;
+    source?: string;
+  }>;
+  storeOrder: string[];
+}
+
+let lastClientSnapshot: ClientSnapshotShape | null = null;
+let lastClientMarkdown: string | null = null;
+let lastClientPushedAt: string | null = null;
+
+const appStatePostSchema = z.object({
+  snapshot: z.object({
+    timestamp: z.string(),
+    route: z.object({
+      hash: z.string(),
+      path: z.string(),
+      params: z.record(z.string()),
+    }),
+    viewport: z.object({ width: z.number(), height: z.number() }),
+    stores: z.record(z.unknown()),
+    recentErrors: z.array(
+      z.object({
+        timestamp: z.string(),
+        message: z.string(),
+        stack: z.string().optional(),
+        source: z.string().optional(),
+      }),
+    ),
+    storeOrder: z.array(z.string()),
+  }),
+  markdown: z.string(),
+});
+
+devRoutes.post(
+  "/app-state",
+  zValidator("json", appStatePostSchema),
+  (c) => {
+    const { snapshot, markdown } = c.req.valid("json");
+    lastClientSnapshot = snapshot as ClientSnapshotShape;
+    lastClientMarkdown = markdown;
+    lastClientPushedAt = new Date().toISOString();
+    return c.json({ ok: true });
+  },
+);
+
+interface ServerSnapshot {
+  timestamp: string;
+  env: {
+    nodeEnv: string;
+    hostname: string;
+    denoVersion: string;
+  };
+  recentRequests: DevRequestRecord[];
+  recentErrors: DevErrorRecord[];
+}
+
+function collectServerSnapshot(): ServerSnapshot {
+  return {
+    timestamp: new Date().toISOString(),
+    env: {
+      nodeEnv: Deno.env.get("NODE_ENV") ?? "development",
+      hostname: Deno.env.get("HOSTNAME") ?? "unknown",
+      denoVersion: Deno.version.deno,
+    },
+    recentRequests: getRecentRequests(),
+    recentErrors: getRecentErrors(),
+  };
+}
+
+function formatServerMarkdown(server: ServerSnapshot): string {
+  const lines: string[] = [
+    "## Server Context",
+    "",
+    `**Timestamp:** ${server.timestamp}`,
+    `**Env:** NODE_ENV=${server.env.nodeEnv} · Deno ${server.env.denoVersion} · ${server.env.hostname}`,
+    "",
+    `### Recent requests (${server.recentRequests.length})`,
+    "",
+  ];
+  if (server.recentRequests.length === 0) {
+    lines.push("_No requests captured yet._");
+  } else {
+    for (const r of server.recentRequests) {
+      const tag = r.isError ? " 🔴" : "";
+      lines.push(
+        `- ${r.timestamp} \`${r.method} ${r.routePath}\` → ${r.status} (${r.durationMs}ms)${tag}`,
+      );
+    }
+  }
+  lines.push("", `### Recent server errors (${server.recentErrors.length})`, "");
+  if (server.recentErrors.length === 0) {
+    lines.push("_No server errors captured yet._");
+  } else {
+    for (const e of server.recentErrors) {
+      lines.push(`- ${e.timestamp} [${e.source}]`);
+      lines.push(`  ${e.message}`);
+      if (e.request) {
+        lines.push(
+          `  during \`${e.request.method} ${e.request.routePath}\` → ${e.request.status}`,
+        );
+      }
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+devRoutes.get("/app-state", (c) => {
+  const server = collectServerSnapshot();
+  const wantsMarkdown =
+    c.req.query("format") === "markdown" ||
+    c.req.header("accept")?.includes("text/markdown");
+
+  const clientMarkdown = lastClientMarkdown ?? [
+    "# Client App State Snapshot",
+    "",
+    "_No client snapshot received yet. Either the SPA isn't running, or " +
+    "the dev-panel push pipeline hasn't fired its first heartbeat. See " +
+    "web/src/lib/devpanel/init.ts._",
+    "",
+  ].join("\n");
+  const serverMarkdown = formatServerMarkdown(server);
+  const combinedMarkdown = `${clientMarkdown}\n\n---\n\n${serverMarkdown}`;
+
+  if (wantsMarkdown) {
+    return new Response(combinedMarkdown, {
+      headers: { "Content-Type": "text/markdown; charset=utf-8" },
+    });
+  }
+
+  return c.json({
+    client: lastClientSnapshot,
+    clientPushedAt: lastClientPushedAt,
+    server,
+    markdown: combinedMarkdown,
   });
 });
 

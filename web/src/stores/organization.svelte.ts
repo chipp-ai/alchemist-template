@@ -1,10 +1,14 @@
 /**
- * Organization store using Svelte 5 runes.
+ * Organization store — current org + members + CRUD actions.
  *
- * Tracks the current org and its members.
+ * Built on `defineStore` (the canonical store factory — see
+ * web/src/lib/devpanel/store.svelte.ts). Every shared store in this
+ * app follows the same pattern so the dev panel can introspect them
+ * at runtime.
  */
 
 import { api } from "../lib/api";
+import { defineStore } from "../lib/devpanel/store.svelte";
 
 // ---------- Types ----------
 
@@ -24,34 +28,42 @@ export interface OrgMember {
   joinedAt: string;
 }
 
+interface OrgState {
+  currentOrg: Organization | null;
+  members: OrgMember[];
+  isLoading: boolean;
+}
+
 // ---------- State ----------
 
-let currentOrg = $state<Organization | null>(null);
-let members = $state<OrgMember[]>([]);
-let isLoading = $state(false);
+const state = defineStore<OrgState>("organization", {
+  currentOrg: null,
+  members: [],
+  isLoading: false,
+});
 
 // ---------- Actions ----------
 
 async function fetchOrg(): Promise<void> {
-  isLoading = true;
+  state.isLoading = true;
   try {
     const data = await api.get<{ organization: Organization }>("/org");
-    currentOrg = data.organization;
+    state.currentOrg = data.organization;
   } catch (err) {
     console.error("Failed to fetch organization:", err);
-    currentOrg = null;
+    state.currentOrg = null;
   } finally {
-    isLoading = false;
+    state.isLoading = false;
   }
 }
 
 async function fetchMembers(): Promise<void> {
   try {
     const data = await api.get<{ members: OrgMember[] }>("/org/members");
-    members = data.members;
+    state.members = data.members;
   } catch (err) {
     console.error("Failed to fetch members:", err);
-    members = [];
+    state.members = [];
   }
 }
 
@@ -60,7 +72,7 @@ async function updateOrg(
 ): Promise<void> {
   try {
     const updated = await api.patch<{ organization: Organization }>("/org", data);
-    currentOrg = updated.organization;
+    state.currentOrg = updated.organization;
   } catch (err) {
     console.error("Failed to update organization:", err);
     throw err;
@@ -81,21 +93,21 @@ async function inviteMember(email: string, role: string = "member"): Promise<voi
 }
 
 function reset(): void {
-  currentOrg = null;
-  members = [];
+  state.currentOrg = null;
+  state.members = [];
 }
 
 // ---------- Export ----------
 
 export const orgStore = {
   get currentOrg() {
-    return currentOrg;
+    return state.currentOrg;
   },
   get members() {
-    return members;
+    return state.members;
   },
   get isLoading() {
-    return isLoading;
+    return state.isLoading;
   },
   fetchOrg,
   fetchMembers,

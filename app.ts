@@ -13,6 +13,7 @@ import { serveStatic } from "hono/deno";
 import { AppError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
 import { requestTimingMiddleware } from "@/api/middleware/request-timing.ts";
+import { recentActivityMiddleware } from "@/api/middleware/recent-activity.ts";
 
 // Route imports
 import { healthRoutes } from "@/api/routes/health/index.ts";
@@ -74,6 +75,16 @@ app.use("*", timing());
 // (CORS / secureHeaders / compress / timing) so it sees the final
 // status the client receives, not the pre-mutation one.
 app.use("*", requestTimingMiddleware);
+
+// Recent-activity middleware — populates the in-memory ring buffers
+// (src/lib/dev-activity.ts) consumed by /api/dev/app-state and the
+// in-browser DevPanel. Gated on NODE_ENV !== "production" so the
+// ring buffer never accumulates customer-facing traffic. Defense-
+// in-depth: the dev-routes router that EXPOSES the data is also
+// production-gated.
+if (Deno.env.get("NODE_ENV") !== "production") {
+  app.use("*", recentActivityMiddleware);
+}
 
 // ── Routes ──
 

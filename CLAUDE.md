@@ -335,6 +335,99 @@ The client automatically:
 
 HMR is disabled. After any frontend change, hard reload: **Cmd+Shift+R** (Mac) or **Ctrl+Shift+R** (Windows/Linux).
 
+### Stores and the DevPanel — `defineStore` is mandatory for shared state
+
+Every shared client-side store MUST be declared via `defineStore` from
+`web/src/lib/devpanel/store.svelte.ts`. This is the load-bearing
+convention that lets the DevPanel (visible in dev) AND the agent
+verification pipeline (`GET /api/dev/app-state`) introspect every
+piece of shared state in the running app, without knowing what stores
+any given customer's code happens to have built.
+
+```typescript
+// web/src/stores/cart.svelte.ts
+import { defineStore } from "../lib/devpanel/store.svelte";
+
+interface CartState {
+  items: Array<{ id: string; qty: number }>;
+  isLoading: boolean;
+  error: string | null;
+}
+
+const state = defineStore<CartState>("cart", {
+  items: [],
+  isLoading: false,
+  error: null,
+});
+
+export async function addItem(id: string) {
+  // Always assign at the TOP LEVEL — replace the array, don't push() into it.
+  state.items = [...state.items, { id, qty: 1 }];
+}
+
+export const cartStore = {
+  get items() { return state.items; },
+  get isLoading() { return state.isLoading; },
+  get error() { return state.error; },
+  get count() { return state.items.length; },
+  addItem,
+};
+```
+
+**Then add the import to `web/src/main.ts`** in the eager-load block:
+
+```typescript
+// web/src/main.ts
+import "./stores/auth.svelte";
+import "./stores/organization.svelte";
+import "./stores/cart.svelte";  // ← add new stores here
+```
+
+**Update conventions (the rule):**
+
+- Always update via TOP-LEVEL property assignment: `state.items = [...]`,
+  `state.user = newUser`. The Proxy notifies the DevPanel push pipeline
+  on top-level writes; nested mutations (`state.items.push(x)`,
+  `state.user.name = "X"`) work for component reactivity but are
+  delayed in the DevPanel by up to 5s (heartbeat) instead of being
+  visible immediately.
+- For arrays / Maps / Sets: replace the whole reference, don't mutate
+  in place.
+- The store name (first arg to `defineStore`) is the user-visible
+  identifier in the DevPanel — use snake_case singular nouns
+  (`auth`, `cart`, `editor`, `chat`).
+
+**What NOT to do:**
+
+```typescript
+// ❌ BAD — bare module-level $state. The DevPanel can't see this.
+let count = $state(0);
+let user = $state<User | null>(null);
+
+// ❌ BAD — class instances. Not snapshot-safe (JSON.stringify drops them).
+const state = defineStore("foo", new SomeClass());
+```
+
+Component-local `$state` inside `*.svelte` components is fine — that's
+component scratch state, not shared store state, and the DevPanel
+doesn't try to introspect it.
+
+**Why this matters: the agent's L1 verification check.** Before
+driving the browser to verify a change, the verification subagent
+runs `curl http://localhost:$PORT/api/dev/app-state` to read the
+running app's full state. That endpoint returns every `defineStore`-
+registered store, the current route, viewport, recent client errors,
+recent server requests, and recent server errors — all in one
+structured payload. If you create state via bare `$state` for shared
+data, the agent's pre-browser check is incomplete and verification
+gets harder.
+
+**The DevPanel UI** (floating 🛠 button in the bottom-right when
+`import.meta.env.DEV`) shows the same data live during human
+debugging. Implementation: `web/src/components/DevPanel.svelte`,
+mounted in `App.svelte`. Production builds short-circuit via
+`import.meta.env.PROD` — the panel never renders for end users.
+
 ## Git Workflow
 
 - Stay on `staging`. Do not create feature branches.

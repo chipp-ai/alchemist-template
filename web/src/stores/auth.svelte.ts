@@ -1,11 +1,19 @@
 /**
- * Auth store using Svelte 5 runes.
+ * Auth store — current user session + login/signup/logout actions.
  *
- * Tracks the current user session, provides login/signup/logout,
- * and exposes derived `isAuthenticated` / `isLoading` state.
+ * Built on `defineStore` (the canonical store factory — see
+ * web/src/lib/devpanel/store.svelte.ts). Every shared store in this
+ * app follows the same pattern so the dev panel can introspect them
+ * at runtime.
+ *
+ * Update convention: top-level property assignment only. Whole-object
+ * replacements like `state.user = newUser` notify the dev panel
+ * immediately. Avoid nested mutation (`state.user.name = "X"`) — see
+ * the CLAUDE.md "Stores and the DevPanel" section for the rationale.
  */
 
 import { api, ApiError } from "../lib/api";
+import { defineStore } from "../lib/devpanel/store.svelte";
 
 // ---------- Types ----------
 
@@ -17,21 +25,25 @@ export interface User {
   organizationId: string | null;
 }
 
+interface AuthState {
+  user: User | null;
+  isLoading: boolean;
+  error: string | null;
+}
+
 // ---------- State ----------
 
-let user = $state<User | null>(null);
-let isLoading = $state(true);
-let error = $state<string | null>(null);
-
-// ---------- Derived ----------
-
-const isAuthenticated = $derived(user !== null);
+const state = defineStore<AuthState>("auth", {
+  user: null,
+  isLoading: true,
+  error: null,
+});
 
 // ---------- Actions ----------
 
 async function checkAuth(): Promise<void> {
-  isLoading = true;
-  error = null;
+  state.isLoading = true;
+  state.error = null;
   try {
     // silent401: we expect this to 401 when no session exists yet (e.g.
     // the very first page load after a fresh open, or right after the
@@ -40,33 +52,32 @@ async function checkAuth(): Promise<void> {
     // routing and bounces a freshly-signed-up user from /signup back to
     // /login the moment checkAuth runs on mount.
     const data = await api.get<{ user: User }>("/auth/me", { silent401: true });
-    user = data.user;
+    state.user = data.user;
   } catch (err) {
-    // 401 is expected when not logged in
+    // 401 is expected when not logged in.
     if (err instanceof ApiError && err.status === 401) {
-      user = null;
+      state.user = null;
     } else {
       console.error("Auth check failed:", err);
-      user = null;
+      state.user = null;
     }
   } finally {
-    isLoading = false;
+    state.isLoading = false;
   }
 }
 
 async function sendOtp(email: string, name?: string): Promise<void> {
-  error = null;
+  state.error = null;
   try {
     await api.post("/auth/send-otp", {
       email: email.toLowerCase().trim(),
       ...(name ? { name: name.trim() } : {}),
     });
   } catch (err) {
-    const message =
-      err instanceof ApiError
-        ? err.message
-        : "Failed to send code. Please try again.";
-    error = message;
+    const message = err instanceof ApiError
+      ? err.message
+      : "Failed to send code. Please try again.";
+    state.error = message;
     throw err;
   }
 }
@@ -76,20 +87,19 @@ async function verifyOtp(
   otpCode: string,
   name?: string,
 ): Promise<void> {
-  error = null;
+  state.error = null;
   try {
     const data = await api.post<{ user: User }>("/auth/verify-otp", {
       email: email.toLowerCase().trim(),
       otpCode,
       ...(name ? { name: name.trim() } : {}),
     });
-    user = data.user;
+    state.user = data.user;
   } catch (err) {
-    const message =
-      err instanceof ApiError
-        ? err.message
-        : "Verification failed. Please try again.";
-    error = message;
+    const message = err instanceof ApiError
+      ? err.message
+      : "Verification failed. Please try again.";
+    state.error = message;
     throw err;
   }
 }
@@ -98,26 +108,31 @@ async function logout(): Promise<void> {
   try {
     await api.post("/auth/logout");
   } catch {
-    // Swallow errors -- we clear state regardless
+    // Swallow errors — we clear state regardless.
   }
-  user = null;
+  state.user = null;
   window.location.hash = "#/login";
 }
 
 // ---------- Export ----------
 
+/**
+ * Read-only(-ish) interface for components and other stores. The
+ * underlying `state` object is also reactive, but consumers should
+ * go through this getter-shape API for stability.
+ */
 export const authStore = {
   get user() {
-    return user;
+    return state.user;
   },
   get isLoading() {
-    return isLoading;
-  },
-  get isAuthenticated() {
-    return isAuthenticated;
+    return state.isLoading;
   },
   get error() {
-    return error;
+    return state.error;
+  },
+  get isAuthenticated() {
+    return state.user !== null;
   },
   checkAuth,
   sendOtp,
