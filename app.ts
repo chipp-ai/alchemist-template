@@ -23,6 +23,7 @@ import { billingRoutes } from "@/api/routes/billing/index.ts";
 import { devRoutes } from "@/api/routes/dev/index.ts";
 import { fileRoutes } from "@/api/routes/files/index.ts";
 import { inviteRoutes } from "@/api/routes/invite/index.ts";
+import { realtimeRoutes } from "@/api/routes/realtime/index.ts";
 
 // ── App types ──
 
@@ -107,6 +108,12 @@ app.route("/api/files", fileRoutes);
 // nested under /api/org because invitees aren't bound to an org yet
 // when they hit these endpoints. See src/api/routes/invite/index.ts.
 app.route("/api/invite", inviteRoutes);
+
+// Realtime / WebSocket. Auth via short-lived ws-token (issued from
+// GET /api/auth/ws-token). The baseline route echoes messages so
+// customers can replace the on-message branch with their own
+// dispatch (chat, presence, live cursors).
+app.route("/api/realtime", realtimeRoutes);
 
 // Dev-only routes (instant login + DB seeding for agent verification).
 // The whole router self-404s in production via its own middleware, so
