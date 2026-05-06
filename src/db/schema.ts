@@ -54,6 +54,8 @@ export interface UsersTable {
     Date | null | undefined,
     Date | null | undefined
   >;
+  /** JSONB blob of arbitrary user-scoped preferences (notifications, tz, locale, …). */
+  preferences: Generated<Record<string, unknown>>;
   createdAt: CreatedAt;
   updatedAt: UpdatedAt;
 }

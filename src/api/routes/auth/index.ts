@@ -546,6 +546,77 @@ authRoutes.delete("/me/picture", requireAuth, async (c) => {
   return c.json({ picture: null });
 });
 
+// ── User preferences ───────────────────────────────────────────────────────
+// Free-form per-user prefs (notifications, timezone, locale, theme).
+// Stored as JSONB on users; GET returns the stored object, PATCH does
+// a SHALLOW merge with the existing prefs so a client can update one
+// key without round-tripping the whole shape.
+//
+// The shape is intentionally loose: customers add fields as their UI
+// needs them. The template itself doesn't read prefs anywhere — the
+// SPA decides what means what.
+
+authRoutes.get("/me/preferences", requireAuth, async (c) => {
+  const user = getUser(c);
+  const row = await db
+    .selectFrom("users")
+    .select(["preferences"])
+    .where("id", "=", user.id)
+    .executeTakeFirstOrThrow();
+
+  // postgres.js returns JSONB columns as already-parsed JS values.
+  // Coerce a defensive null/undefined to {} so the SPA can always
+  // assume an object on the wire.
+  const prefs = (row.preferences ?? {}) as Record<string, unknown>;
+  return c.json({ preferences: prefs });
+});
+
+const updatePreferencesSchema = z.object({
+  preferences: z.record(z.unknown()),
+});
+
+authRoutes.patch(
+  "/me/preferences",
+  requireAuth,
+  zValidator("json", updatePreferencesSchema, validationHook),
+  async (c) => {
+    const user = getUser(c);
+    const { preferences: incoming } = c.req.valid("json");
+
+    // Shallow merge — keys in `incoming` overwrite keys in stored,
+    // others stay. Setting a key to null is the explicit "delete this
+    // pref" signal, mirroring what the SPA likely wants.
+    const current = await db
+      .selectFrom("users")
+      .select(["preferences"])
+      .where("id", "=", user.id)
+      .executeTakeFirstOrThrow();
+
+    const merged: Record<string, unknown> = {
+      ...((current.preferences ?? {}) as Record<string, unknown>),
+      ...incoming,
+    };
+    for (const [k, v] of Object.entries(incoming)) {
+      if (v === null) delete merged[k];
+    }
+
+    await db
+      .updateTable("users")
+      .set({ preferences: merged })
+      .where("id", "=", user.id)
+      .execute();
+
+    log.info("Preferences updated", {
+      source: "auth",
+      feature: "preferences-update",
+      userId: user.id,
+      keysChanged: Object.keys(incoming),
+    });
+
+    return c.json({ preferences: merged });
+  },
+);
+
 // ── WebSocket handshake token ──────────────────────────────────────────────
 // Customer apps building real-time features (chat, presence, live
 // dashboards) need to authenticate the WS connection. Cookies don't
