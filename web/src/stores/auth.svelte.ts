@@ -29,6 +29,14 @@ interface AuthState {
   user: User | null;
   isLoading: boolean;
   error: string | null;
+  /**
+   * Deployment-scoped HIPAA flag. Sourced from /auth/me, which reads
+   * the customer pod's HIPAA_ENABLED env var. When true, the SPA arms
+   * activity tracking + the 4-hour session-timeout warning.
+   */
+  hipaaEnabled: boolean;
+  /** Session TTL in ms — 4 h on HIPAA pods, 30 d otherwise. */
+  sessionDurationMs: number;
 }
 
 // ---------- State ----------
@@ -37,6 +45,8 @@ const state = defineStore<AuthState>("auth", {
   user: null,
   isLoading: true,
   error: null,
+  hipaaEnabled: false,
+  sessionDurationMs: 30 * 24 * 60 * 60 * 1000,
 });
 
 // ---------- Actions ----------
@@ -51,8 +61,14 @@ async function checkAuth(): Promise<void> {
     // redirects to /login on 401 — which fights with App.svelte's own
     // routing and bounces a freshly-signed-up user from /signup back to
     // /login the moment checkAuth runs on mount.
-    const data = await api.get<{ user: User }>("/auth/me", { silent401: true });
+    const data = await api.get<{
+      user: User;
+      hipaaEnabled?: boolean;
+      sessionDurationMs?: number;
+    }>("/auth/me", { silent401: true });
     state.user = data.user;
+    state.hipaaEnabled = data.hipaaEnabled ?? false;
+    state.sessionDurationMs = data.sessionDurationMs ?? 30 * 24 * 60 * 60 * 1000;
   } catch (err) {
     // 401 is expected when not logged in.
     if (err instanceof ApiError && err.status === 401) {
@@ -133,6 +149,12 @@ export const authStore = {
   },
   get isAuthenticated() {
     return state.user !== null;
+  },
+  get hipaaEnabled() {
+    return state.hipaaEnabled;
+  },
+  get sessionDurationMs() {
+    return state.sessionDurationMs;
   },
   checkAuth,
   sendOtp,

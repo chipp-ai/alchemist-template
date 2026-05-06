@@ -25,6 +25,7 @@ import { log } from "@/lib/logger.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
 import { BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
 import { createSessionToken, createWsToken, requireAuth, getUser } from "@/api/middleware/auth.ts";
+import { getSessionDurationMs, isHipaaEnabled } from "@/utils/session-duration.ts";
 import { sendOtpEmail } from "@/services/email.ts";
 import {
   deleteObject,
@@ -80,12 +81,18 @@ function setSessionCookie(
   c: any,
   token: string,
 ): void {
+  // Cookie maxAge MUST match the JWT exp claim — otherwise the
+  // browser drops the cookie before the JWT expires (silent
+  // unauth) or keeps it after the JWT expires (silent 401 on
+  // every request without re-login). getSessionDurationMs()
+  // returns 4h on HIPAA pods, 30d elsewhere — same source the
+  // JWT signer uses.
   setCookie(c, SESSION_COOKIE, token, {
     httpOnly: true,
     secure: IS_PROD,
     sameSite: "Lax",
     path: "/",
-    maxAge: 7 * 24 * 60 * 60, // 7 days
+    maxAge: Math.floor(getSessionDurationMs() / 1000),
   });
 }
 
@@ -314,7 +321,11 @@ authRoutes.post("/logout-all", requireAuth, async (c) => {
 
 /**
  * GET /me
- * Returns the current authenticated user and their organization.
+ * Returns the current authenticated user and their organization, plus
+ * `hipaaEnabled` so the SPA knows whether to arm its session-timeout
+ * activity tracker. The HIPAA flag is deployment-scoped (HIPAA_ENABLED
+ * env var on the customer pod), not per-user or per-org — see
+ * src/utils/session-duration.ts for the rationale.
  */
 authRoutes.get("/me", requireAuth, async (c) => {
   const user = getUser(c);
@@ -333,6 +344,38 @@ authRoutes.get("/me", requireAuth, async (c) => {
       role: user.role,
     },
     organization: org ?? null,
+    hipaaEnabled: isHipaaEnabled(),
+    sessionDurationMs: getSessionDurationMs(),
+  });
+});
+
+/**
+ * POST /touch
+ * Extends the session on user activity. The SPA's session-timeout
+ * store calls this every 5 minutes during active use so the JWT exp
+ * stays ahead of the inactivity ceiling. When NO call lands inside a
+ * sessionDurationMs window, the JWT expires naturally and the next
+ * request 401s — that's the HIPAA "automatic logoff" requirement.
+ *
+ * Re-issues a fresh JWT with current iat + ttl, sets it as the
+ * session cookie. Idempotent and cheap.
+ */
+authRoutes.post("/touch", requireAuth, async (c) => {
+  const user = getUser(c);
+
+  const token = await createSessionToken({
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    organizationId: user.organizationId,
+    role: user.role,
+  });
+  setSessionCookie(c, token);
+
+  return c.json({
+    ok: true,
+    sessionDurationMs: getSessionDurationMs(),
+    expiresAt: new Date(Date.now() + getSessionDurationMs()).toISOString(),
   });
 });
 

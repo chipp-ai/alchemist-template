@@ -11,6 +11,7 @@ import { db, withTimeout } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
 import { ForbiddenError, UnauthorizedError } from "@/utils/errors.ts";
 import { can, type Capability } from "@/lib/roles.ts";
+import { getSessionDurationMs } from "@/utils/session-duration.ts";
 
 // ── Types ──
 
@@ -34,7 +35,11 @@ const JWT_SECRET = new TextEncoder().encode(JWT_SECRET_RAW);
 const SESSION_COOKIE = "session_id";
 
 /**
- * Create a signed JWT for a user session.
+ * Create a signed JWT for a user session. Expiry is resolved from
+ * `HIPAA_ENABLED` — 4 hours for HIPAA pods, 30 days otherwise. See
+ * `src/utils/session-duration.ts` for the policy. Callers don't have
+ * to know the policy; just call this and the right TTL gets stamped
+ * into the JWT's `exp` claim.
  */
 export async function createSessionToken(user: {
   id: string;
@@ -43,6 +48,7 @@ export async function createSessionToken(user: {
   organizationId: string;
   role: string;
 }): Promise<string> {
+  const ttlSec = Math.floor(getSessionDurationMs() / 1000);
   return await new jose.SignJWT({
     sub: user.id,
     email: user.email,
@@ -52,7 +58,7 @@ export async function createSessionToken(user: {
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("7d")
+    .setExpirationTime(`${ttlSec}s`)
     .sign(JWT_SECRET);
 }
 

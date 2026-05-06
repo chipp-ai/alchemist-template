@@ -12,6 +12,7 @@ import "./app.css";
 // effect that registers it.
 import "./stores/auth.svelte";
 import "./stores/organization.svelte";
+import "./stores/sessionTimeout.svelte";
 
 import { initDevPanel } from "./lib/devpanel/init";
 

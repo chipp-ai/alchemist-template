@@ -3,7 +3,9 @@
   import Router, { location, push, replace } from "svelte-spa-router";
   import routes, { isPublicRoute } from "./routes";
   import { authStore } from "./stores/auth.svelte";
+  import { sessionTimeoutStore } from "./stores/sessionTimeout.svelte";
   import Sidebar from "./components/Sidebar.svelte";
+  import SessionTimeoutWarning from "./components/SessionTimeoutWarning.svelte";
   import DevPanel from "./components/DevPanel.svelte";
 
   // One-shot session check on mount.
@@ -32,6 +34,24 @@
     }
   });
 
+  // HIPAA session-timeout: arm activity tracking + the warning modal
+  // ONLY when the customer pod was provisioned with HIPAA on (the
+  // /auth/me response carries hipaaEnabled, sourced from the pod's
+  // HIPAA_ENABLED env var). Mount/unmount the store as the user
+  // signs in / signs out so the listeners don't leak across sessions.
+  $effect(() => {
+    const shouldArm =
+      !authStore.isLoading &&
+      authStore.isAuthenticated &&
+      authStore.hipaaEnabled;
+
+    if (shouldArm && !sessionTimeoutStore.active) {
+      sessionTimeoutStore.init();
+    } else if (!shouldArm && sessionTimeoutStore.active) {
+      sessionTimeoutStore.destroy();
+    }
+  });
+
   const onPublicRoute = $derived(isPublicRoute($location));
   const showLayout = $derived(!authStore.isLoading && authStore.isAuthenticated && !onPublicRoute);
 </script>
@@ -50,6 +70,13 @@
 {:else}
   <Router {routes} />
 {/if}
+
+<!--
+  HIPAA session-timeout warning. Renders only when the store reports
+  showWarning=true; the store itself only arms when the deployment is
+  HIPAA-enabled. On non-HIPAA deployments this stays inert.
+-->
+<SessionTimeoutWarning />
 
 <!--
   Dev panel: floating button + expanded view of every store + recent
