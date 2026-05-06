@@ -146,11 +146,16 @@ app.onError((err, c) => {
     );
   }
 
-  // Unexpected errors
+  // Unexpected errors. The requestId carries through every log on
+  // this request and into the X-Request-Id response header, so
+  // operators (and the autonomous self-healing pipeline) can trace
+  // a 500 a user reports back to the exact server-side stack trace.
   log.error("Unhandled error", {
     source: "app",
+    feature: "unhandled-error",
     path: c.req.path,
     method: c.req.method,
+    requestId: c.get("requestId"),
   }, err);
 
   return c.json(
