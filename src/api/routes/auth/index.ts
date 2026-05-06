@@ -270,10 +270,39 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
 
 /**
  * POST /logout
- * Clears the session cookie.
+ * Clears the session cookie on the current device.
  */
 authRoutes.post("/logout", (c) => {
   deleteCookie(c, SESSION_COOKIE, { path: "/" });
+  return c.json({ ok: true });
+});
+
+/**
+ * POST /logout-all
+ * Revokes every JWT issued before this instant for the current user.
+ * The auth middleware compares each request's JWT iat against
+ * users.tokenInvalidatedBefore — anything older returns 401 on next
+ * use, forcing re-login on every other device.
+ */
+authRoutes.post("/logout-all", requireAuth, async (c) => {
+  const user = getUser(c);
+  await db
+    .updateTable("users")
+    .set({ tokenInvalidatedBefore: new Date() })
+    .where("id", "=", user.id)
+    .execute();
+
+  // Drop the current device's cookie too — otherwise the user stays
+  // logged in here while every OTHER device gets kicked, which is
+  // confusing UX even though it's technically correct.
+  deleteCookie(c, SESSION_COOKIE, { path: "/" });
+
+  log.info("Logout all sessions", {
+    source: "auth",
+    feature: "logout-all",
+    userId: user.id,
+  });
+
   return c.json({ ok: true });
 });
 

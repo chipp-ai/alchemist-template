@@ -49,6 +49,11 @@ export interface UsersTable {
   oauthId: string | null;
   emailVerified: Generated<boolean>;
   lastLoginAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  tokenInvalidatedBefore: ColumnType<
+    Date | null,
+    Date | null | undefined,
+    Date | null | undefined
+  >;
   createdAt: CreatedAt;
   updatedAt: UpdatedAt;
 }

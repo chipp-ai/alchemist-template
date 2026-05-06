@@ -69,33 +69,45 @@ async function verifyToken(token: string): Promise<jose.JWTPayload | null> {
 }
 
 /**
- * Resolve user from JWT payload. Falls back to DB lookup if needed.
+ * Resolve user from JWT payload. Always checks `users.tokenInvalidatedBefore`
+ * against the JWT's `iat` claim to enforce POST /auth/logout-all
+ * server-side — without a check on every request, revocation can't
+ * outpace the JWT's own 7-day TTL.
  */
 async function resolveUser(payload: jose.JWTPayload): Promise<AuthUser | null> {
   const userId = payload.sub;
   if (!userId) return null;
 
-  // Fast path: use JWT claims directly
-  if (payload.email && payload.organizationId && payload.role) {
-    return {
-      id: userId,
-      email: payload.email as string,
-      name: (payload.name as string) ?? null,
-      organizationId: payload.organizationId as string,
-      role: payload.role as string,
-    };
-  }
-
-  // Slow path: DB lookup
   try {
+    // Single indexed row read. We always need `tokenInvalidatedBefore`
+    // to honor logout-all; the rest is cheap to bring along and lets
+    // us keep the resolved AuthUser self-consistent with the DB
+    // (e.g. if the user's role changed since the JWT was issued, the
+    // server should respect the current role, not the stale one).
     const user = await withTimeout(3000, (trx) =>
       trx
         .selectFrom("users")
-        .select(["id", "email", "name", "organizationId", "role"])
+        .select([
+          "id",
+          "email",
+          "name",
+          "organizationId",
+          "role",
+          "tokenInvalidatedBefore",
+        ])
         .where("id", "=", userId)
         .executeTakeFirst()
     );
     if (!user || !user.organizationId) return null;
+
+    // logout-all enforcement: any JWT signed before the cutoff is
+    // revoked. Compare in seconds (the JWT spec stores `iat` as
+    // seconds since epoch).
+    if (user.tokenInvalidatedBefore && typeof payload.iat === "number") {
+      const cutoffSec = Math.floor(user.tokenInvalidatedBefore.getTime() / 1000);
+      if (payload.iat < cutoffSec) return null;
+    }
+
     return {
       id: user.id,
       email: user.email,
