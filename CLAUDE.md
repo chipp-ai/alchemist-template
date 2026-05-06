@@ -632,6 +632,50 @@ debugging. Implementation: `web/src/components/DevPanel.svelte`,
 mounted in `App.svelte`. Production builds short-circuit via
 `import.meta.env.PROD` — the panel never renders for end users.
 
+## Brand identity — `src/config/brand.ts` is the only source of truth
+
+The deployed product has a customer-facing name that is **not**
+"Alchemist" — Alchemist is the platform that built this app, not
+the product the end-user sees. The platform sets two env vars on
+the customer pod:
+
+- `APP_NAME` — the user-facing product name (e.g. "Pinterest
+  Clone", "Pickleball Tournament Matchmaker"). Sourced from
+  `platform.projects.brand_config.productName`.
+- `EMAIL_FROM` — the verified transactional sender address
+  (e.g. `noreply@yourapp.adaas.dev`).
+
+`src/config/brand.ts` reads both at boot into a frozen `BRAND`
+object:
+
+```ts
+import { BRAND } from "@/config/brand.ts";
+
+BRAND.name      // "Pinterest Clone"  (or "Your App" if APP_NAME unset)
+BRAND.fromEmail // "noreply@..."       (or "noreply@example.com" if unset)
+BRAND.fromName  // mirrors BRAND.name; pre-formatted for "Name <email>"
+```
+
+**Every customer-facing surface that needs the product name MUST
+import `BRAND` from this module.** Never inline
+`Deno.env.get("APP_NAME") ?? "Alchemist"` — the literal
+`"Alchemist"` is the leak. The defensive fallbacks are
+deliberately generic ("Your App", `noreply@example.com`) so a
+misconfigured pod renders a placeholder, not the platform's
+codename.
+
+Surfaces wired through `BRAND` today:
+- `src/services/email.ts` — every transactional email subject,
+  body, and `From:` header.
+- `web/index.html` — title is the placeholder `Loading…`;
+  `web/public/brand-loader.js` overrides `document.title` with
+  `brand.productName` from `/brand.json` once the SPA boots.
+
+When adding a new surface (OG meta, push notification copy,
+exported PDFs), reach for `BRAND.*` first. If you find yourself
+typing the literal "Alchemist" anywhere in this repo's customer-
+facing code, stop — that's the bug this module exists to prevent.
+
 ## HIPAA mode — env-var-gated, no schema changes
 
 The template ships every building block for HIPAA-compliant session handling. Activation is binary, sourced from a single env var the Alchemist platform sets on the customer pod when the project was opted into HIPAA during onboarding (and the BAA was signed):
@@ -659,8 +703,25 @@ The `POST /auth/touch` endpoint re-issues a JWT with a fresh `exp` claim and res
 - Stay on `staging`. Do not create feature branches.
 - Commit directly on `staging`.
 - PRs target `staging`, never `main`.
-- **When committing, always use `git add -A`** to stage all changes. Multiple agents may run side by side -- include everything.
 - **NEVER use `--no-verify` or `--no-gpg-sign`** on any git command.
+
+### `git add -A` is the rule, not a suggestion
+
+Multiple Claude Code workers run side-by-side on this repo's `staging` branch at all times. When you commit, **other workers' uncommitted changes may already be in your working tree** — that is expected, not a bug. The rule:
+
+**Always `git add -A` before committing.** Never cherry-pick individual files trying to "separate your changes from another worker's." Don't try to reason about which lines are "yours" and which aren't — that distinction is meaningless when sessions get compacted, contexts overlap, and the same agent picks back up with a stale model of what it already wrote. The working tree is the truth; commit all of it.
+
+**Never `git stash` to "isolate your commit"** from another worker's in-progress changes. Stashing parks work in a per-clone reflog that other workers can't see and that gets lost on `git reset --hard`, `git clean -fd`, or a worktree teardown — uncommitted work outside the index has no durable home. The entire point of the always-commit rule is that the index is the only place work survives.
+
+The only acceptable workflow:
+
+```
+git add -A
+git commit -m "..."
+git push
+```
+
+Trust CI to catch broken intermediate states. If a partial refactor genuinely shouldn't deploy, **revert the offending lines as a follow-up commit**, don't stash them. If a commit message ends up bundling more files than the message describes, that's fine — the message is an approximation of "what shipped in this push," not a strict scope contract.
 
 ## File storage — use `storage.service.ts`, never write to R2 directly
 
@@ -893,7 +954,10 @@ what `/verify-otp` would set, so once you've POSTed to
 behaves as if the user is logged in.
 
 ```ts
-browser_navigate({ url: "http://localhost:8000/" })
+// Browser ALWAYS targets the Vite port (__VITE_PORT__), never the API
+// port. Vite serves the SPA shell + proxies /api → :__API_PORT__, so
+// the relative `/api/dev/login` fetch below reaches the API correctly.
+browser_navigate({ url: "http://localhost:__VITE_PORT__/" })
 
 // Bypass OTP — set the session via dev-login from the page itself.
 browser_evaluate({
@@ -908,7 +972,7 @@ browser_evaluate({
   })()`
 })
 
-browser_navigate({ url: "http://localhost:8000/dashboard" })  // now authed
+browser_navigate({ url: "http://localhost:__VITE_PORT__/dashboard" })  // now authed
 browser_screenshot()  // capture the proof
 ```
 
