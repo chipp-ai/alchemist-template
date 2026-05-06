@@ -24,7 +24,7 @@ import { db } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
 import { BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
-import { createSessionToken, requireAuth, getUser } from "@/api/middleware/auth.ts";
+import { createSessionToken, createWsToken, requireAuth, getUser } from "@/api/middleware/auth.ts";
 import { sendOtpEmail } from "@/services/email.ts";
 import {
   deleteObject,
@@ -544,6 +544,23 @@ authRoutes.delete("/me/picture", requireAuth, async (c) => {
   });
 
   return c.json({ picture: null });
+});
+
+// ── WebSocket handshake token ──────────────────────────────────────────────
+// Customer apps building real-time features (chat, presence, live
+// dashboards) need to authenticate the WS connection. Cookies don't
+// reliably travel on cross-origin WS connections and many client
+// libraries can't set cookies anyway; the standard pattern is "fetch
+// a short-lived token from an authenticated REST endpoint, then pass
+// it on the WS handshake." This is that endpoint.
+
+authRoutes.get("/ws-token", requireAuth, async (c) => {
+  const user = getUser(c);
+  const token = await createWsToken({
+    id: user.id,
+    organizationId: user.organizationId,
+  });
+  return c.json({ token, expiresInSeconds: 60 });
 });
 
 // ── OAuth (provider-driven) ────────────────────────────────────────────────

@@ -57,11 +57,57 @@ export async function createSessionToken(user: {
 }
 
 /**
+ * Create a short-lived JWT for a WebSocket handshake. Browsers can't
+ * send the httpOnly session cookie on cross-origin WS connections, and
+ * many WS clients can't attach Cookie headers at all — so we mint a
+ * scope-limited token (`scope: "ws"`, 60s TTL) the client can pass in
+ * the WS URL or Authorization header.
+ *
+ * The customer-side WS handler verifies via `verifyWsToken` and uses
+ * the returned `sub`/`organizationId` to attribute the connection.
+ * After the handshake the token is no longer needed (and shouldn't be
+ * re-used — its TTL is intentionally short).
+ */
+export async function createWsToken(user: {
+  id: string;
+  organizationId: string;
+}): Promise<string> {
+  return await new jose.SignJWT({
+    sub: user.id,
+    organizationId: user.organizationId,
+    scope: "ws",
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("60s")
+    .sign(JWT_SECRET);
+}
+
+/**
+ * Verify a WebSocket handshake token. Returns the payload only if the
+ * token's scope is "ws"; session-cookie tokens (`scope` absent) are
+ * rejected so the surface for an exfiltrated session token doesn't
+ * include WS connections to other tenants.
+ */
+export async function verifyWsToken(token: string): Promise<jose.JWTPayload | null> {
+  try {
+    const { payload } = await jose.jwtVerify(token, JWT_SECRET);
+    if (payload.scope !== "ws") return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Verify a JWT and return the payload, or null on failure.
  */
 async function verifyToken(token: string): Promise<jose.JWTPayload | null> {
   try {
     const { payload } = await jose.jwtVerify(token, JWT_SECRET);
+    // Reject WS-scoped tokens here — they should ONLY be used by
+    // verifyWsToken. Session cookies must NOT carry scope:"ws".
+    if (payload.scope === "ws") return null;
     return payload;
   } catch {
     return null;
