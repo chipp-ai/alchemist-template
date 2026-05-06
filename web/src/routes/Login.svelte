@@ -87,6 +87,41 @@
     errorMessage = null;
     resendMessage = null;
   }
+
+  // Dev-only escape hatch: bypass OTP via /api/dev/login. The server
+  // self-protects (`/api/dev/*` 404s in production), but we ALSO gate
+  // this UI on import.meta.env.DEV so a production-built SPA never
+  // ships a misleading button. Local browser testing without an SMTP
+  // / inbox harness would otherwise be a wall — this is the well-lit
+  // workaround.
+  const isDev = import.meta.env.DEV;
+  const DEV_DEFAULT_EMAIL = "dev@example.com";
+
+  async function handleDevLogin() {
+    isSubmitting = true;
+    errorMessage = null;
+    const targetEmail = email.trim() || DEV_DEFAULT_EMAIL;
+    try {
+      const res = await fetch("/api/dev/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: targetEmail }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`Dev login failed (${res.status}): ${body || "no body"}`);
+      }
+      // Refresh the store from /auth/me so the rest of the SPA sees
+      // the freshly-issued session without a hard reload.
+      await authStore.checkAuth();
+      push("/");
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : "Dev login failed";
+    } finally {
+      isSubmitting = false;
+    }
+  }
 </script>
 
 <div class="auth-page" data-testid="login-page">
@@ -206,6 +241,30 @@
     <p class="auth-footer">
       Don't have an account? <a href="#/signup" data-testid="login-link-signup">Sign up</a>
     </p>
+
+    {#if isDev && step === 1}
+      <div class="dev-login-section" data-testid="login-dev-section">
+        <div class="dev-login-divider">
+          <span>dev only · skips OTP email</span>
+        </div>
+        <button
+          type="button"
+          class="btn btn-secondary dev-login-btn"
+          onclick={handleDevLogin}
+          disabled={isSubmitting}
+          data-testid="login-btn-dev"
+        >
+          Dev login as {email.trim() || DEV_DEFAULT_EMAIL}
+        </button>
+        <p class="dev-login-help">
+          Local-only escape hatch: there's no SMTP harness in dev, so the
+          OTP code never reaches an inbox. This calls
+          <code>POST /api/dev/login</code> directly. The endpoint 404s
+          when <code>NODE_ENV=production</code>, and this button is
+          stripped from production SPA builds.
+        </p>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -265,6 +324,39 @@
     font-family: monospace;
     letter-spacing: 0.5em;
     padding: var(--space-md);
+  }
+
+  /* ── Dev login affordance ───────────────────────────────────────── */
+  /* Visually distinct from the primary auth flow so it's obvious this */
+  /* is a dev convenience, not the production sign-in path.            */
+  .dev-login-section {
+    margin-top: var(--space-lg);
+    padding-top: var(--space-md);
+    border-top: 1px dashed var(--color-muted);
+  }
+  .dev-login-divider {
+    text-align: center;
+    font-size: var(--text-xs);
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: var(--space-sm);
+  }
+  .dev-login-btn {
+    width: 100%;
+  }
+  .dev-login-help {
+    margin-top: var(--space-xs);
+    font-size: var(--text-xs);
+    color: var(--color-muted);
+    line-height: 1.4;
+  }
+  .dev-login-help code {
+    font-family: monospace;
+    font-size: 0.95em;
+    background: var(--color-surface);
+    padding: 0 0.25em;
+    border-radius: 2px;
   }
 
   .otp-actions {

@@ -21,6 +21,13 @@ All references to `__VITE_PORT__` and `__API_PORT__` in docs mean **your** Vite 
 
 **HMR is disabled.** Multiple agents build concurrently on the same repo. Frontend changes require a **hard reload** in the browser (Cmd+Shift+R). Do not wait for HMR -- it will not pick up changes.
 
+**Dev login (local browser testing):** there is no SMTP / inbox harness in dev, so the email-OTP code never reaches an inbox — sign-in via the OTP form will always block. Two well-lit escape hatches:
+
+- **In the browser**, the Login page renders a "Dev login as ..." button below the OTP form (visible only when `import.meta.env.DEV`). It POSTs to `/api/dev/login`, sets a real session cookie, and redirects in. This is the path for human / interactive testing.
+- **From an agent or terminal**, `curl -X POST -H 'Content-Type: application/json' -d '{"email":"agent@dev.local"}' http://localhost:__API_PORT__/api/dev/login -c /tmp/jar.txt` issues the same session. Re-use the cookie jar with `-b /tmp/jar.txt` on subsequent requests.
+
+The `/api/dev/*` routes 404 when `NODE_ENV=production`, and the Login page button is stripped from production SPA builds — both surfaces are local-only by construction. See "Dev affordances" further down for the full route catalog (seed / reset / introspect).
+
 ## Architecture
 
 ```
@@ -140,6 +147,48 @@ Protected routes use `requireAuth` middleware, which populates `c.get("user")` a
 ### Services
 
 Services live in `src/services/`. One service per domain (e.g., `user.service.ts`, `billing.service.ts`). Services contain all business logic and database queries. Routes call services -- they never query the database directly.
+
+### Realtime / WebSockets
+
+The template ships a working WS surface so customer apps don't have to plumb auth + connection lifecycle from scratch:
+
+- **`GET /api/auth/ws-token`** (auth-required) mints a 60-second JWT with `scope: "ws"`. Cookies don't reliably travel on cross-origin WS handshakes, so this token is the canonical way to authenticate a WS connection.
+- **`GET /api/realtime/ws?token=<wsToken>`** verifies the token via `verifyWsToken` (`src/api/middleware/auth.ts`), upgrades the request, and runs a baseline echo loop (`src/api/routes/realtime/index.ts`). On open it sends `{ type: "hello", userId, organizationId, connectionId }`; on each text frame it replies `{ type: "echo", ... }`.
+
+Add real features by replacing **the `socket.onmessage` branch** in `src/api/routes/realtime/index.ts` with whatever dispatch you need (chat broadcast, presence pub/sub, live cursors). Keep the auth + open + close handlers intact -- they are load-bearing for attribution + log correlation.
+
+**Scope segregation is enforced both ways**: `verifyToken` (session middleware) rejects `scope: "ws"` tokens so an exfiltrated WS token can't be used as a session cookie, and `verifyWsToken` rejects session tokens so a leaked session cookie can't open a WS to another tenant.
+
+Client-side flow:
+
+```ts
+// 1. Fetch a fresh token (uses the session cookie).
+const { token } = await api.get<{ token: string }>("/auth/ws-token");
+
+// 2. Open the WS with the token in the query string.
+const ws = new WebSocket(`ws://${location.host}/api/realtime/ws?token=${encodeURIComponent(token)}`);
+ws.onopen   = () => ws.send("hello server");
+ws.onmessage = (ev) => console.log("server →", ev.data);
+```
+
+Smoke test from a terminal:
+
+```bash
+# 1. Authenticate (dev login or OTP).
+curl -sS -X POST -H 'Content-Type: application/json' \
+  -d '{"email":"agent@dev.local"}' \
+  http://localhost:__API_PORT__/api/dev/login -c /tmp/jar.txt
+
+# 2. Mint a WS token.
+TOKEN=$(curl -sS -b /tmp/jar.txt http://localhost:__API_PORT__/api/auth/ws-token | sed 's/.*"token":"\([^"]*\)".*/\1/')
+
+# 3. Open a WS (use a real client; curl can't do WS).
+deno run --allow-net -e "
+  const ws = new WebSocket('ws://localhost:__API_PORT__/api/realtime/ws?token=$TOKEN');
+  ws.onopen = () => ws.send('ping');
+  ws.onmessage = e => { console.log(e.data); ws.close(); };
+"
+```
 
 ## Database Conventions
 
