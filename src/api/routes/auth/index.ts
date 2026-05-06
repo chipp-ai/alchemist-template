@@ -27,6 +27,12 @@ import { BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
 import { createSessionToken, requireAuth, getUser } from "@/api/middleware/auth.ts";
 import { sendOtpEmail } from "@/services/email.ts";
 import {
+  deleteObject,
+  getSignedDownloadUrl,
+  isStorageConfigured,
+  putObject,
+} from "@/services/storage.service.ts";
+import {
   fetchGitHubPrimaryEmail,
   findProvider,
   getConfiguredProviders,
@@ -418,6 +424,126 @@ authRoutes.patch("/me", requireAuth, zValidator("json", updateMeSchema, validati
     },
     organization: org ?? null,
   });
+});
+
+// ── Avatar / picture upload ────────────────────────────────────────────────
+// Customers (or end users) can upload a picture that overrides the OAuth-
+// provider avatar. Stored at `users/<userId>/avatar.<ext>` in the project's
+// R2 prefix. We keep a 7-day presigned download URL in users.picture so
+// the SPA can <img src> it directly without a refresh round-trip; after 7
+// days a re-upload (or a follow-up "refresh URL" endpoint a customer adds)
+// is required. OAuth-provided URLs (https://...) stay as-is and never
+// expire — only avatars uploaded through THIS endpoint get the TTL.
+
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+const AVATAR_TTL_SECONDS = 7 * 24 * 60 * 60;
+const ALLOWED_AVATAR_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+
+function avatarExtension(contentType: string): string {
+  switch (contentType) {
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    default:
+      return "bin";
+  }
+}
+
+authRoutes.post("/me/picture", requireAuth, async (c) => {
+  const user = getUser(c);
+
+  if (!isStorageConfigured()) {
+    throw new BadRequestError("File storage is not configured on this app");
+  }
+
+  const ct = c.req.header("content-type") ?? "";
+  if (!ct.startsWith("multipart/form-data")) {
+    throw new BadRequestError("Use multipart/form-data with a `file` field");
+  }
+
+  const form = await c.req.formData();
+  const file = form.get("file");
+  if (!(file instanceof File)) {
+    throw new BadRequestError("`file` field is required and must be a file");
+  }
+  if (file.size === 0) throw new BadRequestError("Empty file");
+  if (file.size > AVATAR_MAX_BYTES) {
+    throw new BadRequestError(
+      `Avatar exceeds size limit (${AVATAR_MAX_BYTES} bytes)`,
+    );
+  }
+  const contentType = file.type || "application/octet-stream";
+  if (!ALLOWED_AVATAR_TYPES.has(contentType)) {
+    throw new BadRequestError(
+      `Unsupported image type: ${contentType}. Allowed: png, jpeg, webp, gif.`,
+    );
+  }
+
+  const relativeKey = `users/${user.id}/avatar.${avatarExtension(contentType)}`;
+  const buffer = new Uint8Array(await file.arrayBuffer());
+
+  await putObject({ key: relativeKey, body: buffer, contentType });
+
+  // Stable presigned download URL (7-day TTL). Customer apps can either
+  // re-upload to refresh, or add a /me/picture/refresh endpoint that
+  // re-presigns — leaving that out of the baseline keeps this endpoint
+  // self-contained.
+  const pictureUrl = getSignedDownloadUrl(relativeKey, AVATAR_TTL_SECONDS);
+
+  await db
+    .updateTable("users")
+    .set({ picture: pictureUrl })
+    .where("id", "=", user.id)
+    .execute();
+
+  log.info("Avatar uploaded", {
+    source: "auth",
+    feature: "avatar-upload",
+    userId: user.id,
+    bytes: buffer.length,
+    contentType,
+  });
+
+  return c.json({ picture: pictureUrl });
+});
+
+authRoutes.delete("/me/picture", requireAuth, async (c) => {
+  const user = getUser(c);
+
+  if (isStorageConfigured()) {
+    // Best-effort R2 delete — if storage is detached from the picture
+    // (e.g. an OAuth URL stored as picture, never uploaded), this is
+    // a no-op. Don't fail the request just because the blob isn't
+    // there: the user's intent ("remove my avatar") is the picture
+    // column, and clearing that column is the load-bearing action.
+    for (const ext of ["png", "jpg", "webp", "gif"]) {
+      await deleteObject(`users/${user.id}/avatar.${ext}`).catch(() => {});
+    }
+  }
+
+  await db
+    .updateTable("users")
+    .set({ picture: null })
+    .where("id", "=", user.id)
+    .execute();
+
+  log.info("Avatar removed", {
+    source: "auth",
+    feature: "avatar-remove",
+    userId: user.id,
+  });
+
+  return c.json({ picture: null });
 });
 
 // ── OAuth (provider-driven) ────────────────────────────────────────────────
