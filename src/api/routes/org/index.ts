@@ -11,6 +11,7 @@
  *   DELETE /invites/:id            - Revoke pending invite         (admin+)
  *   PATCH  /members/:userId/role   - Change member's role          (admin+)
  *   DELETE /members/:userId        - Remove member from org        (admin+)
+ *   POST   /leave                  - Self-removal from org         (any auth, non-owner)
  *
  * Permissions go through `requireCapability` from the auth middleware,
  * which keys off the role hierarchy in `src/lib/roles.ts`. The route
@@ -28,6 +29,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
+import { deleteCookie } from "hono/cookie";
 import { db } from "@/db/client.ts";
 import {
   getUser,
@@ -337,5 +339,47 @@ orgRoutes.delete(
     return c.json({ ok: true });
   },
 );
+
+// ── POST /leave ───────────────────────────────────────────────────────────
+// Self-removal. Owner is blocked because there's no in-template
+// ownership-transfer flow yet — letting an owner leave would orphan
+// the org. They can either (a) promote another admin manually via
+// SQL and demote themselves, or (b) delete the org once that
+// endpoint exists. Non-owners get the same soft-disconnect as
+// DELETE /members/:userId, plus the session cookie is cleared so
+// the SPA flips to the login screen on the next /me call.
+
+const SESSION_COOKIE = "session_id";
+
+orgRoutes.post("/leave", requireAuth, async (c) => {
+  const user = getUser(c);
+
+  if (user.role === "owner") {
+    throw new ForbiddenError(
+      "The organization owner can't leave. Transfer ownership or delete the organization first.",
+    );
+  }
+
+  await db
+    .updateTable("users")
+    .set({
+      organizationId: null,
+      role: "viewer",
+      updatedAt: new Date(),
+    })
+    .where("id", "=", user.id)
+    .execute();
+
+  deleteCookie(c, SESSION_COOKIE, { path: "/" });
+
+  log.info("Org member self-left (soft-disconnected)", {
+    source: "org",
+    feature: "leave",
+    orgId: user.organizationId,
+    userId: user.id,
+  });
+
+  return c.json({ ok: true });
+});
 
 export { orgRoutes };
