@@ -71,22 +71,53 @@ async function runMigrations() {
 
   console.log(`Found ${pending.length} pending migration(s).\n`);
 
+  // A migration can opt OUT of the wrapping transaction by including
+  // `-- @no-transaction` on its own line in the file (typically as the
+  // first comment). PostgreSQL refuses certain DDL — most notably
+  // `ALTER TYPE ... ADD VALUE` followed by use of the new value in the
+  // same transaction (PG 55P04, "unsafe use of new value of enum
+  // type") — so transactions are unsafe for those migrations. Outside
+  // the wrapping tx, partial failures leave the DB in a half-applied
+  // state with no ledger entry; migrations using this opt-out should
+  // be idempotent (IF NOT EXISTS / IF EXISTS / ON CONFLICT) so a
+  // re-run cleanly resumes.
+  const NO_TRANSACTION_MARKER = /^--\s*@no-transaction\b/m;
+
   for (const migration of pending) {
     const content = await Deno.readTextFile(migration.path);
-    console.log(`Applying: ${migration.version}`);
+    const useTransaction = !NO_TRANSACTION_MARKER.test(content);
+
+    console.log(
+      `Applying: ${migration.version}${useTransaction ? "" : " (no-transaction)"}`,
+    );
 
     try {
-      await sql.begin(async (tx) => {
-        await tx.unsafe(content);
-        await tx`
+      if (useTransaction) {
+        await sql.begin(async (tx) => {
+          await tx.unsafe(content);
+          await tx`
+            INSERT INTO schema_migrations (version) VALUES (${migration.version})
+          `;
+        });
+      } else {
+        // No outer transaction. The migration's own statements either
+        // auto-commit individually (postgres.js default for unsafe())
+        // or include their own BEGIN/COMMIT. The ledger insert runs
+        // separately AFTER the SQL succeeds.
+        await sql.unsafe(content);
+        await sql`
           INSERT INTO schema_migrations (version) VALUES (${migration.version})
         `;
-      });
+      }
       console.log(`  Applied successfully.\n`);
     } catch (err) {
       console.error(`\n  Failed to apply ${migration.version}:`);
       console.error(`  ${err instanceof Error ? err.message : String(err)}\n`);
-      console.error("Migration rolled back. Fix the issue and re-run.");
+      console.error(
+        useTransaction
+          ? "Migration rolled back. Fix the issue and re-run."
+          : "WARNING: this migration ran without a transaction wrapper; the DB may be partially mutated. Migration files using `-- @no-transaction` MUST be idempotent so a re-run resumes cleanly.",
+      );
       await sql.end();
       Deno.exit(1);
     }

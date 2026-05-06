@@ -1,6 +1,14 @@
+-- @no-transaction
 -- 003_team_management.sql
 -- Real team / member management: extends the existing `invites` table +
 -- adds the 'editor' role + backfills 'member' → 'editor'.
+--
+-- Runs OUTSIDE the migrate runner's wrapping transaction (see the
+-- @no-transaction marker above): `ALTER TYPE ... ADD VALUE` followed
+-- by an UPDATE that USES that new value in the same transaction is a
+-- PG 55P04 error ("unsafe use of new value of enum type"). Every
+-- statement below is guarded with IF NOT EXISTS / WHERE clauses so a
+-- partial failure + re-run resumes cleanly.
 --
 -- Why
 --
@@ -36,16 +44,11 @@
 --   viewer  N per org   read-only
 
 -- ── 1. Add 'editor' to user_role ────────────────────────────────────────────
--- ALTER TYPE ADD VALUE must be in its own migration file separate from any
--- DML that uses the new value (PG 55P04). The single ADD VALUE statement
--- here is fine; the backfill UPDATE below uses the EXISTING 'editor' value
--- after this transaction commits in a fresh-DB run, but for an existing
--- DB where 'editor' is being newly added, the UPDATE runs in a SEPARATE
--- transaction (the migrate runner commits between statements when DDL/DML
--- mix). Splitting into 003 (enum) + 004 (DML) is the safest pattern; we
--- combine here because (a) the migrate runner in this template runs
--- statements one at a time with auto-commit, and (b) ADD VALUE IF NOT
--- EXISTS is idempotent so re-runs are safe.
+-- ALTER TYPE ADD VALUE + same-transaction USE-of-the-new-value is
+-- PG 55P04. The `-- @no-transaction` marker at the top of this file
+-- tells the migrate runner to skip its wrapping transaction, so the
+-- ALTER TYPE auto-commits before the UPDATE below uses 'editor'.
+-- ADD VALUE IF NOT EXISTS keeps re-runs idempotent.
 
 ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'editor';
 
