@@ -761,6 +761,60 @@ Before reporting any implementation as complete:
 
 **If ANY check fails: fix, re-run, proceed only when green.**
 
+## Agent verification toolkit — pick the right tool
+
+When verifying a change against the running app, three MCP tools cover almost everything. **Pick from cheapest → most expensive** and only escalate when the cheaper one doesn't answer the question.
+
+### Tier 1 — `dev_app_state` (cheapest, no browser required)
+
+```
+mcp__dev-server__dev_app_state                  # JSON, structured
+mcp__dev-server__dev_app_state({ format: "markdown" })   # Markdown, layered report
+```
+
+GETs `/api/dev/app-state` on the running customer app. Returns one merged payload:
+
+- **Client side** — current route, viewport, every `defineStore`-registered store snapshot, and `recentErrors` (uncaught JS errors captured by `window.onerror` / `unhandledrejection`).
+- **Server side** — the last 20 HTTP requests with method/path/status/duration, and any captured server errors.
+
+**Use this first** for any "is the running app in the state I expect?" question. It answers "what page is the user on / what's in the auth store / did my last PATCH succeed / did the server throw" with a single tool call. The structured JSON (default) is the L1 view; `format: "markdown"` is the L2 deep-dive (same content, formatted for reading).
+
+What `dev_app_state` does NOT capture: plain `console.log` / `console.warn` / `console.info` calls. Those need Tier 2.
+
+### Tier 2 — `browser_get_console_logs` (full console output)
+
+```
+mcp__browser-devtools__browser_get_console_logs           # all types
+mcp__browser-devtools__browser_get_console_logs({ type: "error" })  # filter
+mcp__browser-devtools__browser_get_console_logs({ search: "..." })  # grep
+```
+
+Captures every `console.*` call from Chrome via CDP — `log`, `warn`, `error`, `info`, `debug` — with stack traces and timestamps. Use this when:
+
+- A bug is suspected in code that uses `console.log` to surface state.
+- An uncaught error appears in `dev_app_state.client.recentErrors` and you want the surrounding console context.
+- A third-party library is logging warnings you need to read.
+
+### Tier 3 — drive the browser (UI verification)
+
+```
+mcp__browser-devtools__browser_navigate
+mcp__browser-devtools__browser_click
+mcp__browser-devtools__browser_type
+mcp__browser-devtools__browser_take_screenshot
+mcp__browser-devtools__browser_execute_js
+```
+
+Use these when the previous tiers can't answer your question — you need to verify visual layout, click through a flow, or run JS in the page context (e.g. open a WebSocket from the SPA's origin to verify the proxy + auth path).
+
+### Decision rule
+
+> "Could `dev_app_state` answer this?" → call it first.
+> "Could `browser_get_console_logs` answer this?" → call it next.
+> "Do I actually need to see / click the page?" → only then go to `browser_*`.
+
+Skipping the cheaper tools is the most common token-waster in verification — agents reach for `browser_navigate` + `browser_take_screenshot` to check things that `dev_app_state` already returns in one call.
+
 ## Dev affordances — DO NOT reverse-engineer auth from scratch
 
 When NODE_ENV is anything other than `production` (which is the case in
