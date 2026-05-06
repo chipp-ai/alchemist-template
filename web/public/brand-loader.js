@@ -90,6 +90,16 @@
       root.style.setProperty("--brand-neutral", brand.neutralColor);
     }
 
+    // Set the document title from the user-facing product name. The
+    // HTML's static <title> is a "Loading…" placeholder — this fires
+    // as soon as /brand.json resolves so the real product name
+    // appears in the tab + browser history. Re-fires on
+    // brand-updated SSE events so a name change in the platform's
+    // BrandPanel propagates without a page reload.
+    if (typeof brand.productName === "string" && brand.productName.trim()) {
+      document.title = brand.productName;
+    }
+
     // Pick light vs dark logo based on the user's prefers-color-scheme.
     // The customer app can override by adding `data-brand-mode` on
     // the html element ("light" or "dark") — useful for theme

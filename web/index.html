@@ -3,7 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Alchemist Template</title>
+    <!--
+      Placeholder title. brand-loader.js overrides it at runtime by
+      setting `document.title` from `/brand.json`'s `productName`
+      field once the fetch resolves (typically <100 ms after first
+      paint). The placeholder is intentionally generic — never
+      "Alchemist" or any platform-side branding — so a customer pod
+      whose brand-loader fails still doesn't leak platform identity.
+      See src/config/brand.ts in the customer-runtime template for
+      the contract.
+    -->
+    <title>Loading…</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <!--
       Brand loader. Reads brand_config from the alchemist platform and

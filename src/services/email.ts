@@ -7,6 +7,7 @@
 
 import nodemailer from "nodemailer";
 import { log } from "@/lib/logger.ts";
+import { BRAND } from "@/config/brand.ts";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -14,7 +15,10 @@ const SMTP_HOST = Deno.env.get("SMTP_HOST");
 const SMTP_PORT = parseInt(Deno.env.get("SMTP_PORT") ?? "465", 10);
 const SMTP_USERNAME = Deno.env.get("SMTP_USERNAME");
 const SMTP_PASSWORD = Deno.env.get("SMTP_PASSWORD");
-const EMAIL_FROM = Deno.env.get("EMAIL_FROM") ?? "noreply@alchemist.ai";
+// Branded "from" — `${BRAND.name} <${BRAND.fromEmail}>`. Read from
+// the central brand module, NOT from env directly. See
+// src/config/brand.ts for why.
+const EMAIL_FROM = `${BRAND.fromName} <${BRAND.fromEmail}>`;
 
 const isSmtpConfigured = !!(SMTP_HOST && SMTP_USERNAME && SMTP_PASSWORD);
 
@@ -92,7 +96,7 @@ interface SendInviteEmailOptions {
  * without a real mailbox.
  */
 export async function sendInviteEmail(opts: SendInviteEmailOptions): Promise<void> {
-  const appName = Deno.env.get("APP_NAME") ?? "Alchemist";
+  const appName = BRAND.name;
   const inviterDisplay = opts.inviterName?.trim() || opts.inviterEmail;
 
   // "Expires in N days" copy. Floors so a 6.99-day-old invite reads "6 days".
@@ -151,7 +155,7 @@ function escapeHtml(s: string): string {
 // ── OTP Email ───────────────────────────────────────────────────────────────
 
 export async function sendOtpEmail(to: string, otpCode: string): Promise<void> {
-  const appName = Deno.env.get("APP_NAME") ?? "Alchemist";
+  const appName = BRAND.name;
 
   await sendEmail({
     to,
