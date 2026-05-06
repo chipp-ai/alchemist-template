@@ -5,6 +5,45 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Alchemist Template</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!--
+      Brand loader. Reads brand_config from the alchemist platform and
+      sets CSS custom properties (--brand-primary / --brand-accent /
+      --brand-neutral) on :root, plus assigns logo <img src> for any
+      element with `data-brand-logo="light|dark"`.
+
+      The agent should set window.ALCHEMIST_PROJECT_ID at build time
+      (Vite env var → VITE_ALCHEMIST_PROJECT_ID, baked into a small
+      inline script during build) so the loader knows which project
+      to fetch. Without it, the loader logs a warning and the
+      customer app falls back to template defaults below.
+
+      For local dev pointing at the platform on port 8200:
+      window.ALCHEMIST_PLATFORM_ORIGIN = "http://localhost:8200";
+
+      See alchemist-ai/docs/brand-config.md for the full contract.
+    -->
+    <script>
+      // Bake projectId in via Vite at build (recommended) or fill in
+      // a runtime config endpoint here. The agent will replace these
+      // placeholders during the customer-app build pipeline.
+      window.ALCHEMIST_PROJECT_ID =
+        // @ts-ignore — VITE_* envs land as build-time constants.
+        (typeof __ALCHEMIST_PROJECT_ID__ !== "undefined" ? __ALCHEMIST_PROJECT_ID__ : null);
+    </script>
+    <script src="/brand-loader.js" defer></script>
+    <style>
+      /*
+       * Template-level fallbacks. Render when brand-loader.js fails
+       * to fetch (network, project archived, no brand configured).
+       * Keep these reading well on their own — they're the canvas
+       * the brand sits on top of.
+       */
+      :root {
+        --brand-primary: #5e6ad2;
+        --brand-accent: #f59e0b;
+        --brand-neutral: #fafafa;
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>

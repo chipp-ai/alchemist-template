@@ -3,8 +3,20 @@
 /* ============================================================= */
 
 :root {
-  /* Background & surfaces */
-  --color-bg: #ffffff;
+  /*
+   * Brand vars set by /brand-loader.js at runtime. The fallbacks
+   * below render before the loader fetches /brand.json (or when the
+   * fetch fails). All UI colors that should track the brand reference
+   * these — never hardcode in component styles.
+   *
+   * See alchemist-ai/docs/brand-config.md for the full contract.
+   */
+  --brand-primary: #5e6ad2;
+  --brand-accent: #f59e0b;
+  --brand-neutral: #fafafa;
+
+  /* Background & surfaces — neutral drives the page canvas. */
+  --color-bg: var(--brand-neutral, #ffffff);
   --color-surface: #f9fafb;
   --color-surface-raised: #ffffff;
 
@@ -17,9 +29,17 @@
   --color-text-secondary: #4b5563;
   --color-muted: #9ca3af;
 
-  /* Accent */
-  --color-accent: #111827;
-  --color-accent-hover: #374151;
+  /*
+   * Accent — primary drives buttons, links, focus rings. The
+   * `*-hover` variant darkens slightly via color-mix; falls back to
+   * a sensible static when color-mix is unsupported.
+   */
+  --color-accent: var(--brand-primary, #111827);
+  --color-accent-hover: color-mix(
+    in srgb,
+    var(--brand-primary, #111827) 85%,
+    black
+  );
   --color-accent-text: #ffffff;
 
   /* Status */
