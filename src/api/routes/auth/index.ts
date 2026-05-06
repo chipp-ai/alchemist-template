@@ -301,6 +301,96 @@ authRoutes.get("/me", requireAuth, async (c) => {
   });
 });
 
+/**
+ * PATCH /me
+ * Update the current authenticated user's profile (name, email, picture).
+ * Email change resets emailVerified — the user has to re-verify via OTP
+ * before we trust the new address.
+ */
+const updateMeSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100).optional(),
+    email: z.string().email().trim().toLowerCase().optional(),
+    picture: z.string().url().nullable().optional(),
+  })
+  .refine((v) => v.name !== undefined || v.email !== undefined || v.picture !== undefined, {
+    message: "At least one field is required",
+  });
+
+authRoutes.patch("/me", requireAuth, zValidator("json", updateMeSchema, validationHook), async (c) => {
+  const user = getUser(c);
+  const body = c.req.valid("json");
+
+  // Email collision: 409. Tenants don't share users, but globally a
+  // user row is keyed on email — same address can only belong to one
+  // account. Fail fast so the SPA can show "that address is in use"
+  // rather than letting the UPDATE crash with a unique-constraint 500.
+  if (body.email && body.email !== user.email) {
+    const conflict = await db
+      .selectFrom("users")
+      .select("id")
+      .where("email", "=", body.email)
+      .where("id", "!=", user.id)
+      .executeTakeFirst();
+    if (conflict) {
+      return c.json(
+        { error: "Email is already in use", code: "EMAIL_IN_USE" },
+        409,
+      );
+    }
+  }
+
+  const updates: Partial<{
+    name: string;
+    email: string;
+    picture: string | null;
+    emailVerified: boolean;
+  }> = {};
+  if (body.name !== undefined) updates.name = body.name;
+  if (body.picture !== undefined) updates.picture = body.picture;
+  if (body.email !== undefined && body.email !== user.email) {
+    updates.email = body.email;
+    updates.emailVerified = false;
+  }
+
+  await db
+    .updateTable("users")
+    .set(updates)
+    .where("id", "=", user.id)
+    .execute();
+
+  const updated = await db
+    .selectFrom("users")
+    .select(["id", "email", "name", "picture", "role", "emailVerified"])
+    .where("id", "=", user.id)
+    .executeTakeFirstOrThrow();
+
+  const org = await db
+    .selectFrom("organizations")
+    .select(["id", "name", "slug", "subscriptionTier"])
+    .where("id", "=", user.organizationId)
+    .executeTakeFirst();
+
+  log.info("Profile updated", {
+    source: "auth",
+    feature: "profile-update",
+    userId: user.id,
+    fieldsChanged: Object.keys(updates),
+  });
+
+  return c.json({
+    user: {
+      id: updated.id,
+      email: updated.email,
+      name: updated.name,
+      picture: updated.picture,
+      role: updated.role,
+      emailVerified: updated.emailVerified,
+    },
+    organization: org ?? null,
+  });
+});
+
 // ── OAuth (provider-driven) ────────────────────────────────────────────────
 // One pair of routes (`/:provider` + `/:provider/callback`) handles every
 // provider in src/lib/oauth-providers.ts. Adding a new provider is one
