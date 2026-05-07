@@ -25,6 +25,14 @@ export default defineConfig({
   },
   server: {
     port: 5273,
+    // E2B exposes Vite over a public subdomain like
+    // `5173-<sandbox-id>.e2b.app` when the user opens a scratch
+    // workspace from the alchemist dashboard. Vite 5+ rejects unknown
+    // Hosts by default (DNS-rebinding protection); whitelist all
+    // e2b.app subdomains so the Live-preview link in app.adaas.dev
+    // resolves. Adds .localhost / .local for parity with developer
+    // laptops and any future tunnel.
+    allowedHosts: [".e2b.app", ".localhost", ".local"],
     proxy: {
       "/api": {
         target: "http://localhost:8000",
