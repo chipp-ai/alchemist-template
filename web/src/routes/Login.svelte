@@ -31,6 +31,14 @@
     }>("/auth/config").then((data) => {
       providers = data.providers ?? [];
     }).catch(() => {});
+
+    // ?autodev=1 → fire dev-login automatically. Used by alchemist-ai's
+    // "Live preview" button so a fresh workspace lands the user signed
+    // in without an extra click. Gated on import.meta.env.DEV (set
+    // below) so a prod-built SPA ignores the param.
+    if (import.meta.env.DEV && new URLSearchParams(location.search).get("autodev") === "1") {
+      void handleDevLogin();
+    }
   });
 
   async function handleSendOtp(e: Event) {
