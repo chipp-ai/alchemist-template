@@ -16,9 +16,9 @@
 
 ---
 
-Alchemist Template is a SaaS starter built on Deno 2, Hono 4, Svelte 5, and PostgreSQL. It ships with auth, billing, RBAC, structured logging, and an idiomatic Kysely + services layout, plus a `CLAUDE.md` authored so AI agents (Claude Code, Cursor, or the [Alchemist AI](https://alchemist-ai.com) platform itself) can navigate and extend it without fighting the conventions. Fork it as the starting point for any new product.
+Alchemist Template is a SaaS starter built on Deno 2, Hono 4, Svelte 5, and PostgreSQL. It ships with auth, billing, RBAC, structured logging, and an idiomatic Kysely + services layout, plus a `CLAUDE.md` authored so AI agents (Claude Code, Cursor, or the [Alchemist AI](https://adaas.dev) platform itself) can navigate and extend it without fighting the conventions. Fork it as the starting point for any new product.
 
-It is also the seed repo every customer project on the [Alchemist AI](https://alchemist-ai.com) platform is cloned from. The conventions here are the ones autonomous agents are trained against -- using this template means agents work with you, not around you.
+It is also the seed repo every customer project on the [Alchemist AI](https://adaas.dev) platform is cloned from. The conventions here are the ones autonomous agents are trained against -- using this template means agents work with you, not around you.
 
 ## What's in the box
 
@@ -139,7 +139,7 @@ The template ships with the foundation you'd otherwise build yourself: organizat
 
 ## Working with AI agents
 
-This template was authored so AI agents (Claude Code, Cursor, the [Alchemist AI](https://alchemist-ai.com) platform) can extend it without ramp-up. Two things make that work:
+This template was authored so AI agents (Claude Code, Cursor, the [Alchemist AI](https://adaas.dev) platform) can extend it without ramp-up. Two things make that work:
 
 **`CLAUDE.md` at the root** documents the stack, layout, conventions, dev login flow, and gotchas. Claude Code auto-loads it on every session; other agents you point at the repo can be told to read it first. When you fork, update it:
 
