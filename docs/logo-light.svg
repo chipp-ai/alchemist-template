@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 80" fill="none">
+  <!-- Mark: concentric rounded squares (template layers wrap your code at the core) -->
+  <rect x="12" y="12" width="56" height="56" rx="7" stroke="#1a1a1a" stroke-width="2.5"/>
+  <rect x="24" y="24" width="32" height="32" rx="4.5" stroke="#1a1a1a" stroke-width="2.5"/>
+  <rect x="33" y="33" width="14" height="14" rx="2" fill="#1a1a1a"/>
+
+  <!-- Wordmark -->
+  <text x="92" y="48" font-family="'SF Mono','Fira Code','Cascadia Code','JetBrains Mono',Menlo,Monaco,Consolas,monospace" font-size="48" font-weight="700" letter-spacing="6" fill="#1a1a1a">ALCHEMIST</text>
+
+  <!-- Subtitle -->
+  <text x="94" y="70" font-family="'SF Mono','Fira Code','Cascadia Code','JetBrains Mono',Menlo,Monaco,Consolas,monospace" font-size="11" font-weight="400" letter-spacing="4" fill="#666666">SAAS TEMPLATE FOR AUTONOMOUS AGENTS</text>
+</svg>
