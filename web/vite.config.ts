@@ -33,20 +33,29 @@ export default defineConfig({
     // resolves. Adds .localhost / .local for parity with developer
     // laptops and any future tunnel.
     allowedHosts: [".e2b.app", ".localhost", ".local"],
-    proxy: {
-      "/api": {
-        target: "http://localhost:8000",
-        changeOrigin: true,
-        ws: true,
-      },
-      "/auth": {
-        target: "http://localhost:8000",
-        changeOrigin: true,
-      },
-      "/health": {
-        target: "http://localhost:8000",
-        changeOrigin: true,
-      },
-    },
+    proxy: (() => {
+      // VITE_API_PROXY lets the embedding harness override where the
+      // SPA proxies /api + /auth + /health. The Alchemist Mac desktop
+      // app sets it (the customer template's API binds :8100 there
+      // to coexist with the alchemist-ai controller on :8000). The
+      // sandbox / E2B path doesn't set it; default to :8000 so the
+      // cloud agent flow is unchanged.
+      const target = process.env.VITE_API_PROXY || "http://localhost:8000";
+      return {
+        "/api": {
+          target,
+          changeOrigin: true,
+          ws: true,
+        },
+        "/auth": {
+          target,
+          changeOrigin: true,
+        },
+        "/health": {
+          target,
+          changeOrigin: true,
+        },
+      };
+    })(),
   },
 });
