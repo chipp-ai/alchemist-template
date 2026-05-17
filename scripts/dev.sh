@@ -113,14 +113,22 @@ else
 fi
 
 # ── Wait for PostgreSQL ──
+#
+# Probe the container directly via `docker compose exec` so the
+# host doesn't need libpq / postgres-client installed (it usually
+# isn't on a fresh macOS dev box, and on those hosts the old
+# `pg_isready -h localhost` form silently 30s-timed-out because
+# the command-not-found failure looks identical to "not ready").
+# Running pg_isready INSIDE the container — where postgres ships
+# the matching client — is the right grain anyway.
 
 echo "Waiting for PostgreSQL on port $DB_PORT..."
 RETRIES=0
 MAX_RETRIES=30
-while ! pg_isready -h localhost -p "$DB_PORT" -q 2>/dev/null; do
+while ! docker compose exec -T postgres pg_isready -U postgres -q 2>/dev/null; do
   RETRIES=$((RETRIES + 1))
   if [[ $RETRIES -ge $MAX_RETRIES ]]; then
-    echo "Error: PostgreSQL not ready after ${MAX_RETRIES}s on port $DB_PORT."
+    echo "Error: PostgreSQL not ready after ${MAX_RETRIES}s (host port $DB_PORT)."
     echo "Check: docker compose logs postgres"
     exit 1
   fi
