@@ -75,14 +75,14 @@ PIDS=()
 cleanup() {
   echo ""
   echo "Shutting down dev stack..."
-  for pid in "${PIDS[@]}"; do
+  for pid in ${PIDS[@]+"${PIDS[@]}"}; do
     if kill -0 "$pid" 2>/dev/null; then
       kill "$pid" 2>/dev/null || true
     fi
   done
   # Wait briefly, then force-kill stragglers
   sleep 1
-  for pid in "${PIDS[@]}"; do
+  for pid in ${PIDS[@]+"${PIDS[@]}"}; do
     if kill -0 "$pid" 2>/dev/null; then
       kill -9 "$pid" 2>/dev/null || true
     fi
