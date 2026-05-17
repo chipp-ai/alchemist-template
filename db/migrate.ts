@@ -34,9 +34,14 @@ try {
     migrationsDir: new URL("./migrations/", import.meta.url).pathname,
   });
   Deno.exit(0);
-} catch (_err) {
-  // _runner.ts has already logged the failure with context. Just
-  // surface the non-zero exit so CI / deploy / desktop-dev-server
-  // see the migration failed.
+} catch (err) {
+  // _runner.ts logs failures CAUSED BY a migration (SQL errors, lock
+  // contention, etc.) with rich context. But errors thrown BEFORE
+  // the runner reaches its own logging path — connection refused,
+  // auth failure, DNS lookup miss, network unreachable — surface
+  // here with the original message swallowed. Print the error so
+  // CI / deploy / desktop-dev-server can diagnose without re-running
+  // with strace.
+  console.error("[migrate] failed:", err);
   Deno.exit(1);
 }

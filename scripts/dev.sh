@@ -64,6 +64,23 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
   fi
 fi
 
+# ── Re-derive DATABASE_URL when DB_PORT is remapped ──
+#
+# The customer template's .env ships with
+#   DATABASE_URL=postgres://postgres:postgres@localhost:5432/app_dev
+# (matches docker-compose's default). When the desktop dev-server
+# remaps DB_PORT to dodge a host-port conflict (e.g. an
+# alchemist-test-pg container squatting on 5432), DATABASE_URL stays
+# pointed at 5432 → deno task db:migrate authenticates against the
+# WRONG postgres instance, fails silently, dev.sh trap aborts. Export
+# a corrected DATABASE_URL whenever DB_PORT diverges from 5432; this
+# overrides the .env value the Deno --env flag would otherwise load
+# (process env wins over .env in Deno's --env loader).
+if [[ "$DB_PORT" != "5432" ]]; then
+  export DATABASE_URL="postgres://postgres:postgres@localhost:${DB_PORT}/app_dev"
+  echo "Remapped DATABASE_URL → port ${DB_PORT}"
+fi
+
 # ── Create log directory ──
 
 mkdir -p "$PROJECT_ROOT/.scratch/logs"
