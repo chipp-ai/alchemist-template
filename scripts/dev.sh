@@ -109,49 +109,81 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM EXIT
 
-# ── Check Docker is running ──
-
-if ! docker info >/dev/null 2>&1; then
-  echo "Error: Docker is not running. Start Docker Desktop and try again."
-  exit 1
-fi
-
-# ── Start docker-compose services if not running ──
-
-echo "Checking Docker services..."
-cd "$PROJECT_ROOT"
-
-if ! docker compose ps --status running 2>/dev/null | grep -q "postgres"; then
-  echo "Starting Docker services (postgres, redis)..."
-  docker compose up -d
-  echo "Docker services started."
-else
-  echo "Docker services already running."
-fi
-
-# ── Wait for PostgreSQL ──
+# ── Backing services: prefer alchemist-desktop's bundled pg + redis ──
 #
-# Probe the container directly via `docker compose exec` so the
-# host doesn't need libpq / postgres-client installed (it usually
-# isn't on a fresh macOS dev box, and on those hosts the old
-# `pg_isready -h localhost` form silently 30s-timed-out because
-# the command-not-found failure looks identical to "not ready").
-# Running pg_isready INSIDE the container — where postgres ships
-# the matching client — is the right grain anyway.
+# The alchemist-desktop app bundles Postgres on port 5433 and Redis on
+# port 6379 (see desktop/src-tauri/src/local_services.rs). When those
+# are reachable, use them directly — no Docker dependency, no
+# docker-compose lifecycle to manage, no per-project image pulls.
+# The bundled Postgres ships full standard contrib + pgvector via the
+# chipp-ai/postgres-bundle distribution, matching production Cloud SQL.
+#
+# Docker remains the fallback for environments where the desktop
+# isn't running (headless CI, a teammate without the .app, etc.).
 
-echo "Waiting for PostgreSQL on port $DB_PORT..."
-RETRIES=0
-MAX_RETRIES=30
-while ! docker compose exec -T postgres pg_isready -U postgres -q 2>/dev/null; do
-  RETRIES=$((RETRIES + 1))
-  if [[ $RETRIES -ge $MAX_RETRIES ]]; then
-    echo "Error: PostgreSQL not ready after ${MAX_RETRIES}s (host port $DB_PORT)."
-    echo "Check: docker compose logs postgres"
+BUNDLED_PG_PORT=5433
+BUNDLED_REDIS_PORT=6379
+USE_BUNDLED_SERVICES=0
+if nc -z localhost "$BUNDLED_PG_PORT" 2>/dev/null && nc -z localhost "$BUNDLED_REDIS_PORT" 2>/dev/null; then
+  USE_BUNDLED_SERVICES=1
+fi
+
+if [[ "$USE_BUNDLED_SERVICES" = "1" ]]; then
+  # Per-project database name — multiple customer projects can run
+  # against the same bundled pg without colliding. Hash the project
+  # root so the name is stable across runs but unique per clone.
+  PROJECT_HASH=$(echo -n "$PROJECT_ROOT" | shasum -a 256 | cut -c1-8)
+  PROJECT_DB="app_dev_${PROJECT_HASH}"
+  export DATABASE_URL="postgres://postgres:postgres@localhost:${BUNDLED_PG_PORT}/${PROJECT_DB}"
+  export REDIS_URL="redis://localhost:${BUNDLED_REDIS_PORT}"
+  echo "Using alchemist-desktop bundled services:"
+  echo "  Postgres → localhost:${BUNDLED_PG_PORT} (db: ${PROJECT_DB})"
+  echo "  Redis    → localhost:${BUNDLED_REDIS_PORT}"
+  # db/migrate.ts auto-creates the database if it doesn't exist
+  # (connects to the meta `postgres` DB to run CREATE DATABASE).
+
+else
+  # ── Docker fallback (legacy path) ──
+
+  if ! docker info >/dev/null 2>&1; then
+    cat <<EOF
+Error: alchemist-desktop's bundled services (Postgres :${BUNDLED_PG_PORT},
+Redis :${BUNDLED_REDIS_PORT}) are not reachable, and Docker is not
+running as a fallback. Either:
+  • Start the alchemist-desktop app (recommended — no Docker needed), or
+  • Start Docker Desktop and re-run this script.
+EOF
     exit 1
   fi
-  sleep 1
-done
-echo "PostgreSQL is ready."
+
+  echo "Bundled services not detected — falling back to docker-compose."
+  echo "Checking Docker services..."
+  cd "$PROJECT_ROOT"
+
+  if ! docker compose ps --status running 2>/dev/null | grep -q "postgres"; then
+    echo "Starting Docker services (postgres, redis)..."
+    docker compose up -d
+    echo "Docker services started."
+  else
+    echo "Docker services already running."
+  fi
+
+  # Probe via `docker compose exec` so the host doesn't need libpq
+  # installed (it usually isn't on a fresh macOS dev box).
+  echo "Waiting for PostgreSQL on port $DB_PORT..."
+  RETRIES=0
+  MAX_RETRIES=30
+  while ! docker compose exec -T postgres pg_isready -U postgres -q 2>/dev/null; do
+    RETRIES=$((RETRIES + 1))
+    if [[ $RETRIES -ge $MAX_RETRIES ]]; then
+      echo "Error: PostgreSQL not ready after ${MAX_RETRIES}s (host port $DB_PORT)."
+      echo "Check: docker compose logs postgres"
+      exit 1
+    fi
+    sleep 1
+  done
+  echo "PostgreSQL is ready."
+fi
 
 # ── Run migrations ──
 

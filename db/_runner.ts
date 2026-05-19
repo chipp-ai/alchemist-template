@@ -54,6 +54,64 @@ export interface RunMigrationsOptions {
  * migrations go through this, and they need to keep each statement
  * isolated from the next so PG autocommits between them.
  */
+/**
+ * Ensure the database in `databaseUrl` exists. If it doesn't, connect
+ * to the meta `postgres` DB on the same host/port/credentials and
+ * CREATE it. Used to bootstrap per-project DBs on the desktop's
+ * bundled Postgres (where each customer project gets its own
+ * `app_dev_<hash>` database) without requiring a manual createdb
+ * step. Idempotent — running migrations twice never tries to create
+ * the database the second time, because the first run's check passes.
+ *
+ * Errors during database creation propagate to the caller. The
+ * connection to the meta DB is short-lived (single `CREATE DATABASE`,
+ * then close).
+ */
+async function ensureDatabaseExists(databaseUrl: string): Promise<void> {
+  const url = new URL(databaseUrl);
+  const targetDb = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  if (!targetDb || targetDb === "postgres") {
+    // Either we're already connecting to the meta DB or the URL has
+    // no database segment — nothing to bootstrap.
+    return;
+  }
+
+  // Probe: try a 1ms connection to the target DB. If it succeeds,
+  // the database exists and we don't need to create anything.
+  const probe = postgres(databaseUrl, { max: 1, connect_timeout: 5 });
+  try {
+    await probe`SELECT 1`;
+    await probe.end();
+    return;
+  } catch (e) {
+    await probe.end({ timeout: 0 }).catch(() => {});
+    // Only catch the "database does not exist" case (postgres
+    // SQLSTATE 3D000). Other errors (auth, network, etc.) bubble
+    // up — those are real problems the caller should see.
+    const msg = e instanceof Error ? e.message : String(e);
+    const isMissingDb = /does not exist/i.test(msg) && /database/i.test(msg);
+    const isCode3d000 = /3D000/.test(msg);
+    if (!isMissingDb && !isCode3d000) {
+      throw e;
+    }
+  }
+
+  // Create the database via the meta connection. Quote the
+  // identifier so case-folding / special chars in the project hash
+  // don't bite us — but we don't accept arbitrary user input here,
+  // the name came from a sha256 hex digest in dev.sh.
+  const metaUrl = new URL(databaseUrl);
+  metaUrl.pathname = "/postgres";
+  const meta = postgres(metaUrl.toString(), { max: 1, connect_timeout: 10 });
+  try {
+    const safeName = targetDb.replace(/"/g, '""');
+    await meta.unsafe(`CREATE DATABASE "${safeName}"`);
+    console.log(`[migrate] created database "${targetDb}"`);
+  } finally {
+    await meta.end({ timeout: 5 }).catch(() => {});
+  }
+}
+
 function splitSqlStatements(sql: string): string[] {
   const statements: string[] = [];
   let current = "";
@@ -163,6 +221,20 @@ export async function runMigrations(
   if (!databaseUrl) {
     throw new Error("DATABASE_URL environment variable is required");
   }
+
+  // Auto-create the target database if it doesn't exist yet. The
+  // customer-template's dev.sh now points at the alchemist-desktop's
+  // bundled Postgres (port 5433) with a per-project database name
+  // derived from the project root hash. That database may not exist
+  // on first run — instead of failing with "database <name> does not
+  // exist," connect to the meta `postgres` DB once and CREATE the
+  // target. Idempotent: subsequent runs see the database exists and
+  // skip the bootstrap connection.
+  //
+  // Production deploys never hit this path because the customer DB
+  // is provisioned by alchemist-ai's customer-db-provisioning service
+  // before the customer pod starts; the DB always exists by then.
+  await ensureDatabaseExists(databaseUrl);
 
   const sql = postgres(databaseUrl, { max: 1 });
 
