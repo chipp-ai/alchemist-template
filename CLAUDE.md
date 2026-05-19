@@ -97,6 +97,23 @@ These guide all code review and implementation decisions:
 - **Every interactive element gets `data-testid`** following `{area}-{component}-{element}` convention (e.g., `data-testid="settings-form-input-name"`).
 - **ALWAYS use `./scripts/dev.sh --api-port __API_PORT__ --port __VITE_PORT__`** -- ports are required (no defaults), logs go to `.scratch/logs/`.
 
+## Observability stream — `.scratch/logs/observability.jsonl`
+
+Every server log statement, HTTP request, server error, AND every browser-side breadcrumb (console.*, errors, fetch/XHR, clicks, route changes, LCP/CLS/INP) converges in **time order** into a single JSONL file at `.scratch/logs/observability.jsonl`. This is the canonical "what happened during this test session" stream — read it after a user has poked at the app to understand exactly what they did, what fired, and what failed.
+
+Each line is `{ts, sid, source: "client"|"server", kind, data}`. Stable `kind` slugs (do NOT mutate; analytics product depends on them): `server.log.{debug,info,warn,error}`, `server.http`, `server.error`, `client.console.{log,info,warn,error,debug}`, `client.error`, `client.promise`, `client.fetch`, `client.click`, `client.click.background`, `client.route`, `client.perf.{lcp,cls,inp}`, `client.session`.
+
+Implementation lives in:
+- `src/observability/jsonl-writer.ts` — append-only writer with 10MB rotation
+- `src/observability/envelope.ts` — `recordServerEvent` / `recordClientEvents`
+- `src/api/routes/observability/index.ts` — `POST /api/_observability/breadcrumb` collector
+- `web/src/lib/observability/breadcrumbs.ts` — client-side hooks (installed from `web/src/main.ts`)
+- Hooked into `src/lib/logger.ts` (every emit) and `src/lib/dev-activity.ts` (every recorded request + error)
+
+Dev-only — the entire pipeline no-ops when `NODE_ENV === "production"`. The analytics product will replace the collector with a remote ingest at that boundary when it ships.
+
+**When debugging a user-reported issue, tail this file first** — `tail -n 200 .scratch/logs/observability.jsonl | jq .` gives the most recent slice of what happened in their session, both client and server, in time order.
+
 ## API Conventions
 
 ### Route Structure
@@ -191,6 +208,30 @@ deno run --allow-net -e "
 ```
 
 ## Database Conventions
+
+### Available Postgres extensions
+
+Every Alchemist customer app runs against Postgres with the SAME extension set across local dev, CI, and production. Don't ask "is this available here" — the answer is yes everywhere.
+
+| Extension | Purpose | Use when |
+|---|---|---|
+| `pgcrypto` | `crypt()`, `gen_random_uuid()`, `digest()` | UUID defaults, password hashing, server-side hashes |
+| `uuid-ossp` | `uuid_generate_v4()`, related uuid helpers | UUID defaults (legacy code; prefer `gen_random_uuid()` for new tables — it's in PG core too) |
+| `vector` (pgvector) | `vector(N)` column type + cosine/L2/inner-product operators + IVFFlat/HNSW indexes | Embeddings, semantic search, RAG retrieval |
+| Full standard contrib | `citext`, `btree_gin`, `btree_gist`, `pg_trgm`, `hstore`, `intarray`, `ltree`, `tablefunc`, … | Reach for these before adding deps |
+
+**Where these come from:**
+
+- **Local dev** — `docker-compose.yml`'s `postgres` service uses `pgvector/pgvector:pg16`, an official maintained image with the above. Customer template defaults to this.
+- **CI** — `.github/workflows/ci.yml`'s `postgres` service uses the same image.
+- **Production** — Cloud SQL Postgres 16 with the `cloudsql.enable_pgvector=on` instance flag; extensions installed in `public` schema by the alchemist platform at customer-DB provisioning time (see `alchemist-ai/src/services/customer-db-provisioning.service.ts`).
+- **alchemist-desktop's embedded pg** — `chipp-ai/postgres-bundle` release pipeline produces a custom postgres binary distribution with the same set (theseus-rs/postgresql-binaries upstream omits pgcrypto and pgvector, so we maintain our own).
+
+**In your migrations:**
+
+- **DON'T** `CREATE EXTENSION ...` — the per-tenant DB user doesn't have privileges to. The platform admin (`alchemist_app`) installs extensions in the shared DB once; customers just USE them.
+- **DO** use extension features directly: `CREATE TABLE embeddings (id UUID DEFAULT gen_random_uuid(), embedding vector(1536))`.
+- **For vector indexes** the common pattern is HNSW for retrieval-time-sensitive workloads: `CREATE INDEX ON embeddings USING hnsw (embedding vector_cosine_ops);`.
 
 ### Kysely + CamelCasePlugin
 

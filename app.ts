@@ -24,6 +24,7 @@ import { devRoutes } from "@/api/routes/dev/index.ts";
 import { fileRoutes } from "@/api/routes/files/index.ts";
 import { inviteRoutes } from "@/api/routes/invite/index.ts";
 import { realtimeRoutes } from "@/api/routes/realtime/index.ts";
+import { observabilityRoutes } from "@/api/routes/observability/index.ts";
 
 // ── App types ──
 
@@ -120,6 +121,14 @@ app.route("/api/realtime", realtimeRoutes);
 // it's safe to register unconditionally — the routes simply don't
 // exist when NODE_ENV=production. See src/api/routes/dev/index.ts.
 app.route("/api/dev", devRoutes);
+
+// Observability collector — receives batched client breadcrumbs and
+// writes to the unified .scratch/logs/observability.jsonl stream.
+// Dev-only by virtue of recordClientEvents being a no-op in prod,
+// but the route mount stays unconditional so a misconfigured
+// NODE_ENV doesn't break the SPA's breadcrumb POSTs with 404s. See
+// src/observability/envelope.ts.
+app.route("/api/_observability", observabilityRoutes);
 
 // ── Static SPA ──
 // Serves the Svelte frontend built in the Dockerfile's web-builder stage

@@ -20,6 +20,8 @@
  * misconfigurations stacking.
  */
 
+import { recordServerEvent } from "@/observability/envelope.ts";
+
 const MAX_REQUESTS = 20;
 const MAX_ERRORS = 10;
 
@@ -57,6 +59,17 @@ export function recordRequest(record: Omit<DevRequestRecord, "timestamp">): void
     ...record,
   });
   if (REQUESTS.length > MAX_REQUESTS) REQUESTS.length = MAX_REQUESTS;
+  // Mirror to the unified observability stream so the analytics
+  // product (and the local-dev AI agent) sees every HTTP request,
+  // not just the last 20. Same call shape as the ring buffer above.
+  recordServerEvent("server.http", {
+    method: record.method,
+    path: record.path,
+    routePath: record.routePath,
+    status: record.status,
+    durationMs: record.durationMs,
+    isError: record.isError,
+  });
 }
 
 /**
@@ -69,6 +82,14 @@ export function recordError(record: Omit<DevErrorRecord, "timestamp">): void {
     ...record,
   });
   if (ERRORS.length > MAX_ERRORS) ERRORS.length = MAX_ERRORS;
+  // Mirror to observability — server-side errors are high-signal
+  // for an AI agent analyzing a test session post-hoc.
+  recordServerEvent("server.error", {
+    message: record.message,
+    stack: record.stack,
+    source: record.source,
+    request: record.request,
+  });
 }
 
 export function getRecentRequests(): DevRequestRecord[] {

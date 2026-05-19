@@ -38,7 +38,12 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        # Match the local-dev + production capability set. pgvector image
+        # = Postgres 16 + pgvector + all standard contrib (pgcrypto,
+        # uuid-ossp, etc.). Customer apps generated from this template
+        # can rely on these extensions being available in CI just like
+        # they are in their docker-compose dev environment.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

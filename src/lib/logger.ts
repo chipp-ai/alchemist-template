@@ -13,6 +13,8 @@
  *   log.debug("Cache hit", { source: "cache", key: "abc" });
  */
 
+import { recordServerEvent } from "@/observability/envelope.ts";
+
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 // ── Environment (read once at module load) ──
@@ -143,6 +145,20 @@ function emit(
   } else {
     emitJson(level, msg, ctx, error);
   }
+  // Mirror every emission to the unified observability stream so an
+  // AI agent inspecting `.scratch/logs/observability.jsonl` after a
+  // user test session sees all server log statements in time order,
+  // interleaved with HTTP requests and client breadcrumbs. Recurse
+  // safety: recordServerEvent does NOT call back into log.* — it
+  // writes directly to the JSONL file. No-op in production.
+  const obsData: Record<string, unknown> = { msg, ...ctx };
+  if (error !== undefined) {
+    const ser = serializeError(error);
+    obsData.error_name = ser.name;
+    obsData.error_message = ser.message;
+    if (ser.stack) obsData.error_stack = ser.stack;
+  }
+  recordServerEvent(`server.log.${level}`, obsData);
 }
 
 // ── Public API ──
