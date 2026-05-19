@@ -189,9 +189,27 @@ EOF
 fi
 
 # ── Run migrations ──
+#
+# Refresh the migration runner from the template before invoking
+# migrate. Customer projects import the runner via raw.githubusercontent
+# (https://.../alchemist-template/staging/db/_runner.ts) so template
+# fixes propagate without per-project commits — but the customer
+# project's deno.lock pins the runner's content hash. Without an
+# explicit reload, a template push that changes _runner.ts triggers
+# Deno's integrity check on every customer's next dev.sh:
+#   "Integrity check failed for remote specifier. The source code is
+#   invalid, as it does not match the expected hash in the lock file."
+# The reload below refetches AND rewrites the lock entry in one step,
+# so the customer never sees that error — they just get the latest
+# runner transparently. Cost: ~200ms per dev.sh (the URL has a short
+# cache TTL anyway).
+
+RUNNER_URL="https://raw.githubusercontent.com/chipp-ai/alchemist-template/staging/db/_runner.ts"
+echo "Refreshing migration runner from template..."
+cd "$PROJECT_ROOT"
+deno cache --reload="$RUNNER_URL" db/migrate.ts > /dev/null 2>&1 || true
 
 echo "Running database migrations..."
-cd "$PROJECT_ROOT"
 deno task db:migrate
 echo ""
 
