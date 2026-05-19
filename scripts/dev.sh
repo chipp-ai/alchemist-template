@@ -122,7 +122,10 @@ trap cleanup SIGINT SIGTERM EXIT
 # isn't running (headless CI, a teammate without the .app, etc.).
 
 BUNDLED_PG_PORT=5433
-BUNDLED_REDIS_PORT=6379
+# The desktop's bundled Redis binds 6380 (NOT the default 6379) so it
+# coexists with any other Redis the user might have running for
+# other apps (Docker stacks, brew services, etc.). Mirror that here.
+BUNDLED_REDIS_PORT=6380
 USE_BUNDLED_SERVICES=0
 if nc -z localhost "$BUNDLED_PG_PORT" 2>/dev/null && nc -z localhost "$BUNDLED_REDIS_PORT" 2>/dev/null; then
   USE_BUNDLED_SERVICES=1
