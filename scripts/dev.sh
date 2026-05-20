@@ -142,8 +142,32 @@ if [[ "$USE_BUNDLED_SERVICES" = "1" ]]; then
   echo "Using alchemist-desktop bundled services:"
   echo "  Postgres → localhost:${BUNDLED_PG_PORT} (db: ${PROJECT_DB})"
   echo "  Redis    → localhost:${BUNDLED_REDIS_PORT}"
-  # db/migrate.ts auto-creates the database if it doesn't exist
-  # (connects to the meta `postgres` DB to run CREATE DATABASE).
+  # Ensure the per-project database exists before migrating. db/_runner.ts
+  # has an auto-create path (ensureDatabaseExists), but customer projects
+  # cloned BEFORE the runner-extraction refactor ship a standalone
+  # migrate.ts without it — so a fresh dev.sh against an older clone
+  # would hit `database "app_dev_<hash>" does not exist`, retry three
+  # times, and shut down. Doing the CREATE here at the script level
+  # catches both shapes (old inlined runner AND modern thin shim) AND
+  # works when the desktop's per-project pre-create isn't running (e.g.
+  # the operator runs ./scripts/dev.sh directly outside the desktop).
+  # Idempotent: re-runs find the DB present and no-op.
+  echo "Ensuring database ${PROJECT_DB} exists..."
+  deno eval --no-config "
+const postgres = (await import('npm:postgres@3.4.5')).default;
+const meta = postgres('postgres://postgres:postgres@localhost:${BUNDLED_PG_PORT}/postgres', { max: 1 });
+try {
+  await meta\`CREATE DATABASE \"${PROJECT_DB}\"\`;
+  console.log('[dev.sh] created database ${PROJECT_DB}');
+} catch (e) {
+  if (!/already exists/i.test(String(e))) {
+    console.error('[dev.sh] CREATE DATABASE failed:', e);
+    Deno.exit(1);
+  }
+} finally {
+  await meta.end({ timeout: 5 });
+}
+"
 
 else
   # ── Docker fallback (legacy path) ──
