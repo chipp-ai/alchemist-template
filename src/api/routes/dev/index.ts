@@ -431,19 +431,82 @@ const restoreSchema = z.object({
   tag: z.string().regex(/^[a-zA-Z0-9._-]{1,64}$/),
 });
 
-/// Tables the snapshot covers. Mirrors DEFAULT_TRUNCATE_TABLES
-/// declared above but in dependency order (parents first) so the
-/// restore-time INSERT can run sequentially without FK errors.
-const SNAPSHOT_TABLES_DEP_ORDER = [
-  "organizations",
-  "users",
-  "otps",
-  "sessions",
-  "invites",
-  "api_credentials",
-  "job_history",
-  "token_usage",
-] as const;
+/// Discover every base table in the `public` schema + topo-sort by
+/// foreign-key dependency so a snapshot can capture the full DB state
+/// (including customer-domain tables like `recipes`, `posts`, etc.,
+/// not just the auth/billing tables a hardcoded list would cover).
+/// Parents come first in the returned order — restore-time INSERT
+/// can run sequentially without FK errors.
+///
+/// Skips Kysely's `kysely_migration` + `kysely_migration_lock` so the
+/// snapshot isn't tied to a particular migration version (would
+/// otherwise prevent restoring across a schema migration).
+async function discoverSnapshotTables(): Promise<string[]> {
+  // List base tables in public schema, excluding migration metadata.
+  const tablesResult = await sql<{ table_name: string }>`
+    SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_type = 'BASE TABLE'
+      AND table_name NOT LIKE 'kysely_migration%'
+    ORDER BY table_name
+  `.execute(db);
+  const allTables = tablesResult.rows.map((r) => r.table_name);
+  const tableSet = new Set(allTables);
+
+  // List FK edges (child → parent). information_schema's
+  // referential_constraints + key_column_usage are the standard SQL
+  // way to enumerate FKs; pg's constraint_column_usage works too but
+  // is implementation-specific.
+  const edges = await sql<{ child: string; parent: string }>`
+    SELECT
+      tc.table_name AS child,
+      ccu.table_name AS parent
+    FROM information_schema.table_constraints AS tc
+    JOIN information_schema.constraint_column_usage AS ccu
+      ON tc.constraint_name = ccu.constraint_name
+     AND tc.table_schema = ccu.table_schema
+    WHERE tc.constraint_type = 'FOREIGN KEY'
+      AND tc.table_schema = 'public'
+      AND tc.table_name <> ccu.table_name
+  `.execute(db);
+
+  // Kahn's algorithm — topo-sort by in-degree. Parents come out
+  // before children. Cycles (legal in pg if the FK is DEFERRABLE)
+  // get appended at the end in arbitrary order; restore handles
+  // them via the existing TRUNCATE…CASCADE + INSERT sequence.
+  const children: Record<string, Set<string>> = {};
+  const parents: Record<string, Set<string>> = {};
+  for (const t of allTables) {
+    children[t] = new Set();
+    parents[t] = new Set();
+  }
+  for (const e of edges.rows) {
+    if (!tableSet.has(e.child) || !tableSet.has(e.parent)) continue;
+    children[e.parent].add(e.child);
+    parents[e.child].add(e.parent);
+  }
+  const order: string[] = [];
+  const ready = allTables.filter((t) => parents[t].size === 0).sort();
+  while (ready.length) {
+    const t = ready.shift()!;
+    order.push(t);
+    for (const c of children[t]) {
+      parents[c].delete(t);
+      if (parents[c].size === 0) {
+        // Insert sorted so the output is deterministic across runs.
+        const idx = ready.findIndex((r) => r > c);
+        if (idx === -1) ready.push(c);
+        else ready.splice(idx, 0, c);
+      }
+    }
+  }
+  // Append any remaining (cycles). Sorted for determinism.
+  for (const t of allTables) {
+    if (!order.includes(t)) order.push(t);
+  }
+  return order;
+}
 
 function autoTag(): string {
   // Compact ISO timestamp: 20260521T150459Z
@@ -459,18 +522,14 @@ devRoutes.post(
     const tag = body.tag ?? autoTag();
     await Deno.mkdir(SNAPSHOT_DIR, { recursive: true });
 
+    const tables = await discoverSnapshotTables();
     const dump: Record<string, unknown[]> = {};
     const tableCounts: Record<string, number> = {};
-    for (const table of SNAPSHOT_TABLES_DEP_ORDER) {
-      // Skip tables that don't exist on this template variant — the
-      // base alchemist-template ships all of these but customer forks
-      // may have removed some. to_regclass returns null for missing.
-      const exists = await sql<{ regclass: string | null }>`
-        SELECT to_regclass(${table}) AS regclass
-      `
-        .execute(db)
-        .then((r) => r.rows[0]?.regclass !== null);
-      if (!exists) continue;
+    for (const table of tables) {
+      // SELECT * captures the row state as-is — columns include any
+      // serial PKs, timestamps, JSON columns, etc. Kysely stringifies
+      // JSON columns on write so JSON.stringify here round-trips
+      // cleanly.
       const result = await sql<Record<string, unknown>>`
         SELECT * FROM ${sql.raw(table)}
       `.execute(db);
@@ -516,19 +575,29 @@ devRoutes.post(
       throw new NotFoundError(`Snapshot not found: ${tag} (looked at ${path})`);
     }
 
+    // Re-discover the current dep order at restore time rather than
+    // trusting the snapshot's implicit order. Customer schemas evolve
+    // between snapshot and restore — a new FK added in the interim
+    // changes the safe insertion order. Re-discovery is cheap (one
+    // SQL round trip) and keeps restore correct across schema drift
+    // shorter than full-table changes.
+    const tables = await discoverSnapshotTables();
     await db.transaction().execute(async (trx) => {
-      // TRUNCATE in REVERSE dep order with CASCADE so the second pass
-      // doesn't trip FK constraints. CASCADE handles any leaf tables
-      // we didn't enumerate.
-      const truncateOrder = [...SNAPSHOT_TABLES_DEP_ORDER].reverse();
+      // TRUNCATE in REVERSE dep order with CASCADE so FK references
+      // go quietly. CASCADE handles any leaf tables we didn't
+      // enumerate (e.g. a customer-domain table created after the
+      // snapshot).
+      const truncateOrder = [...tables].reverse();
       const truncateList = truncateOrder.filter((t) => t in payload.dump).join(", ");
       if (truncateList) {
         await sql.raw(`TRUNCATE TABLE ${truncateList} RESTART IDENTITY CASCADE`).execute(trx);
       }
 
       // INSERT in dep order. Each table's rows are inserted as a
-      // batch via Kysely's .values(rows[]).
-      for (const table of SNAPSHOT_TABLES_DEP_ORDER) {
+      // batch via Kysely's .values(rows[]). Tables present in the
+      // snapshot but absent from the current schema are silently
+      // skipped — they were dropped between snapshot + restore.
+      for (const table of tables) {
         const rows = payload.dump[table];
         if (!rows || rows.length === 0) continue;
         await trx
