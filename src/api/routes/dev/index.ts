@@ -132,6 +132,60 @@ async function findOrCreateUserWithOrg(
   });
 }
 
+// ── GET /api/dev/login ──
+//
+// Browser-clickable variant of POST /api/dev/login. Used by the
+// desktop app's "Open in real Chrome" affordance: the operator
+// clicks a magic-link URL that includes an email + redirect path,
+// the template mints the session cookie, redirects to the redirect
+// path. The operator lands on the authenticated page in their own
+// browser, no manual login form, no copy-paste of cookies.
+//
+// Like every dev route, this 404s in production.
+
+const loginGetSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  redirect: z.string().optional(),
+});
+
+devRoutes.get(
+  "/login",
+  zValidator("query", loginGetSchema, validationHook),
+  async (c) => {
+    const { email, redirect } = c.req.valid("query");
+    const { user } = await findOrCreateUserWithOrg(email, undefined);
+
+    const token = await createSessionToken({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      organizationId: user.organizationId,
+      role: user.role,
+    });
+
+    setCookie(c, SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: false,
+      sameSite: "Lax",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60,
+    });
+
+    log.info("Dev login (GET)", {
+      source: "dev",
+      feature: "login-get",
+      userId: user.id,
+      email: user.email,
+    });
+
+    // Redirect to the requested path (if relative — never to an
+    // absolute URL, which would let the link become an open
+    // redirector). Default to the SPA root if no redirect given.
+    const target = redirect && redirect.startsWith("/") ? redirect : "/";
+    return c.redirect(target);
+  },
+);
+
 // ── POST /api/dev/login ──
 
 const loginSchema = z.object({
@@ -343,6 +397,176 @@ devRoutes.post(
     return c.json({ ok: true, truncated: targets });
   },
 );
+
+// ── POST /api/dev/snapshot ──
+//
+// Capture the current row contents of the default-truncate tables
+// (organizations, users, otps, sessions, invites, etc.) to a JSON
+// file at /tmp/alchemist-snapshots/<tag>.json. Caller supplies a tag
+// to identify the snapshot; if no tag is given, an auto-tag based on
+// the wall-clock is generated.
+//
+// Intended use: agent (or the desktop operator) snapshots before
+// running a verification flow, makes changes, then /restore if
+// anything broke. Pairs with /reset for "I want to start fresh".
+//
+// Storage:
+//   - /tmp is process-local and ephemeral (lost on container restart).
+//     Acceptable for dev where the customer template is running
+//     locally; for the agent's E2B sandbox the snapshot lives for the
+//     duration of the run, which is the only relevant window.
+//   - File format: JSON object keyed by table name, value is the row
+//     array as returned by SELECT *. Preserves all columns.
+
+const SNAPSHOT_DIR = "/tmp/alchemist-snapshots";
+
+const snapshotSchema = z.object({
+  tag: z
+    .string()
+    .regex(/^[a-zA-Z0-9._-]{1,64}$/, "tag must be 1-64 chars of [A-Za-z0-9._-]")
+    .optional(),
+});
+
+const restoreSchema = z.object({
+  tag: z.string().regex(/^[a-zA-Z0-9._-]{1,64}$/),
+});
+
+/// Tables the snapshot covers. Mirrors DEFAULT_TRUNCATE_TABLES
+/// declared above but in dependency order (parents first) so the
+/// restore-time INSERT can run sequentially without FK errors.
+const SNAPSHOT_TABLES_DEP_ORDER = [
+  "organizations",
+  "users",
+  "otps",
+  "sessions",
+  "invites",
+  "api_credentials",
+  "job_history",
+  "token_usage",
+] as const;
+
+function autoTag(): string {
+  // Compact ISO timestamp: 20260521T150459Z
+  const iso = new Date().toISOString();
+  return iso.replace(/[-:]/g, "").replace(/\..*$/, "Z").replace("T", "T");
+}
+
+devRoutes.post(
+  "/snapshot",
+  zValidator("json", snapshotSchema, validationHook),
+  async (c) => {
+    const body = c.req.valid("json");
+    const tag = body.tag ?? autoTag();
+    await Deno.mkdir(SNAPSHOT_DIR, { recursive: true });
+
+    const dump: Record<string, unknown[]> = {};
+    const tableCounts: Record<string, number> = {};
+    for (const table of SNAPSHOT_TABLES_DEP_ORDER) {
+      // Skip tables that don't exist on this template variant — the
+      // base alchemist-template ships all of these but customer forks
+      // may have removed some. to_regclass returns null for missing.
+      const exists = await sql<{ regclass: string | null }>`
+        SELECT to_regclass(${table}) AS regclass
+      `
+        .execute(db)
+        .then((r) => r.rows[0]?.regclass !== null);
+      if (!exists) continue;
+      const result = await sql<Record<string, unknown>>`
+        SELECT * FROM ${sql.raw(table)}
+      `.execute(db);
+      dump[table] = result.rows;
+      tableCounts[table] = result.rows.length;
+    }
+
+    const path = `${SNAPSHOT_DIR}/${tag}.json`;
+    await Deno.writeTextFile(path, JSON.stringify({ tag, ts: new Date().toISOString(), dump }, null, 0));
+
+    log.info("Dev snapshot", {
+      source: "dev",
+      feature: "snapshot",
+      tag,
+      path,
+      tableCounts,
+    });
+    return c.json({ ok: true, tag, path, table_counts: tableCounts });
+  },
+);
+
+// ── POST /api/dev/restore ──
+//
+// Truncate the snapshot tables (CASCADE so FKs go quietly) and
+// re-insert each row from the named snapshot file in dependency
+// order. The result is a DB whose row state matches the snapshot
+// moment exactly — modulo any schema changes between snapshot and
+// restore (which we don't try to handle; SCHEMA migrations should
+// be applied separately).
+
+devRoutes.post(
+  "/restore",
+  zValidator("json", restoreSchema, validationHook),
+  async (c) => {
+    const { tag } = c.req.valid("json");
+    const path = `${SNAPSHOT_DIR}/${tag}.json`;
+
+    let payload: { tag: string; ts: string; dump: Record<string, unknown[]> };
+    try {
+      const text = await Deno.readTextFile(path);
+      payload = JSON.parse(text);
+    } catch (err) {
+      throw new NotFoundError(`Snapshot not found: ${tag} (looked at ${path})`);
+    }
+
+    await db.transaction().execute(async (trx) => {
+      // TRUNCATE in REVERSE dep order with CASCADE so the second pass
+      // doesn't trip FK constraints. CASCADE handles any leaf tables
+      // we didn't enumerate.
+      const truncateOrder = [...SNAPSHOT_TABLES_DEP_ORDER].reverse();
+      const truncateList = truncateOrder.filter((t) => t in payload.dump).join(", ");
+      if (truncateList) {
+        await sql.raw(`TRUNCATE TABLE ${truncateList} RESTART IDENTITY CASCADE`).execute(trx);
+      }
+
+      // INSERT in dep order. Each table's rows are inserted as a
+      // batch via Kysely's .values(rows[]).
+      for (const table of SNAPSHOT_TABLES_DEP_ORDER) {
+        const rows = payload.dump[table];
+        if (!rows || rows.length === 0) continue;
+        await trx
+          .insertInto(table as never)
+          .values(rows as never)
+          .execute();
+      }
+    });
+
+    log.info("Dev restore", {
+      source: "dev",
+      feature: "restore",
+      tag,
+      path,
+    });
+    return c.json({ ok: true, tag, ts: payload.ts });
+  },
+);
+
+// ── GET /api/dev/snapshots ── list available snapshots
+devRoutes.get("/snapshots", async (c) => {
+  await Deno.mkdir(SNAPSHOT_DIR, { recursive: true });
+  const entries: Array<{ tag: string; ts: string; size_bytes: number }> = [];
+  for await (const dirent of Deno.readDir(SNAPSHOT_DIR)) {
+    if (!dirent.isFile || !dirent.name.endsWith(".json")) continue;
+    const tag = dirent.name.replace(/\.json$/, "");
+    const stat = await Deno.stat(`${SNAPSHOT_DIR}/${dirent.name}`).catch(() => null);
+    if (!stat) continue;
+    entries.push({
+      tag,
+      ts: stat.mtime?.toISOString() ?? "",
+      size_bytes: stat.size,
+    });
+  }
+  // Newest first (mtime descending).
+  entries.sort((a, b) => (b.ts > a.ts ? 1 : -1));
+  return c.json({ snapshots: entries });
+});
 
 // ── GET /api/dev/info ──
 //
