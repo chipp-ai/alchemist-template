@@ -1,4 +1,17 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { recordClientRoute404 } from "$lib/observability/breadcrumbs";
+
+  // Fire a `client.route.404` observability breadcrumb so agents
+  // calling `open_url` against an unknown SPA route get a digest
+  // entry instead of an empty result. Without this, an agent that
+  // navigates to a path that the SPA renders as "Page not found"
+  // sees zero network events — server.http only captures real
+  // network round-trips, and the SPA's NotFound rendering is
+  // entirely client-side.
+  onMount(() => {
+    recordClientRoute404(location.pathname + location.search + location.hash);
+  });
 </script>
 
 <div class="not-found" data-testid="not-found-page">

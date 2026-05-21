@@ -282,6 +282,29 @@ function installClickHook(): void {
   }, true); // capture phase — get the event before app-level handlers stopPropagation
 }
 
+/**
+ * Emit a `client.route.404` event for SPA-side "page not found"
+ * renders. The router's pushState/popstate hooks already capture
+ * every navigation, but they can't tell whether the destination URL
+ * resolved to a real route or fell through to a 404 page — that's
+ * application state the router can't observe from the outside.
+ *
+ * Call this from the NotFound route component's onMount so every
+ * time the user lands on a path the SPA doesn't recognize, an event
+ * lands in the observability stream. This closes the gap where
+ * agents calling open_url got an empty digest because no NETWORK
+ * 404 fired (the SPA rendered "404" entirely client-side).
+ */
+export function recordClientRoute404(path: string): void {
+  record("client.route.404", {
+    path,
+    url: location.href,
+    pathname: location.pathname,
+    search: location.search,
+    hash: location.hash,
+  });
+}
+
 function installRouteHook(): void {
   const emit = (kind: "pushState" | "replaceState" | "popstate") => {
     record("client.route", {
