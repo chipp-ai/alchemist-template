@@ -281,6 +281,19 @@ fi
 
 echo "Starting Vite on port $VITE_PORT..."
 cd "$PROJECT_ROOT/web"
+# Export VITE_API_PROXY so vite.config.ts's process.env read finds
+# the correct API port. vite.config has a fallback to :8000 (the
+# alchemist-ai controller's port) for back-compat with the
+# stand-alone dev flow, but the desktop runs the customer API on
+# --api-port (typically :8100) to coexist with the controller.
+# Without this export, /api/* fetches from the SPA (including
+# /api/_observability/breadcrumb writeback) misroute to :8000,
+# return 404, and silently break client-side observability +
+# in-app API calls. Vite doesn't auto-populate process.env from
+# .env files — only import.meta.env, which vite.config doesn't
+# read at server-startup time — so the env var has to live in the
+# actual shell env when `npx vite` boots.
+export VITE_API_PROXY="http://localhost:${API_PORT}"
 # --host 127.0.0.1: Vite + Node 17+ default to binding the `localhost`
 # alias, which on macOS resolves to ::1 (IPv6) only — IPv4 connects
 # to 127.0.0.1:$VITE_PORT then get "connection refused". The
