@@ -281,7 +281,17 @@ fi
 
 echo "Starting Vite on port $VITE_PORT..."
 cd "$PROJECT_ROOT/web"
-npx vite --port "$VITE_PORT" --strictPort > "$PROJECT_ROOT/.scratch/logs/vite.log" 2>&1 &
+# --host 127.0.0.1: Vite + Node 17+ default to binding the `localhost`
+# alias, which on macOS resolves to ::1 (IPv6) only — IPv4 connects
+# to 127.0.0.1:$VITE_PORT then get "connection refused". The
+# alchemist-desktop's start_dev_server polls IPv4 (TcpStream::connect
+# 127.0.0.1) and would hang for the full 240s timeout, leaving the
+# operator's agent stuck on `start_dev_server RUNNING...`. Pinning
+# the host to IPv4 localhost matches what the probe expects and
+# doesn't expose Vite to the network. Don't change this to 0.0.0.0
+# (would expose to LAN) or to `localhost` (back to the dual-stack
+# trap).
+npx vite --port "$VITE_PORT" --host 127.0.0.1 --strictPort > "$PROJECT_ROOT/.scratch/logs/vite.log" 2>&1 &
 PIDS+=($!)
 cd "$PROJECT_ROOT"
 
