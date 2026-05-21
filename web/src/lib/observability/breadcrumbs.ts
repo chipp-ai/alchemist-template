@@ -411,6 +411,205 @@ function installStorageHook(): void {
   patchStorage(window.sessionStorage, "sessionStorage");
 }
 
+/** Extract a compact, agent-readable snapshot of what's currently
+ *  displayed in the DOM — the text the user can see, the form
+ *  fields they can fill, the heading outline, and what's focused.
+ *
+ *  This is the LITERAL answer to "what is the user looking at?"
+ *  that observability event streams alone can't give: an error
+ *  message rendered from a reactive store doesn't fire a network
+ *  event, but it IS in the DOM. The agent's read_observability
+ *  query for kind_prefix="client.dom.snapshot" picks up the latest
+ *  one; open_url's digest also includes it so the agent sees the
+ *  page text in the same tool result as the URL was opened in.
+ *
+ *  Size caps are aggressive — a snapshot is a compact digest, not
+ *  a full DOM dump. The agent gets enough to recognize the page
+ *  ("this is the login form" / "this is the dashboard with an
+ *  error banner") without burning a 30KB row on every poll.
+ */
+function snapshotDom(): {
+  title: string;
+  path: string;
+  text: string;
+  inputs: Array<{
+    selector: string;
+    name?: string;
+    type: string;
+    value: string;
+    checked?: boolean;
+    focused: boolean;
+  }>;
+  outline: Array<{ level: number; text: string }>;
+  focusedSelector: string | null;
+} {
+  const TEXT_CAP = 6000;
+  const VALUE_CAP = 200;
+
+  // Visible text: innerText respects display:none / hidden / etc.
+  // and emits line breaks for block elements. Better than textContent
+  // for "what the user reads on screen". Collapse runs of whitespace
+  // so the cap covers more semantic content.
+  const rawText = (document.body as HTMLElement)?.innerText ?? "";
+  const collapsedText = rawText.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  const text = collapsedText.length > TEXT_CAP
+    ? collapsedText.slice(0, TEXT_CAP) + `…[truncated; full length ${collapsedText.length}]`
+    : collapsedText;
+
+  // Input collection — value for text-like inputs (capped), checked
+  // for checkboxes/radios, type=password gets the value redacted.
+  const inputs: Array<{
+    selector: string;
+    name?: string;
+    type: string;
+    value: string;
+    checked?: boolean;
+    focused: boolean;
+  }> = [];
+  try {
+    const nodes = document.querySelectorAll("input, textarea, select");
+    for (const el of Array.from(nodes).slice(0, 30)) {
+      const inputEl = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      const type = (inputEl as HTMLInputElement).type || inputEl.tagName.toLowerCase();
+      const rawValue = inputEl.value ?? "";
+      const value = type === "password"
+        ? `<redacted len=${rawValue.length}>`
+        : rawValue.length > VALUE_CAP
+        ? rawValue.slice(0, VALUE_CAP) + "…"
+        : rawValue;
+      const checked = (inputEl as HTMLInputElement).checked;
+      inputs.push({
+        selector: selectorFor(inputEl),
+        name: inputEl.name || undefined,
+        type,
+        value,
+        ...(type === "checkbox" || type === "radio" ? { checked } : {}),
+        focused: document.activeElement === inputEl,
+      });
+    }
+  } catch {
+    /* DOM access failed; leave inputs empty */
+  }
+
+  // Heading outline — h1/h2/h3 in document order, capped to 20.
+  // Lets the agent see "User is on a page titled 'Recipe Vault'
+  // with sections Login / Sign Up / Dev Login".
+  const outline: Array<{ level: number; text: string }> = [];
+  try {
+    const headings = document.querySelectorAll("h1, h2, h3");
+    for (const h of Array.from(headings).slice(0, 20)) {
+      const level = parseInt(h.tagName.slice(1), 10);
+      const headingText = (h as HTMLElement).innerText?.replace(/\s+/g, " ").trim() ?? "";
+      if (headingText) {
+        outline.push({ level, text: headingText.slice(0, 120) });
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const focusedEl = document.activeElement;
+  const focusedSelector = focusedEl && focusedEl !== document.body
+    ? selectorFor(focusedEl)
+    : null;
+
+  return {
+    title: document.title,
+    path: location.pathname + location.search + location.hash,
+    text,
+    inputs,
+    outline,
+    focusedSelector,
+  };
+}
+
+/** DOM snapshot installer.
+ *
+ * Throttled to one snapshot per 4s — multiple triggers (timer +
+ * route change + visibility change) collapse to a single emission.
+ * Skips while the tab is hidden (Page Visibility API) — the user
+ * isn't looking, the agent doesn't need a fresh snapshot.
+ *
+ * Triggers:
+ *   - Timer: every 5s while visible
+ *   - Route change: pushState/replaceState/popstate (hooks installed
+ *     by installRouteHook, but we ALSO observe the route-emit and
+ *     fire a DOM snapshot on the same trigger so the agent's view
+ *     is current as soon as the SPA navigates)
+ *   - Visibility change: fire once when the tab becomes visible
+ *     after being hidden — the DOM may have updated while hidden
+ *
+ * The route-change trigger is a `client.route` listener through the
+ * same `record` channel — no special wiring. We can't add a hook
+ * directly from here (the route emit is inside installRouteHook's
+ * patched pushState); instead we run a 250ms timer right after each
+ * route change. Simpler than refactoring the route hook.
+ */
+function installDomSnapshotHook(): void {
+  const THROTTLE_MS = 4000;
+  const TIMER_MS = 5000;
+  let lastEmit = 0;
+
+  const maybeEmit = (reason: string) => {
+    if (document.hidden) return;
+    const now = Date.now();
+    if (now - lastEmit < THROTTLE_MS) return;
+    lastEmit = now;
+    try {
+      const snap = snapshotDom();
+      record("client.dom.snapshot", { reason, ...snap });
+    } catch (e) {
+      // Snapshot failed (rare — DOM access issue). Don't break
+      // the rest of the breadcrumb pipeline.
+      originalConsole.warn.call(console, CONSOLE_OBS_PREFIX, "dom snapshot failed:", e);
+    }
+  };
+
+  // Initial snapshot at install time — captures the first page the
+  // user lands on without waiting for the timer interval.
+  setTimeout(() => maybeEmit("initial"), 500);
+
+  // Periodic timer — only ticks while the tab is visible.
+  setInterval(() => maybeEmit("timer"), TIMER_MS);
+
+  // Visibility change: re-emit when the user comes back to the tab.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      // Reset throttle so this emit isn't suppressed by a recent
+      // background timer call.
+      lastEmit = 0;
+      maybeEmit("visibility");
+    }
+  });
+
+  // Route change — fire 250ms after pushState/replaceState/popstate
+  // so the SPA has had a tick to render the new route's component.
+  // We can't add to the route hook directly without coupling; use
+  // a popstate listener + monkey-patching pushState/replaceState
+  // ourselves with light wrappers (the existing installRouteHook
+  // also patches them; both wrappers compose cleanly because each
+  // calls the prior implementation).
+  const onRouteChange = () => {
+    setTimeout(() => {
+      lastEmit = 0; // route changes are important; bypass throttle
+      maybeEmit("route");
+    }, 250);
+  };
+  window.addEventListener("popstate", onRouteChange);
+  const ps = history.pushState.bind(history);
+  const rs = history.replaceState.bind(history);
+  history.pushState = function (...args) {
+    const out = ps(...args);
+    onRouteChange();
+    return out;
+  };
+  history.replaceState = function (...args) {
+    const out = rs(...args);
+    onRouteChange();
+    return out;
+  };
+}
+
 function installRouteHook(): void {
   const emit = (kind: "pushState" | "replaceState" | "popstate") => {
     record("client.route", {
@@ -601,6 +800,7 @@ export function installBreadcrumbs(): void {
     installClickHook();
     installRouteHook();
     installStorageHook();
+    installDomSnapshotHook();
     installPerfHook();
     installSessionLifecycleHook();
   } catch (e) {
