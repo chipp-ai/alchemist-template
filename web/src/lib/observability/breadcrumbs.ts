@@ -305,6 +305,112 @@ export function recordClientRoute404(path: string): void {
   });
 }
 
+/** Snapshot all browser storage (localStorage + sessionStorage +
+ *  cookies) and emit a single `client.storage.snapshot` event.
+ *  Called on init and any time a write hook fires so the
+ *  observability stream always has a current picture of what the
+ *  browser has persisted — auth tokens, session ids, theme
+ *  preference, redirect-after-login flags, anything the SPA stores.
+ *
+ *  Values are echoed verbatim except for keys that look like they
+ *  hold opaque tokens (matching /token|secret|password/i) — those
+ *  get value-length-only to avoid splattering an auth token across
+ *  every JSONL row. The KEY itself is preserved so the agent can
+ *  reason about "is there a session token set" without seeing the
+ *  literal bytes.
+ *
+ *  Cookies: only document.cookie is accessible from JS (HttpOnly
+ *  cookies aren't). That's exactly the right scope — the agent
+ *  shouldn't see the HttpOnly session cookie's value.
+ */
+function snapshotStorage(): {
+  localStorage: Record<string, string | number>;
+  sessionStorage: Record<string, string | number>;
+  cookies: Record<string, string>;
+} {
+  const TOKEN_RE = /token|secret|password|api[_-]?key/i;
+  const dumpStorage = (store: Storage): Record<string, string | number> => {
+    const out: Record<string, string | number> = {};
+    try {
+      for (let i = 0; i < store.length; i++) {
+        const key = store.key(i);
+        if (!key) continue;
+        const v = store.getItem(key) ?? "";
+        out[key] = TOKEN_RE.test(key) ? `<redacted len=${v.length}>` : v;
+      }
+    } catch {
+      /* storage access blocked (private browsing); leave empty */
+    }
+    return out;
+  };
+  const parseCookies = (): Record<string, string> => {
+    const out: Record<string, string> = {};
+    try {
+      const raw = document.cookie || "";
+      if (!raw) return out;
+      for (const pair of raw.split(/;\s*/)) {
+        const eq = pair.indexOf("=");
+        if (eq < 0) { out[pair] = ""; continue; }
+        const k = decodeURIComponent(pair.slice(0, eq));
+        const v = decodeURIComponent(pair.slice(eq + 1));
+        out[k] = TOKEN_RE.test(k) ? `<redacted len=${v.length}>` : v;
+      }
+    } catch {
+      /* ignore */
+    }
+    return out;
+  };
+  return {
+    localStorage: dumpStorage(window.localStorage),
+    sessionStorage: dumpStorage(window.sessionStorage),
+    cookies: parseCookies(),
+  };
+}
+
+function installStorageHook(): void {
+  // Initial snapshot — captures whatever's in storage when the page
+  // loaded. Subsequent changes get their own event via the patched
+  // setItem/removeItem/clear below.
+  record("client.storage.snapshot", snapshotStorage());
+
+  // Cross-tab updates surface via the `storage` event. Same-tab
+  // updates do NOT — those require patching the Storage prototype.
+  window.addEventListener("storage", (e) => {
+    record("client.storage.changed", {
+      area: e.storageArea === window.sessionStorage ? "sessionStorage" : "localStorage",
+      key: e.key,
+      oldValue: e.oldValue,
+      newValue: e.newValue,
+      url: e.url,
+    });
+  });
+
+  // Patch same-tab Storage writes. Wraps setItem/removeItem/clear so
+  // any code that mutates storage emits a breadcrumb. originalFetch-
+  // style — we preserve the original reference and call through.
+  const patchStorage = (store: Storage, areaName: "localStorage" | "sessionStorage") => {
+    const origSet = store.setItem.bind(store);
+    const origRemove = store.removeItem.bind(store);
+    const origClear = store.clear.bind(store);
+    store.setItem = function (key: string, value: string) {
+      const oldValue = store.getItem(key);
+      origSet(key, value);
+      record("client.storage.changed", { area: areaName, key, oldValue, newValue: value });
+    };
+    store.removeItem = function (key: string) {
+      const oldValue = store.getItem(key);
+      origRemove(key);
+      record("client.storage.changed", { area: areaName, key, oldValue, newValue: null });
+    };
+    store.clear = function () {
+      origClear();
+      record("client.storage.cleared", { area: areaName });
+    };
+  };
+  patchStorage(window.localStorage, "localStorage");
+  patchStorage(window.sessionStorage, "sessionStorage");
+}
+
 function installRouteHook(): void {
   const emit = (kind: "pushState" | "replaceState" | "popstate") => {
     record("client.route", {
@@ -494,6 +600,7 @@ export function installBreadcrumbs(): void {
     installXHRHook();
     installClickHook();
     installRouteHook();
+    installStorageHook();
     installPerfHook();
     installSessionLifecycleHook();
   } catch (e) {
