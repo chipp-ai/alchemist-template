@@ -1017,6 +1017,48 @@ browser_navigate({ url: "http://localhost:__VITE_PORT__/dashboard" })  // now au
 browser_screenshot()  // capture the proof
 ```
 
+### Recipe — populate mock domain data for visual verification
+
+When the operator asks to "populate mock data", "seed sample
+recipes", "fill in placeholder images", or "make the empty state
+look real" — DO NOT edit the rendering component to invent a
+placeholder. Reset + seed the actual database via `/api/dev/reset`
++ `/api/dev/seed`. The page renders FROM the DB; changing only the
+component leaves you with the same empty rows.
+
+```bash
+# 1. Find the organization_id you'll seed into.
+curl -sS -X POST -H 'Content-Type: application/json' \
+  -d '{"email":"agent@dev.local"}' \
+  http://localhost:8000/api/dev/login | jq -r '.organization.id'
+# → 4aa3ac2f-1931-43d6-8184-9ffdcee5cfb3
+
+# 2. Truncate the domain table (CASCADE handles dependent rows).
+curl -sS -X POST -H 'Content-Type: application/json' \
+  -d '{"tables":["recipes"]}' \
+  http://localhost:8000/api/dev/reset
+
+# 3. Insert rows with EVERY column the UI reads, including image URLs.
+curl -sS -X POST -H 'Content-Type: application/json' \
+  -d '{"raw":[{"table":"recipes","rows":[
+    {"organization_id":"<UUID>","title":"...","slug":"...",
+     "description":"...","photo_url":"https://images.unsplash.com/...",
+     "photo_width":1200,"photo_height":1600,
+     "servings":4,"prep_minutes":30,"cook_minutes":12}
+  ]}]}' \
+  http://localhost:8000/api/dev/seed
+```
+
+**Image URL conventions** (use real CDN URLs, not `/placeholder.png`):
+
+- Unsplash: `https://images.unsplash.com/photo-<ID>?w=1200&q=80&auto=format&fit=crop` — direct asset URLs, no rate limit at small scale, food/people/landscape topics search-friendly via `unsplash.com/s/photos/<topic>`.
+- Picsum: `https://picsum.photos/seed/<slug>/1200/900` — deterministic-by-seed, good for "any image will do" cases.
+- Avatars: `https://i.pravatar.cc/300?u=<email>` — deterministic by user email.
+
+**There is NO PATCH endpoint** — `/api/dev/seed` only does INSERT and `/api/dev/reset` only does TRUNCATE. To "update" existing rows, reset the table first then re-insert with the new column values. This is intentional: the dev surface stays small, and the agent's mental model is "what should the DB look like" rather than "what's the column-level diff".
+
+**Don't invent placeholders in components when the directive says "populate the data".** The user said "populate" because they want the DB rows to have real-looking values; a `<img src={photo_url ?? '/missing.svg'} />` fallback is not the same and feels broken if every row hits the fallback.
+
 ### Production safety
 
 The whole dev router is wrapped in a guard middleware that throws
