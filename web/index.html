@@ -17,6 +17,33 @@
     <title>Loading…</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <!--
+      Typography: Google Fonts is the canonical source for all
+      webfonts in this template. Adding/changing fonts is a TWO-FILE
+      change: update the URL in the <link> below AND the matching
+      --font-* tokens in web/src/app.css. NEVER hardcode font-family
+      values in component styles — always go through the tokens.
+
+      Default pairing:
+        - Inter (400/500/600/700, italic 400) — body + UI + headings
+        - JetBrains Mono (400/500) — code + tabular numerics
+
+      Inter is the deliberate, vibe-neutral default — it works for
+      every product category. To swap in a more distinctive heading
+      face (Playfair, Bitter, Fraunces, ...), use the present_choices
+      tool from the local-dev agent rather than guessing.
+
+      `preconnect` cuts ~100-200ms off first-paint webfont latency
+      by warming the TLS handshake before the CSS request lands.
+      `display=swap` shows fallback text immediately and swaps to the
+      real font on load — never invisible text waiting on a font.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+    <!--
       Brand loader. Reads brand_config from the alchemist platform and
       sets CSS custom properties (--brand-primary / --brand-accent /
       --brand-neutral) on :root, plus assigns logo <img src> for any

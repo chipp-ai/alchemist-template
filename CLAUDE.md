@@ -717,6 +717,43 @@ exported PDFs), reach for `BRAND.*` first. If you find yourself
 typing the literal "Alchemist" anywhere in this repo's customer-
 facing code, stop — that's the bug this module exists to prevent.
 
+## Typography — Google Fonts is the only webfont source
+
+All font usage flows through three semantic tokens in `web/src/app.css`:
+
+```css
+--font-heading  /* h1-h6 and any "this should feel like a heading" surface */
+--font-sans     /* body + UI (buttons, labels, paragraph text) */
+--font-mono     /* code, kbd, samp, pre, tabular numerics */
+```
+
+Components **NEVER** hardcode a `font-family` value. They reference one of the three tokens. That contract is the entire point: changing the product's typography is supposed to be a one-token edit, not a find-and-replace across every Svelte file. If you find yourself typing `font-family: "Inter"` (or any literal family name) anywhere in `web/src/`, stop — use the token.
+
+### Adding or changing a font
+
+Two files, always in lockstep:
+
+1. **`web/index.html`** — update the `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?...">`. Include every weight + italic you'll actually use; don't load 9 weights "just in case" (each weight is a separate font file).
+2. **`web/src/app.css`** — update the `--font-heading` / `--font-sans` / `--font-mono` token(s) to put the new family at the front of the stack. Keep the web-safe fallbacks after — they're what renders during the `display=swap` window (and forever for users behind webfont blockers).
+
+**Google Fonts is the only webfont source.** No Adobe Fonts, no self-hosted `@font-face`, no Typekit. Reasons:
+
+- One CDN, well-cached across the open web (visitors land on your app with the font already in their browser cache from another site).
+- `preconnect` + `display=swap` are a known-good loading pattern; we don't have to rediscover it per app.
+- Lets the local-dev agent's `present_choices` swatch pull from a single curated catalog instead of guessing at family availability.
+
+### When the user asks for a "different vibe"
+
+Don't pick fonts blind. The local-dev agent has a `present_choices` tool (in the orchestrator's tool palette) that opens a swatch of 3-4 visual options with sample text rendered in each candidate. Use it for any aesthetic-direction request: "make it feel more rustic", "modernize the typography", "give it a magazine feel", etc. The user picks; the orchestrator reads the chosen option's `spec` field and applies the two-file change above.
+
+Use it for: `font`, `palette`, `layout`, `copy` — anything a designer would present as a swatch rather than guess at.
+
+**Don't** use it for: bug fixes, specific values the user gave you ("use Inter"), or anything with a clearly-right answer. Over-using `present_choices` is annoying.
+
+### The default pairing
+
+The template ships with **Inter** (everything) + **JetBrains Mono** (code). Inter is the deliberate vibe-neutral default — it works for any product category, doesn't lean visual-design-y, and pairs with anything you'd swap in later. Don't change the default in this repo; let customer apps drift on top.
+
 ## HIPAA mode — env-var-gated, no schema changes
 
 The template ships every building block for HIPAA-compliant session handling. Activation is binary, sourced from a single env var the Alchemist platform sets on the customer pod when the project was opted into HIPAA during onboarding (and the BAA was signed):
