@@ -4,12 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!--
-      Placeholder title. brand-loader.js overrides it at runtime by
-      setting `document.title` from `/brand.json`'s `productName`
-      field once the fetch resolves (typically <100 ms after first
-      paint). The placeholder is intentionally generic — never
-      "Alchemist" or any platform-side branding — so a customer pod
-      whose brand-loader fails still doesn't leak platform identity.
+      Placeholder title. brand-loader.js replaces this at runtime
+      with `productName` from /brand.json, or — when brand has no
+      productName configured (common during early dev) — with
+      window.location.host. Either way it never stays "Loading…"
+      forever (a documented foot-gun in older revisions). The
+      placeholder is intentionally generic so a customer pod with
+      a broken brand-loader still doesn't leak platform identity.
       See src/config/brand.ts in the customer-runtime template for
       the contract.
     -->

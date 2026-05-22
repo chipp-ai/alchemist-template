@@ -62,6 +62,17 @@
   var projectId =
     typeof window !== "undefined" ? window.ALCHEMIST_PROJECT_ID : null;
 
+  // Clear the static "Loading…" placeholder regardless of whether
+  // we can fetch /brand.json. Letting it persist is the documented
+  // failure mode where customers say "the tab title says Loading
+  // forever". The host fallback matches what browsers show
+  // natively when <title> is empty.
+  if (document.title === "Loading…" || document.title === "Loading...") {
+    document.title = (typeof window !== "undefined" && window.location)
+      ? window.location.host
+      : "";
+  }
+
   if (!projectId) {
     console.warn(
       "[brand-loader] window.ALCHEMIST_PROJECT_ID not set — brand will use template defaults",
@@ -90,14 +101,24 @@
       root.style.setProperty("--brand-neutral", brand.neutralColor);
     }
 
-    // Set the document title from the user-facing product name. The
-    // HTML's static <title> is a "Loading…" placeholder — this fires
-    // as soon as /brand.json resolves so the real product name
-    // appears in the tab + browser history. Re-fires on
-    // brand-updated SSE events so a name change in the platform's
-    // BrandPanel propagates without a page reload.
+    // Set the document title. The HTML's static <title> is a
+    // "Loading…" placeholder — we replace it once brand.json
+    // resolves so the real product name appears in the tab.
+    //
+    // Important: even when brand.productName is MISSING (brand
+    // config never populated, or only colors saved), we still
+    // need to clear "Loading…" — leaving it lies about an ongoing
+    // load state and breaks browser history / OS window switchers.
+    // The fallback uses the URL's hostname (e.g. "localhost:5273")
+    // which is what browsers show natively when <title> is empty.
+    // Customer code that wants a different fallback can set
+    // document.title from its own boot path (PublicShell.svelte etc.).
     if (typeof brand.productName === "string" && brand.productName.trim()) {
       document.title = brand.productName;
+    } else if (document.title === "Loading…" || document.title === "Loading...") {
+      document.title = (typeof window !== "undefined" && window.location)
+        ? window.location.host
+        : "";
     }
 
     // Pick light vs dark logo based on the user's prefers-color-scheme.
