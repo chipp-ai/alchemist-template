@@ -1022,23 +1022,38 @@ browser_screenshot()  // capture the proof
 When the operator asks to "populate mock data", "seed sample
 recipes", "fill in placeholder images", or "make the empty state
 look real" — DO NOT edit the rendering component to invent a
-placeholder. Reset + seed the actual database via `/api/dev/reset`
-+ `/api/dev/seed`. The page renders FROM the DB; changing only the
+placeholder. The page renders FROM the DB; changing only the
 component leaves you with the same empty rows.
 
+**Do NOT reset reflexively.** Operator-seeded rows live in the
+same tables; `/api/dev/reset` wipes everything. The correct flow
+inspects first and only resets when existing data is structurally
+unfixable (NULL on a field the UI requires, AND no way to fix it
+without re-seeding):
+
 ```bash
-# 1. Find the organization_id you'll seed into.
+# 1. SEE what's already there.
+curl -sS http://localhost:8000/api/<resource-list-endpoint>
+# If rows exist with the field the UI needs, do NOT seed — the
+# rendering side is what's wrong (auth wall, route mismatch,
+# component bug). Diagnose that instead.
+
+# 2. Get the organization_id you'd seed INTO if rows are missing
+# or have NULL on the field the UI needs.
 curl -sS -X POST -H 'Content-Type: application/json' \
   -d '{"email":"agent@dev.local"}' \
   http://localhost:8000/api/dev/login | jq -r '.organization.id'
-# → 4aa3ac2f-1931-43d6-8184-9ffdcee5cfb3
 
-# 2. Truncate the domain table (CASCADE handles dependent rows).
+# 3. Reset ONLY when existing rows are structurally wrong AND you
+# can't UPDATE in place (/api/dev/seed is INSERT-only by design).
+# Narrate the destruction out loud BEFORE running so the operator
+# can stop you: "Clearing N existing rows so I can re-seed with
+# photo URLs filled in." NEVER skip this announcement.
 curl -sS -X POST -H 'Content-Type: application/json' \
   -d '{"tables":["recipes"]}' \
   http://localhost:8000/api/dev/reset
 
-# 3. Insert rows with EVERY column the UI reads, including image URLs.
+# 4. Insert with EVERY column the UI reads, including image URLs.
 curl -sS -X POST -H 'Content-Type: application/json' \
   -d '{"raw":[{"table":"recipes","rows":[
     {"organization_id":"<UUID>","title":"...","slug":"...",
