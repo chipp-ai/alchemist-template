@@ -288,6 +288,9 @@
       "integrity": "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="
     }
   },
+  "remote": {
+    "https://raw.githubusercontent.com/chipp-ai/alchemist-template/staging/db/_runner.ts": "ab615732ae239011b2da5e0bd15d2f34de73886c244f52b66b279ff4a4fe95e5"
+  },
   "workspace": {
     "dependencies": [
       "jsr:@byzanteam/kysely-deno-postgres-dialect@*",

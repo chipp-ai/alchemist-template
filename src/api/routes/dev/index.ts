@@ -34,7 +34,7 @@
  */
 
 import { Hono } from "hono";
-import { setCookie } from "hono/cookie";
+import { deleteCookie, setCookie } from "hono/cookie";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { sql } from "kysely";
@@ -268,6 +268,27 @@ const seedSchema = z.object({
       }),
     )
     .optional(),
+});
+
+/**
+ * GET /api/dev/logout
+ * POST /api/dev/logout
+ *
+ * Clears the session cookie set by /api/dev/login (or any other auth
+ * path — it's the same cookie name). Mirrors /api/auth/logout but
+ * lives under /api/dev so agent verification scripts can use a single
+ * dev-namespace for the whole login/logout flow without crossing into
+ * the production auth routes. Both verbs are accepted: GET for
+ * easy browser-bar testing, POST for the canonical form-submit /
+ * API-call shape. Idempotent — logging out twice is a no-op.
+ */
+devRoutes.get("/logout", (c) => {
+  deleteCookie(c, SESSION_COOKIE, { path: "/" });
+  return c.json({ ok: true });
+});
+devRoutes.post("/logout", (c) => {
+  deleteCookie(c, SESSION_COOKIE, { path: "/" });
+  return c.json({ ok: true });
 });
 
 devRoutes.post(
