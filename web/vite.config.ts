@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { fileURLToPath, URL } from "node:url";
 
 // Project id for brand-loader.js. Baked at build time so the loader
 // in index.html knows which project to fetch /brand.json for. The
@@ -13,6 +14,17 @@ const PROJECT_ID = process.env.ALCHEMIST_PROJECT_ID
 export default defineConfig({
   plugins: [svelte()],
   base: "/",
+  resolve: {
+    // SvelteKit-style `$lib` alias. The template uses plain Vite (not
+    // SvelteKit) but code + docstrings reference `$lib/...` imports
+    // (e.g. NotFound.svelte → $lib/observability/breadcrumbs, added in
+    // 4556376, and the devpanel store's usage example). Without this
+    // alias `vite build` fails to resolve them and the customer deploy
+    // breaks. Points at web/src/lib.
+    alias: {
+      $lib: fileURLToPath(new URL("./src/lib", import.meta.url)),
+    },
+  },
   define: {
     // Available in index.html via the inline script that wires
     // window.ALCHEMIST_PROJECT_ID. Surfaces as a string literal so
