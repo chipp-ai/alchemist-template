@@ -99,15 +99,24 @@ export async function sendInviteEmail(opts: SendInviteEmailOptions): Promise<voi
   const appName = BRAND.name;
   const inviterDisplay = opts.inviterName?.trim() || opts.inviterEmail;
 
+  // " on <App>" suffix — but only when the org name differs from the app
+  // name. Many single-tenant apps name the org after the app, which
+  // produced the awkward "invited you to Valor Victoria on Valor
+  // Victoria". The branded "from" + accept page already convey the app,
+  // so dropping the redundant suffix reads cleaner.
+  const onApp = appName && appName.toLowerCase() !== opts.organizationName.toLowerCase()
+    ? ` on ${appName}`
+    : "";
+
   // "Expires in N days" copy. Floors so a 6.99-day-old invite reads "6 days".
   const msUntilExpiry = opts.expiresAt.getTime() - Date.now();
   const daysLeft = Math.max(1, Math.floor(msUntilExpiry / (1000 * 60 * 60 * 24)));
 
   await sendEmail({
     to: opts.to,
-    subject: `${inviterDisplay} invited you to ${opts.organizationName} on ${appName}`,
+    subject: `${inviterDisplay} invited you to ${opts.organizationName}${onApp}`,
     text: [
-      `${inviterDisplay} invited you to join ${opts.organizationName} on ${appName}`,
+      `${inviterDisplay} invited you to join ${opts.organizationName}${onApp}`,
       `as ${opts.roleLabel}.`,
       "",
       "Accept the invite:",
@@ -122,7 +131,7 @@ export async function sendInviteEmail(opts: SendInviteEmailOptions): Promise<voi
         <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 8px;">You're invited</h2>
         <p style="color: #374151; font-size: 14px; margin-bottom: 24px;">
           <strong>${escapeHtml(inviterDisplay)}</strong> invited you to join
-          <strong>${escapeHtml(opts.organizationName)}</strong> on ${escapeHtml(appName)}
+          <strong>${escapeHtml(opts.organizationName)}</strong>${escapeHtml(onApp)}
           as <strong>${escapeHtml(opts.roleLabel)}</strong>.
         </p>
         <p style="margin-bottom: 24px;">

@@ -27,15 +27,56 @@
  */
 
 import { Hono } from "hono";
-import { getUser, requireAuth } from "@/api/middleware/auth.ts";
+import { createSessionToken, getUser, requireAuth } from "@/api/middleware/auth.ts";
+import { setSessionCookie } from "@/api/routes/auth/index.ts";
 import { ForbiddenError } from "@/utils/errors.ts";
 import {
   acceptInvite,
+  claimInvite,
   resolveInviteByToken,
 } from "@/services/invite.service.ts";
 import { log } from "@/lib/logger.ts";
 
 const inviteRoutes = new Hono();
+
+/**
+ * POST /:token/claim
+ *
+ * Passwordless accept — the "magic link" path. PUBLIC (no auth): the
+ * invite token IS the credential. Holding it proves control of the
+ * invited inbox (it was emailed there), so we create the account if
+ * needed AND mint a session right here — no OTP, no sign-in form. This
+ * is the one-click flow: click the email link, land authenticated.
+ *
+ * Must be a POST triggered by the SPA's JS (not a GET), so a passive
+ * email-link prefetch can't consume the single-use invite.
+ */
+inviteRoutes.post("/:token/claim", async (c) => {
+  const token = c.req.param("token");
+  const result = await claimInvite(token);
+
+  const sessionToken = await createSessionToken({
+    id: result.userId,
+    email: result.email,
+    name: result.name,
+    organizationId: result.organizationId,
+    role: result.role,
+  });
+  setSessionCookie(c, sessionToken);
+
+  log.info("Invite claimed (passwordless)", {
+    source: "invite",
+    feature: "claim",
+    userId: result.userId,
+    organizationId: result.organizationId,
+    role: result.role,
+  });
+
+  return c.json({
+    user: { id: result.userId, email: result.email, name: result.name },
+    organization: { id: result.organizationId },
+  });
+});
 
 /**
  * GET /:token

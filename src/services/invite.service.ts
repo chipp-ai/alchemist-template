@@ -386,6 +386,93 @@ export async function acceptInvite(opts: {
   };
 }
 
+/**
+ * Passwordless invite claim — the "magic link" path. The invite token
+ * is itself the auth proof: it's a high-entropy single-use secret
+ * delivered to invite.email's inbox, exactly the same trust basis as a
+ * magic link or an OTP code. So clicking the emailed link can safely
+ * create the account (if new) AND sign the user in, WITHOUT a separate
+ * OTP round-trip — they already proved control of the inbox by holding
+ * the token.
+ *
+ * Caller (POST /api/invite/:token/claim) mints the session cookie from
+ * the returned identity. Atomic single-use: the invite is consumed
+ * before the account is materialized so a replay can't mint a second
+ * session.
+ */
+export async function claimInvite(token: string): Promise<{
+  userId: string;
+  email: string;
+  name: string | null;
+  organizationId: string;
+  role: string;
+}> {
+  // Resolves to a live invite (throws on invalid / expired / used).
+  const invite = await resolveInviteByToken(token);
+
+  // Atomic single-use claim — only one of N concurrent clicks wins.
+  const claimed = await db
+    .updateTable("invites")
+    .set({ acceptedAt: new Date() })
+    .where("id", "=", invite.id)
+    .where("acceptedAt", "is", null)
+    .where("revokedAt", "is", null)
+    .returningAll()
+    .executeTakeFirst();
+  if (!claimed) {
+    throw new ForbiddenError("This invite has already been used.");
+  }
+
+  // Find-or-create the user for the invite's email, placing them in the
+  // org at the invited role. emailVerified is true by construction —
+  // holding the token proves inbox control.
+  const existing = await db
+    .selectFrom("users")
+    .select(["id", "name"])
+    .where("email", "=", invite.email)
+    .executeTakeFirst();
+
+  if (existing) {
+    await db
+      .updateTable("users")
+      .set({
+        organizationId: invite.organizationId,
+        role: invite.role,
+        emailVerified: true,
+        lastLoginAt: new Date(),
+      })
+      .where("id", "=", existing.id)
+      .execute();
+    return {
+      userId: existing.id,
+      email: invite.email,
+      name: existing.name,
+      organizationId: invite.organizationId,
+      role: invite.role,
+    };
+  }
+
+  const created = await db
+    .insertInto("users")
+    .values({
+      email: invite.email,
+      name: null,
+      role: invite.role,
+      organizationId: invite.organizationId,
+      emailVerified: true,
+      lastLoginAt: new Date(),
+    })
+    .returning(["id", "name"])
+    .executeTakeFirstOrThrow();
+  return {
+    userId: created.id,
+    email: invite.email,
+    name: created.name,
+    organizationId: invite.organizationId,
+    role: invite.role,
+  };
+}
+
 // ── Internals ──────────────────────────────────────────────────────────────
 
 function generateInviteToken(): string {

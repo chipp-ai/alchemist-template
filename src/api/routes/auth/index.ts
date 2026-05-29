@@ -76,7 +76,7 @@ function slugify(text: string): string {
     .slice(0, 48);
 }
 
-function setSessionCookie(
+export function setSessionCookie(
   // deno-lint-ignore no-explicit-any
   c: any,
   token: string,

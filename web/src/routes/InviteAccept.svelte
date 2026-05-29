@@ -66,18 +66,13 @@
     }
   });
 
-  // If the user is already logged in AND their email matches the
-  // invite, auto-accept on first render. We don't auto-accept on
-  // mismatch — that needs an explicit user choice (sign out, then
-  // sign back in with the right email).
+  // Auto-claim once the preview loads — clicking the email link should
+  // sign you straight in (the token is the credential; no OTP). Runs
+  // regardless of auth state. This is a POST fired by the SPA's JS, so a
+  // passive email-link prefetch (a GET) can't consume the single-use
+  // invite. Guarded so it fires once and doesn't retry on error.
   $effect(() => {
-    if (
-      preview &&
-      authStore.isAuthenticated &&
-      authStore.user?.email?.toLowerCase() === preview.email.toLowerCase() &&
-      !acceptSuccess &&
-      !isAccepting
-    ) {
+    if (preview && !acceptSuccess && !isAccepting && !acceptError) {
       acceptInvite();
     }
   });
@@ -87,17 +82,20 @@
     isAccepting = true;
     acceptError = null;
     try {
-      await api.post(`/invite/${encodeURIComponent(token)}/accept`);
-      // Refresh the user's auth payload — the JWT cookie's
-      // organizationId is now stale. Easiest reset: re-run checkAuth.
+      // Passwordless "magic link" claim: the invite token IS the auth
+      // proof, so the backend creates the account (if new) AND mints the
+      // session cookie here — no OTP, no sign-in form. The user already
+      // proved inbox control by holding the emailed token.
+      await api.post(`/invite/${encodeURIComponent(token)}/claim`);
+      // The session cookie is now set server-side; pick it up.
       await authStore.checkAuth();
-      // And refresh org-scoped state in the store.
       await orgStore.fetchOrg();
       await orgStore.fetchMembers();
       acceptSuccess = true;
-      // Clear stash so a future visit doesn't re-trigger pre-fill.
       sessionStorage.removeItem(SIGNUP_EMAIL_KEY);
       sessionStorage.removeItem(SIGNUP_TOKEN_KEY);
+      // Straight into the app — zero extra clicks.
+      push("/");
     } catch (err) {
       acceptError = err instanceof ApiError
         ? err.message
@@ -105,22 +103,6 @@
     } finally {
       isAccepting = false;
     }
-  }
-
-  function goSignIn() {
-    if (preview) {
-      sessionStorage.setItem(SIGNUP_EMAIL_KEY, preview.email);
-      sessionStorage.setItem(SIGNUP_TOKEN_KEY, token);
-    }
-    push("/login");
-  }
-
-  function goSignUp() {
-    if (preview) {
-      sessionStorage.setItem(SIGNUP_EMAIL_KEY, preview.email);
-      sessionStorage.setItem(SIGNUP_TOKEN_KEY, token);
-    }
-    push("/signup");
   }
 
   async function signOutAndRetry() {
@@ -190,26 +172,14 @@
         </div>
       {/if}
 
-      {#if authStore.isAuthenticated}
-        <button
-          class="btn btn-primary"
-          onclick={acceptInvite}
-          disabled={isAccepting}
-          data-testid="invite-btn-accept"
-        >
-          {isAccepting ? "Accepting…" : "Accept invite"}
-        </button>
-      {:else}
-        <p class="text-muted">Sign in or create an account to accept.</p>
-        <div class="invite-actions">
-          <button class="btn btn-primary" onclick={goSignIn} data-testid="invite-btn-signin">
-            Sign in
-          </button>
-          <button class="btn btn-secondary" onclick={goSignUp} data-testid="invite-btn-signup">
-            Create account
-          </button>
-        </div>
-      {/if}
+      <button
+        class="btn btn-primary"
+        onclick={acceptInvite}
+        disabled={isAccepting}
+        data-testid="invite-btn-accept"
+      >
+        {isAccepting ? "Signing you in…" : "Accept invite & continue"}
+      </button>
     </div>
   {/if}
 </div>
