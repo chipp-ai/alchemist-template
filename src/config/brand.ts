@@ -66,10 +66,31 @@ export interface Brand {
    * just the address is used. Conventionally `${name} <${fromEmail}>`.
    */
   readonly fromName: string;
+
+  /**
+   * Brand palette + logo for SERVER-SIDE rendered surfaces that can't
+   * use /brand.json — chiefly transactional emails (OTP, invites),
+   * which are built before any SPA exists for the recipient. The
+   * alchemist-ai platform injects these from the project's brand_config
+   * via BRAND_PRIMARY / BRAND_ACCENT / BRAND_NEUTRAL / BRAND_LOGO_URL.
+   *
+   * Fallbacks are the template's neutral defaults (NEVER a specific
+   * customer's colors) so an un-branded pod still renders a clean,
+   * generic email rather than leaking another tenant's palette.
+   */
+  readonly primaryColor: string;
+  readonly accentColor: string;
+  readonly neutralColor: string;
+  /** Absolute https URL to the light-background logo, or "" when unset. */
+  readonly logoUrl: string;
 }
 
 export const BRAND: Brand = Object.freeze({
   name: Deno.env.get("APP_NAME") ?? "Your App",
   fromEmail: Deno.env.get("EMAIL_FROM") ?? "noreply@example.com",
   fromName: Deno.env.get("APP_NAME") ?? "Your App",
+  primaryColor: Deno.env.get("BRAND_PRIMARY") ?? "#4f46e5",
+  accentColor: Deno.env.get("BRAND_ACCENT") ?? "#0ea5e9",
+  neutralColor: Deno.env.get("BRAND_NEUTRAL") ?? "#1f2937",
+  logoUrl: Deno.env.get("BRAND_LOGO_URL") ?? "",
 });
