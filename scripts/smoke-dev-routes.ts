@@ -89,6 +89,9 @@ try {
   const envContents = [
     "PORT=8000",
     "NODE_ENV=development",
+    // Dev routes are FAIL CLOSED — gated on this positive flag, not on
+    // NODE_ENV. The smoke test exercises the enabled path, so opt in.
+    "ALCHEMIST_DEV_ROUTES=1",
     "APP_NAME=smoke-dev-routes",
     "GIT_SHA=dev",
     "DATABASE_URL=postgres://postgres:postgres@localhost:5432/app_dev",
@@ -255,17 +258,18 @@ try {
   }
   console.log(`  ✓ post-reset re-login created a fresh user (${reLoginBody.user.id})`);
 
-  // 8. Production guard: spoof NODE_ENV=production via re-exec, hit /info.
-  //    We can't restart the dev server easily mid-test, so just verify
-  //    the guard logic locally by checking the source file shape.
+  // 8. Fail-closed guard: verify the dev router gates on the positive
+  //    ALCHEMIST_DEV_ROUTES flag (via devRoutesEnabled), NOT on
+  //    NODE_ENV. We can't restart the dev server easily mid-test, so
+  //    just check the source file shape.
   const grep = await run(
-    "grep IS_PROD guard",
-    `grep -E 'IS_PROD|NODE_ENV.*production' /home/user/alchemist-template/src/api/routes/dev/index.ts | head -5`,
+    "grep dev-routes guard",
+    `grep -E 'devRoutesEnabled' /home/user/alchemist-template/src/api/routes/dev/index.ts | head -5`,
   );
-  if (!grep.stdout.includes("IS_PROD")) {
-    throw new Error("dev module does not include IS_PROD guard");
+  if (!grep.stdout.includes("devRoutesEnabled")) {
+    throw new Error("dev module does not gate on devRoutesEnabled (fail-closed flag)");
   }
-  console.log(`  ✓ production guard present in source`);
+  console.log(`  ✓ fail-closed dev-routes guard present in source`);
 
   console.log("\n=== ALL CHECKS PASSED ===");
 } catch (err) {

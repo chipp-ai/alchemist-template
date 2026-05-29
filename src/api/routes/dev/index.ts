@@ -2,13 +2,15 @@
  * Dev Routes — local-only auth shortcut + DB seeding for agent
  * verification flows.
  *
- * Mounted at /api/dev/*. The whole router 404s in production
- * (NODE_ENV === "production") so even an accidental misconfiguration
- * can't expose these endpoints to real traffic. The deployed customer
- * pod sets NODE_ENV=production via the rollout controller, so the
- * routes are dead in prod by default. Locally (and inside the agent's
- * sandbox running `deno task dev`), NODE_ENV is "development" and the
- * routes light up.
+ * Mounted at /api/dev/*. The whole router 404s UNLESS the dev surface
+ * is explicitly enabled via ALCHEMIST_DEV_ROUTES (see lib/dev-mode.ts).
+ * This is FAIL CLOSED: the routes are dead by default and only light up
+ * when something deliberately opts in. The previous gate keyed off
+ * `NODE_ENV !== "production"`, which was fail-OPEN — a deployed pod
+ * missing NODE_ENV=production leaked instant-login + DB reset to the
+ * public internet. Local dev and the agent sandbox set
+ * ALCHEMIST_DEV_ROUTES=1 via `deno task dev`, so the routes light up
+ * there; nothing in the customer deploy path sets it.
  *
  * These exist so the agent can verify auth-gated flows WITHOUT having
  * to drive the OTP send + email + verify cycle. SMTP isn't configured
@@ -43,19 +45,21 @@ import { createSessionToken } from "@/api/middleware/auth.ts";
 import { log } from "@/lib/logger.ts";
 import { BadRequestError, NotFoundError } from "@/utils/errors.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
+import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 
 const SESSION_COOKIE = "session_id";
-const IS_PROD = Deno.env.get("NODE_ENV") === "production";
 
 const devRoutes = new Hono();
 
 /**
- * Production guard. Mounted before every route. In production, the
- * router treats every path as not-found so the API surface is
- * indistinguishable from a stack that never registered the routes.
+ * Fail-closed guard. Mounted before every route. Unless the dev surface
+ * is explicitly enabled (ALCHEMIST_DEV_ROUTES truthy), the router treats
+ * every path as not-found so the API surface is indistinguishable from a
+ * stack that never registered the routes. Evaluated per-request (not
+ * cached at import) so the gate can't be defeated by import ordering.
  */
 devRoutes.use("*", async (c, next) => {
-  if (IS_PROD) {
+  if (!devRoutesEnabled()) {
     throw new NotFoundError("Route not found");
   }
   await next();
@@ -665,7 +669,7 @@ devRoutes.get("/snapshots", async (c) => {
 
 devRoutes.get("/info", (c) => {
   return c.json({
-    enabled: !IS_PROD,
+    enabled: devRoutesEnabled(),
     nodeEnv: Deno.env.get("NODE_ENV") ?? "development",
     endpoints: {
       "POST /api/dev/login": {

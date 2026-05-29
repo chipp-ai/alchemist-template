@@ -25,6 +25,7 @@ import { fileRoutes } from "@/api/routes/files/index.ts";
 import { inviteRoutes } from "@/api/routes/invite/index.ts";
 import { realtimeRoutes } from "@/api/routes/realtime/index.ts";
 import { observabilityRoutes } from "@/api/routes/observability/index.ts";
+import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 
 // ── App types ──
 
@@ -81,11 +82,11 @@ app.use("*", requestTimingMiddleware);
 
 // Recent-activity middleware — populates the in-memory ring buffers
 // (src/lib/dev-activity.ts) consumed by /api/dev/app-state and the
-// in-browser DevPanel. Gated on NODE_ENV !== "production" so the
-// ring buffer never accumulates customer-facing traffic. Defense-
-// in-depth: the dev-routes router that EXPOSES the data is also
-// production-gated.
-if (Deno.env.get("NODE_ENV") !== "production") {
+// in-browser DevPanel. Gated on the FAIL-CLOSED dev flag (see
+// lib/dev-mode.ts) so the ring buffer never accumulates customer-facing
+// traffic unless dev routes are explicitly enabled. Matches the gate on
+// the dev-routes router that EXPOSES this data.
+if (devRoutesEnabled()) {
   app.use("*", recentActivityMiddleware);
 }
 
