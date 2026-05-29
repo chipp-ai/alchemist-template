@@ -12,7 +12,22 @@ const PROJECT_ID = process.env.ALCHEMIST_PROJECT_ID
   : "null";
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [
+    svelte(),
+    {
+      // vite's `define` substitutes tokens in the JS module graph but
+      // NOT inside index.html's inline <script>, so the brand-loader's
+      // `window.ALCHEMIST_PROJECT_ID = __ALCHEMIST_PROJECT_ID__` stayed
+      // the literal token → resolved to null → branding never rendered
+      // even when ALCHEMIST_PROJECT_ID was set at build. Replace the
+      // token directly in the HTML at build time. PROJECT_ID is already
+      // a JS literal ("<id>" or null).
+      name: "inject-alchemist-project-id",
+      transformIndexHtml(html: string) {
+        return html.replaceAll("__ALCHEMIST_PROJECT_ID__", PROJECT_ID);
+      },
+    },
+  ],
   base: "/",
   resolve: {
     // SvelteKit-style `$lib` alias. The template uses plain Vite (not
