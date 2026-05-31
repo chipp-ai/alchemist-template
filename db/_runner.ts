@@ -266,6 +266,36 @@ export async function runMigrations(
 
     const pending = files.filter((f) => !applied.has(f.version));
 
+    // Collision guard: a PENDING migration must not share its prefix (the
+    // part before the first "_") with any other migration. Sequential `NNN_`
+    // numbering let two tickets branching from the same commit both pick the
+    // same "next" integer (e.g. two `008_*.sql`) — distinct filenames so no
+    // git conflict, but an ambiguous apply order. Migrations are timestamp-
+    // prefixed now (`YYYYMMDDHHMMSS_*.sql`) to prevent this; this guard fails
+    // fast if a collision slips through. Already-applied collisions are
+    // grandfathered (not in `pending`), so this never breaks an existing
+    // deploy — it only blocks NEW colliding migrations.
+    {
+      const prefixOf = (v: string) => v.split("_")[0];
+      const byPrefix = new Map<string, string[]>();
+      for (const f of files) {
+        const arr = byPrefix.get(prefixOf(f.version)) ?? [];
+        arr.push(f.version);
+        byPrefix.set(prefixOf(f.version), arr);
+      }
+      for (const f of pending) {
+        const siblings = byPrefix.get(prefixOf(f.version))!;
+        if (siblings.length > 1) {
+          throw new Error(
+            `Migration prefix collision: ${siblings.join(", ")} share prefix ` +
+              `"${prefixOf(f.version)}". Every migration needs a UNIQUE prefix — ` +
+              `use a UTC timestamp (YYYYMMDDHHMMSS_<slug>.sql), not a sequential ` +
+              `integer. Rename the unapplied migration(s) to a fresh timestamp.`,
+          );
+        }
+      }
+    }
+
     if (pending.length === 0) {
       console.log("No pending migrations.");
       return;

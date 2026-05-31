@@ -55,7 +55,7 @@ web/                    # Svelte 5 SPA
       api.ts            # Typed fetch wrapper with 401 handling
 
 db/
-  migrations/           # SQL migration files (NNN_description.sql)
+  migrations/           # SQL migration files (YYYYMMDDHHMMSS_description.sql)
   migrate.ts            # Migration runner
 
 scripts/
@@ -258,7 +258,14 @@ await db
 
 ### Migrations
 
-- Files: `db/migrations/NNN_description.sql` (sorted lexically)
+- Files: `db/migrations/<YYYYMMDDHHMMSS>_description.sql` — a **UTC timestamp**
+  prefix (get it with `date -u +%Y%m%d%H%M%S`), sorted lexically (=
+  chronological order). **Do NOT use sequential integers (`NNN_`).** Two
+  tickets branching from the same commit both pick the same "next" integer
+  and land COLLIDING migrations (e.g. two `008_*.sql`) — they don't
+  git-conflict (different slugs) but break the unique-ordering contract.
+  Timestamps never collide across concurrent branches. Pre-existing
+  `NNN_*.sql` files stay as-is; new timestamped files sort after them.
 - **All migrations must be backward-compatible** with currently running code (expand/contract pattern)
 - Run: `deno task db:migrate`
 - Migrations run automatically in CI before deploy
