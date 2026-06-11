@@ -97,6 +97,25 @@ These guide all code review and implementation decisions:
 - **Every interactive element gets `data-testid`** following `{area}-{component}-{element}` convention (e.g., `data-testid="settings-form-input-name"`).
 - **ALWAYS use `./scripts/dev.sh --api-port __API_PORT__ --port __VITE_PORT__`** -- ports are required (no defaults), logs go to `.scratch/logs/`.
 
+## Convention spokes — `.claude/rules/`
+
+This file is the **hub**: universal rules that apply everywhere. Deep,
+area-specific conventions live in **spoke** files under `.claude/rules/`,
+each scoped to a path glob via `paths:` frontmatter. A spoke loads only
+when you work in its area, so the hub stays focused.
+
+| Spoke | Auto-loads when you touch | Covers |
+|---|---|---|
+| `database.md` | `db/**`, `*.service.ts` | Postgres extensions, Kysely + CamelCasePlugin, migrations, query safety |
+| `api-layer.md` | `src/api/**` | Hono routes, validation, response envelope, WebSockets |
+| `auth.md` | `src/auth/**`, middleware, `roles.ts` | Role hierarchy, capabilities, invite flow, soft-disconnect |
+| `services-jobs.md` | `src/services/**`, `src/jobs/**` | Service structure, logging contract, `AppError` classes |
+
+In Claude Code these load when you read a matching file. The Alchemist
+build agent injects them when a tool call touches a matching path (and
+exposes them via the `load_skill` tool). Add a new spoke by dropping a
+`.claude/rules/<name>.md` with a `description:` and `paths:` frontmatter.
+
 ## Observability stream — `.scratch/logs/observability.jsonl`
 
 Every server log statement, HTTP request, server error, AND every browser-side breadcrumb (console.*, errors, fetch/XHR, clicks, route changes, LCP/CLS/INP) converges in **time order** into a single JSONL file at `.scratch/logs/observability.jsonl`. This is the canonical "what happened during this test session" stream — read it after a user has poked at the app to understand exactly what they did, what fired, and what failed.
@@ -116,171 +135,21 @@ Dev-only — the entire pipeline no-ops when `NODE_ENV === "production"`. The an
 
 ## API Conventions
 
-### Route Structure
-
-Routes live in `src/api/routes/`. Each route file exports a Hono app that is mounted in the main router. Routes are thin orchestration -- business logic lives in services.
-
-```typescript
-import { Hono } from "hono";
-import { zValidator } from "@hono/zod-validator";
-import { z } from "zod";
-import { validationHook } from "@/utils/zod-validation-hook.ts";
-
-const app = new Hono();
-
-app.get("/items", async (c) => {
-  const items = await itemService.list();
-  return c.json({ data: items });
-});
-
-app.post(
-  "/items",
-  zValidator("json", createItemSchema, validationHook),
-  async (c) => {
-    const body = c.req.valid("json");
-    const item = await itemService.create(body);
-    return c.json({ data: item }, 201);
-  },
-);
-
-export default app;
-```
-
-### Request Validation
-
-- **`zValidator` MUST always pass `validationHook`** as the third argument. Without it, validation errors return a raw ZodError object and clients see `[object Object]` instead of a readable message.
-- **Zod `.trim()` before `.min(1)` for name fields.** `z.string().min(1)` passes whitespace-only strings (`"   "` has length 3). Chain `.trim().min(1)` for user-facing name/label fields. Do not trim passwords or API keys.
-
-### Response Format
-
-All endpoints return:
-- **Success:** `{ data: T }` with appropriate status code (200, 201, 204)
-- **Error:** `{ error: string, code: string }` with appropriate status code
-
-### Auth Middleware
-
-Protected routes use `requireAuth` middleware, which populates `c.get("user")` and `c.get("session")`. Place it before route handlers that need authentication.
-
-### Services
-
-Services live in `src/services/`. One service per domain (e.g., `user.service.ts`, `billing.service.ts`). Services contain all business logic and database queries. Routes call services -- they never query the database directly.
-
-### Realtime / WebSockets
-
-The template ships a working WS surface so customer apps don't have to plumb auth + connection lifecycle from scratch:
-
-- **`GET /api/auth/ws-token`** (auth-required) mints a 60-second JWT with `scope: "ws"`. Cookies don't reliably travel on cross-origin WS handshakes, so this token is the canonical way to authenticate a WS connection.
-- **`GET /api/realtime/ws?token=<wsToken>`** verifies the token via `verifyWsToken` (`src/api/middleware/auth.ts`), upgrades the request, and runs a baseline echo loop (`src/api/routes/realtime/index.ts`). On open it sends `{ type: "hello", userId, organizationId, connectionId }`; on each text frame it replies `{ type: "echo", ... }`.
-
-Add real features by replacing **the `socket.onmessage` branch** in `src/api/routes/realtime/index.ts` with whatever dispatch you need (chat broadcast, presence pub/sub, live cursors). Keep the auth + open + close handlers intact -- they are load-bearing for attribution + log correlation.
-
-**Scope segregation is enforced both ways**: `verifyToken` (session middleware) rejects `scope: "ws"` tokens so an exfiltrated WS token can't be used as a session cookie, and `verifyWsToken` rejects session tokens so a leaked session cookie can't open a WS to another tenant.
-
-Client-side flow:
-
-```ts
-// 1. Fetch a fresh token (uses the session cookie).
-const { token } = await api.get<{ token: string }>("/auth/ws-token");
-
-// 2. Open the WS with the token in the query string.
-const ws = new WebSocket(`ws://${location.host}/api/realtime/ws?token=${encodeURIComponent(token)}`);
-ws.onopen   = () => ws.send("hello server");
-ws.onmessage = (ev) => console.log("server →", ev.data);
-```
-
-Smoke test from a terminal:
-
-```bash
-# 1. Authenticate (dev login or OTP).
-curl -sS -X POST -H 'Content-Type: application/json' \
-  -d '{"email":"agent@dev.local"}' \
-  http://localhost:__API_PORT__/api/dev/login -c /tmp/jar.txt
-
-# 2. Mint a WS token.
-TOKEN=$(curl -sS -b /tmp/jar.txt http://localhost:__API_PORT__/api/auth/ws-token | sed 's/.*"token":"\([^"]*\)".*/\1/')
-
-# 3. Open a WS (use a real client; curl can't do WS).
-deno run --allow-net -e "
-  const ws = new WebSocket('ws://localhost:__API_PORT__/api/realtime/ws?token=$TOKEN');
-  ws.onopen = () => ws.send('ping');
-  ws.onmessage = e => { console.log(e.data); ws.close(); };
-"
-```
+> **Detailed API-layer rules live in `.claude/rules/api-layer.md`** (Hono route
+> structure, `zValidator` + `validationHook`, the `{data}`/`{error}` envelope,
+> the realtime/WebSocket surface). They auto-load when you touch `src/api/**`.
+> The essentials: routes are thin orchestration (logic lives in services),
+> `zValidator` MUST pass `validationHook`, and every response is `{ data }` or
+> `{ error, code }`.
 
 ## Database Conventions
 
-### Available Postgres extensions
-
-Every Alchemist customer app runs against Postgres with the SAME extension set across local dev, CI, and production. Don't ask "is this available here" — the answer is yes everywhere.
-
-| Extension | Purpose | Use when |
-|---|---|---|
-| `pgcrypto` | `crypt()`, `gen_random_uuid()`, `digest()` | UUID defaults, password hashing, server-side hashes |
-| `uuid-ossp` | `uuid_generate_v4()`, related uuid helpers | UUID defaults (legacy code; prefer `gen_random_uuid()` for new tables — it's in PG core too) |
-| `vector` (pgvector) | `vector(N)` column type + cosine/L2/inner-product operators + IVFFlat/HNSW indexes | Embeddings, semantic search, RAG retrieval |
-| Full standard contrib | `citext`, `btree_gin`, `btree_gist`, `pg_trgm`, `hstore`, `intarray`, `ltree`, `tablefunc`, … | Reach for these before adding deps |
-
-**Where these come from:**
-
-- **Local dev** — `docker-compose.yml`'s `postgres` service uses `pgvector/pgvector:pg16`, an official maintained image with the above. Customer template defaults to this.
-- **CI** — `.github/workflows/ci.yml`'s `postgres` service uses the same image.
-- **Production** — Cloud SQL Postgres 16 with the `cloudsql.enable_pgvector=on` instance flag; extensions installed in `public` schema by the alchemist platform at customer-DB provisioning time (see `alchemist-ai/src/services/customer-db-provisioning.service.ts`).
-- **alchemist-desktop's embedded pg** — `chipp-ai/postgres-bundle` release pipeline produces a custom postgres binary distribution with the same set (theseus-rs/postgresql-binaries upstream omits pgcrypto and pgvector, so we maintain our own).
-
-**In your migrations:**
-
-- **DON'T** `CREATE EXTENSION ...` — the per-tenant DB user doesn't have privileges to. The platform admin (`alchemist_app`) installs extensions in the shared DB once; customers just USE them.
-- **DO** use extension features directly: `CREATE TABLE embeddings (id UUID DEFAULT gen_random_uuid(), embedding vector(1536))`.
-- **For vector indexes** the common pattern is HNSW for retrieval-time-sensitive workloads: `CREATE INDEX ON embeddings USING hnsw (embedding vector_cosine_ops);`.
-
-### Kysely + CamelCasePlugin
-
-The CamelCasePlugin transforms column names:
-- **In SELECT results:** snake_case columns become camelCase properties (`created_at` -> `createdAt`)
-- **In WHERE, ORDER BY, ON:** Use the original **snake_case** column names
-- **In INSERT/UPDATE `.set()` and `.values()`:** Use **camelCase** property names
-
-```typescript
-// SELECT -- camelCase in results
-const user = await db
-  .selectFrom("app.users")
-  .select(["id", "email", "createdAt"])   // camelCase
-  .where("organization_id", "=", orgId)   // snake_case in WHERE
-  .orderBy("created_at", "desc")          // snake_case in ORDER BY
-  .executeTakeFirst();
-
-// INSERT -- camelCase in values
-await db
-  .insertInto("app.users")
-  .values({ email, name, organizationId: orgId })  // camelCase
-  .execute();
-```
-
-### Migrations
-
-- Files: `db/migrations/<YYYYMMDDHHMMSS>_description.sql` — a **UTC timestamp**
-  prefix (get it with `date -u +%Y%m%d%H%M%S`), sorted lexically (=
-  chronological order). **Do NOT use sequential integers (`NNN_`).** Two
-  tickets branching from the same commit both pick the same "next" integer
-  and land COLLIDING migrations (e.g. two `008_*.sql`) — they don't
-  git-conflict (different slugs) but break the unique-ordering contract.
-  Timestamps never collide across concurrent branches. Pre-existing
-  `NNN_*.sql` files stay as-is; new timestamped files sort after them.
-- **All migrations must be backward-compatible** with currently running code (expand/contract pattern)
-- Run: `deno task db:migrate`
-- Migrations run automatically in CI before deploy
-- Each migration runs in a transaction -- if it fails, it rolls back
-- Never put DML (`UPDATE`) in the same migration as `ALTER TYPE ... ADD VALUE` (PostgreSQL limitation)
-
-### Query Safety
-
-- **`withTimeout(ms, fn)`** for all Kysely queries -- prevents pool starvation during DB contention
-- **`raceTimeout(ms, promise)`** for raw `postgres.js` queries when you need snake_case result keys
-- **`countAll()` returns a string** -- always wrap with `Number()`
-- **Never `JSON.stringify()` for Kysely JSONB** -- pass objects directly to `.set()` / `.values()`. Stringify double-encodes.
-- **JSONB columns return as strings from SELECT** -- always `JSON.parse()` before using. Never cast directly.
-- **Guard `whereIn()` against empty arrays** -- `WHERE column IN ()` is a PostgreSQL syntax error. Always check `if (ids.length === 0) return [];` before the query.
-- **`isTransientDbError(err)`** -- use in catch blocks to downgrade connection resets and pool timeouts to `log.warn` instead of `log.error`.
+> **Detailed database rules live in `.claude/rules/database.md`** (Postgres
+> extensions, Kysely + CamelCasePlugin, migration filenames, query safety).
+> They auto-load when you touch `db/**` or a `*.service.ts`. The essentials:
+> never `CREATE EXTENSION` (the platform installs them); migrations use a
+> `YYYYMMDDHHMMSS_` UTC-timestamp prefix, never sequential integers; CamelCase
+> in SELECT results + INSERT values, snake_case in WHERE/ORDER BY.
 
 ## Testing
 
@@ -335,41 +204,12 @@ src/__tests__/
 
 ## Error Handling
 
-### Server-Side
-
-- **Never use bare `console.error`.** Use `log` from `src/lib/logger.ts` with `source` context.
-- **Always pass `Error` as the 3rd arg** to `log.error()` and `log.warn()` for stack trace extraction.
-- **Never use bare `.catch(() => {})`** -- always log failures. Silent swallowing hides bugs.
-
-```typescript
-import { log } from "@/lib/logger.ts";
-
-// Good
-try {
-  await riskyOperation();
-} catch (err) {
-  log.error("Operation failed", { source: "billing", orgId }, err);
-  throw err;
-}
-
-// Bad -- silent swallowing
-await riskyOperation().catch(() => {});
-```
-
-### Error Classes
-
-Use `AppError` subclasses from `src/utils/errors.ts`:
-
-| Class | Status | When |
-|-------|--------|------|
-| `BadRequestError` | 400 | Invalid input |
-| `UnauthorizedError` | 401 | Not authenticated |
-| `ForbiddenError` | 403 | Not authorized |
-| `NotFoundError` | 404 | Resource not found |
-| `ConflictError` | 409 | Duplicate / conflict |
-| `ExternalServiceError` | 502 | Third-party API failure |
-
-Route catch blocks should re-throw `AppError` subclasses without logging (the global error handler logs them).
+> **The server-side logging contract + `AppError` class table live in
+> `.claude/rules/services-jobs.md`** (auto-loads on `src/services/**` /
+> `src/jobs/**`). The essentials: never bare `console.error` or
+> `.catch(() => {})`; use `log` from `src/lib/logger.ts` with a `source` and
+> pass the `Error` as the 3rd arg; throw `AppError` subclasses and let the
+> global handler format them.
 
 ## Frontend Conventions
 
@@ -483,109 +323,13 @@ HMR is disabled. After any frontend change, hard reload: **Cmd+Shift+R** (Mac) o
 
 ### Roles and team management
 
-Customer apps inherit a 4-role hierarchy + an email-driven invite
-flow. The role hierarchy lives in **one** file — `src/lib/roles.ts`
-on the server, mirrored EXACTLY in `web/src/lib/permissions.ts`
-on the client. A regression test
-(`src/__tests__/team.test.ts → "client mirror"`) lints the two
-files for the same capability list and roles.
-
-**Roles**
-
-| Role | Count | Powers |
-|---|---|---|
-| `owner` | 1 per org | Full control. Set at org creation. CANNOT be invited (transfer is a separate flow, deferred). |
-| `admin` | N per org | Manage team (invite, change roles, remove) + edit org settings + everything an editor can do. |
-| `editor` | N per org | Write app data. Cannot manage team or org settings. The default invitee role. |
-| `viewer` | N per org | Read-only across the board. |
-
-The schema enum still allows the legacy `member` value for backward
-compat with rows that pre-date migration 003. `member` is a synonym
-for `editor` in code — same hierarchy rank, same capabilities.
-Migration 003 backfills `member` rows to `editor` so fresh databases
-never produce them.
-
-**Capabilities**
-
-Routes gate via the `requireCapability` middleware (in
-`src/api/middleware/auth.ts`):
-
-```typescript
-import { requireAuth, requireCapability } from "@/api/middleware/auth.ts";
-
-orgRoutes.post(
-  "/invites",
-  requireCapability("team.invite"),
-  zValidator("json", inviteSchema, validationHook),
-  handler,
-);
-```
-
-The capability set lives in `src/lib/roles.ts`:
-
-| Capability | Min role |
-|---|---|
-| `team.invite` | admin |
-| `team.update_role` | admin |
-| `team.remove` | admin |
-| `org.update` | admin |
-| `app.write` | editor |
-| `app.read` | viewer |
-
-Use the `can(role, capability)` helper for inline checks; never
-compare role strings directly. The hierarchy enforces "fail closed"
-for unknown roles — `rankOf("nonexistent")` returns 0, so `can()`
-returns false on schema drift.
-
-**Manage-vs-target rules**
-
-The `canManage(actor, target)` helper enforces:
-
-- Owner is untouchable. Only the explicit ownership-transfer flow
-  (deferred) can change owner.
-- Admins cannot manage other admins — only the owner can. Prevents
-  lateral demotion wars between admins.
-- Viewers and editors can never manage anyone.
-
-The Settings → Team UI uses `canManage` to gate role-edit dropdowns
-and remove buttons per-row, so an admin sees "edit role" on editors
-and viewers but a static badge on other admins.
-
-**Invite flow**
-
-```
-POST /api/org/invites    → admin creates invite (sends email)
-GET  /api/org/invites    → admin lists pending invites
-DELETE /api/org/invites/:id → admin revokes a pending invite
-PATCH /api/org/members/:userId/role → admin changes role
-DELETE /api/org/members/:userId → admin SOFT-DISCONNECTS member
-
-GET  /api/invite/:token            → public preview (no auth)
-POST /api/invite/:token/accept     → consume token (auth required;
-                                     authenticated email must match
-                                     invite email)
-```
-
-Frontend route: `/#/invite/:token` → `web/src/routes/InviteAccept.svelte`.
-Logged-out users get a "sign in to accept" page that pre-fills the
-invited email; logged-in users with a matching email get auto-accept.
-
-**CRITICAL: removing a member is SOFT-DISCONNECT, not hard-delete.**
-
-The DELETE /members/:userId route sets `users.organization_id = NULL`
-and `role = 'viewer'`. The user row itself is preserved — sessions,
-oauth bindings, and any FK'd domain data persist. Re-inviting a
-removed user lands cleanly via the same flow as a new invite. A
-regression test (`src/__tests__/team.test.ts → "DELETE
-/members/:userId soft-disconnects"`) lints the route file for
-`organizationId: null` and forbids `db.deleteFrom("users")`.
-
-**Email rendering**
-
-Invite emails go through `src/services/email.ts → sendInviteEmail`.
-Falls back to console.log in dev (when SMTP isn't configured) so
-the agent can grab the accept URL during local testing without a
-real mailbox. The `APP_URL` env var determines the link host.
+> **The full role hierarchy, capability set, `can()`/`canManage()` helpers,
+> invite flow, and soft-disconnect semantics live in `.claude/rules/auth.md`**
+> (auto-loads on `src/auth/**`, `src/api/middleware/**`, `src/lib/roles.ts`,
+> `web/src/lib/permissions.ts`). The essentials: 4 roles
+> (owner/admin/editor/viewer), gate routes with `requireCapability(...)`, use
+> `can(role, cap)` (never compare role strings), and member removal is a
+> SOFT-DISCONNECT (`organization_id = NULL`), never a hard delete.
 
 ### Stores and the DevPanel — `defineStore` is mandatory for shared state
 
