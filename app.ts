@@ -25,6 +25,7 @@ import { fileRoutes } from "@/api/routes/files/index.ts";
 import { inviteRoutes } from "@/api/routes/invite/index.ts";
 import { realtimeRoutes } from "@/api/routes/realtime/index.ts";
 import { observabilityRoutes } from "@/api/routes/observability/index.ts";
+import { docsRoutes } from "@/api/routes/docs/index.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 
 // ── App types ──
@@ -99,6 +100,11 @@ app.route("/", healthRoutes);
 app.route("/api/auth", authRoutes);
 app.route("/api/org", orgRoutes);
 app.route("/api/billing", billingRoutes);
+
+// In-app docs section + semantic search. Auth-required (docs are
+// internal). Content is static (the registry); search is served from
+// the boot-built index (src/services/docs/). See docs/in-app/.
+app.route("/api/docs", docsRoutes);
 
 // File storage (R2 — tenant-isolated via R2_KEY_PREFIX, see
 // src/services/storage.service.ts). Auth-required. Provides

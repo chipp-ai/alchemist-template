@@ -6,6 +6,7 @@
 
 import { app } from "./app.ts";
 import { initDatabase, closeDatabase } from "@/db/client.ts";
+import { reindexDocs } from "@/services/docs/reindex.ts";
 import { log } from "@/lib/logger.ts";
 
 const port = parseInt(Deno.env.get("PORT") ?? "8000");
@@ -22,6 +23,16 @@ try {
   }, _err);
   // Continue running -- health endpoint will report degraded
 }
+
+// ── In-app docs search index ──
+// Reindex the docs corpus once at boot (re-embeds only changed chunks).
+// Fire-and-forget + non-fatal: a reindex failure must never block serving,
+// and we don't delay accepting traffic on the embedding round-trip.
+reindexDocs()
+  .then((r) => log.info("docs index ready", { source: "startup", ...r }))
+  .catch((err) =>
+    log.warn("docs reindex skipped (non-fatal)", { source: "startup" }, err)
+  );
 
 // ── Start server ──
 

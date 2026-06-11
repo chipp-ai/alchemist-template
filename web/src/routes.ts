@@ -2,6 +2,7 @@ import Dashboard from "./routes/Dashboard.svelte";
 import Login from "./routes/Login.svelte";
 import Signup from "./routes/Signup.svelte";
 import Settings from "./routes/Settings.svelte";
+import Docs from "./routes/Docs.svelte";
 import InviteAccept from "./routes/InviteAccept.svelte";
 import NotFound from "./routes/NotFound.svelte";
 
@@ -16,6 +17,10 @@ const routes: Record<string, any> = {
   "/login": Login,
   "/signup": Signup,
   "/settings": Settings,
+  // In-app docs section with semantic search. /docs lists the TOC;
+  // /docs/:slug deep-links to a page.
+  "/docs": Docs,
+  "/docs/:slug": Docs,
   // Invite acceptance landing page. Token comes from the URL; the
   // page handles both logged-in and logged-out flows.
   "/invite/:token": InviteAccept,

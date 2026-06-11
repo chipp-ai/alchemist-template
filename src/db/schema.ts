@@ -166,6 +166,31 @@ export type NewJobHistory = Insertable<JobHistoryTable>;
 // schema. See `db/migrations/001_initial_schema.sql` for the rationale.
 // Local dev against a single Postgres also works (default search_path).
 
+/**
+ * In-app docs search index. One row per heading-scoped chunk of a
+ * registry page (src/services/docs/registry.ts). App-global (docs are
+ * product docs, identical for every org) — no organization scope. The
+ * embedding is a JSON-encoded float array stored as text; cosine is
+ * computed in-process (the corpus is tiny). Maintained by the boot
+ * reindexer (src/services/docs/reindex.ts).
+ */
+export interface DocSearchIndexTable {
+  id: Generated<string>;
+  slug: string;
+  chunkSeq: number;
+  heading: Generated<string>;
+  content: string;
+  contentHash: string;
+  /** JSON-encoded number[] (the embedding vector). */
+  embedding: string;
+  embedModel: string;
+  embeddedAt: Generated<Date>;
+}
+
+export type DocSearchIndexRow = Selectable<DocSearchIndexTable>;
+export type NewDocSearchIndexRow = Insertable<DocSearchIndexTable>;
+export type DocSearchIndexUpdate = Updateable<DocSearchIndexTable>;
+
 export interface Database {
   organizations: OrganizationsTable;
   users: UsersTable;
@@ -175,4 +200,5 @@ export interface Database {
   invites: InvitesTable;
   token_usage: TokenUsageTable;
   job_history: JobHistoryTable;
+  doc_search_index: DocSearchIndexTable;
 }
