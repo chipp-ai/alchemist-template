@@ -26,25 +26,25 @@ export const MAX_CHUNK_CHARS = 1_800;
 const HEADING_RE = /^(#{1,6})\s+(.*\S)\s*$/;
 const FENCE_RE = /^```/;
 
-/** Split a paragraph-joined string so each piece is <= MAX_CHUNK_CHARS. */
-function splitLong(text: string): string[] {
-  if (text.length <= MAX_CHUNK_CHARS) return [text];
+/** Split a paragraph-joined string so each piece is <= `max` chars. */
+function splitLong(text: string, max: number = MAX_CHUNK_CHARS): string[] {
+  if (text.length <= max) return [text];
   const paras = text.split(/\n{2,}/);
   const out: string[] = [];
   let buf = "";
   for (const p of paras) {
-    if (buf && (buf.length + p.length + 2) > MAX_CHUNK_CHARS) {
+    if (buf && (buf.length + p.length + 2) > max) {
       out.push(buf);
       buf = "";
     }
     // A single oversized paragraph: hard-slice it.
-    if (p.length > MAX_CHUNK_CHARS) {
+    if (p.length > max) {
       if (buf) {
         out.push(buf);
         buf = "";
       }
-      for (let i = 0; i < p.length; i += MAX_CHUNK_CHARS) {
-        out.push(p.slice(i, i + MAX_CHUNK_CHARS));
+      for (let i = 0; i < p.length; i += max) {
+        out.push(p.slice(i, i + max));
       }
       continue;
     }
@@ -83,12 +83,37 @@ export function chunkMarkdown(body: string, title = ""): DocChunk[] {
   const chunks: DocChunk[] = [];
   let seq = 0;
   for (const sec of sections) {
-    const text = sec.lines.join("\n").trim();
-    if (!text) continue;
-    for (const piece of splitLong(text)) {
-      const trimmed = piece.trim();
-      if (!trimmed) continue;
-      chunks.push({ seq: seq++, heading: sec.heading, content: trimmed });
+    const allText = sec.lines.join("\n").trim();
+    if (!allText) continue;
+
+    // The literal heading line (if this section started with one). We keep
+    // it on the first chunk AND re-attach the heading to every sub-split
+    // tail chunk — otherwise tail chunks embed without their section's
+    // topic, which hurts recall on long sections.
+    const headingLineIdx = sec.lines.findIndex((l) => /^#{1,6}\s+/.test(l.trim()));
+    const headingPrefix = headingLineIdx >= 0
+      ? sec.lines[headingLineIdx].trim()
+      : (sec.heading ? `# ${sec.heading}` : "");
+    const body = headingLineIdx >= 0
+      ? sec.lines.slice(headingLineIdx + 1).join("\n").trim()
+      : allText;
+
+    // Reserve room for the prefix so prefixed chunks stay within the cap.
+    const budget = Math.max(400, MAX_CHUNK_CHARS - headingPrefix.length - 2);
+    const pieces = body ? splitLong(body, budget) : [];
+
+    if (pieces.length === 0) {
+      // Heading-only section (no body).
+      if (headingPrefix) {
+        chunks.push({ seq: seq++, heading: sec.heading, content: headingPrefix });
+      }
+      continue;
+    }
+    for (const piece of pieces) {
+      const ptrim = piece.trim();
+      if (!ptrim) continue;
+      const content = headingPrefix ? `${headingPrefix}\n\n${ptrim}` : ptrim;
+      chunks.push({ seq: seq++, heading: sec.heading, content });
     }
   }
   return chunks;

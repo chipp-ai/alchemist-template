@@ -53,6 +53,19 @@ Deno.test("chunk: sub-splits a section longer than MAX_CHUNK_CHARS", () => {
   }
 });
 
+Deno.test("chunk: every sub-split chunk carries its section heading (context)", () => {
+  const para = "Sentence here. ".repeat(50); // ~750 chars
+  const paras = Array.from({ length: 6 }, () => para).join("\n\n"); // ~4500 chars
+  const md = `## Big Topic\n\n${paras}`;
+  const chunks = chunkMarkdown(md, "Doc");
+  const big = chunks.filter((c) => c.heading === "Big Topic");
+  assert(big.length >= 2, "long section must sub-split");
+  for (const c of big) {
+    assert(c.content.includes("Big Topic"), "every sub-chunk embeds its heading");
+    assert(c.content.length <= MAX_CHUNK_CHARS, `chunk over cap incl. prefix: ${c.content.length}`);
+  }
+});
+
 Deno.test("chunk: empty / whitespace doc yields no chunks", () => {
   assertEquals(chunkMarkdown("   \n\n  ", ""), []);
 });
