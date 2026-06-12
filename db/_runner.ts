@@ -266,15 +266,19 @@ export async function runMigrations(
 
     const pending = files.filter((f) => !applied.has(f.version));
 
-    // Collision guard: a PENDING migration must not share its prefix (the
-    // part before the first "_") with any other migration. Sequential `NNN_`
-    // numbering let two tickets branching from the same commit both pick the
-    // same "next" integer (e.g. two `008_*.sql`) — distinct filenames so no
-    // git conflict, but an ambiguous apply order. Migrations are timestamp-
-    // prefixed now (`YYYYMMDDHHMMSS_*.sql`) to prevent this; this guard fails
-    // fast if a collision slips through. Already-applied collisions are
-    // grandfathered (not in `pending`), so this never breaks an existing
-    // deploy — it only blocks NEW colliding migrations.
+    // Prefix-collision check — WARN, never crash.
+    //
+    // Migrations apply + are tracked by their FULL filename, and `files` is
+    // sorted by `version.localeCompare` above, so two migrations sharing a
+    // PREFIX but with DIFFERENT slugs (e.g. two parallel agent branches both
+    // stamping `20260612000000_<slug>.sql`) apply in a deterministic order and
+    // BOTH land cleanly. A benign cross-branch prefix clash must therefore
+    // never crash-loop a customer pod — that was the #339/#505 failure mode,
+    // where the old hard-throw guard turned a harmless duplicate prefix into a
+    // ProgressDeadlineExceeded deploy crash. A TRUE duplicate (same FULL
+    // filename) can't exist on a filesystem, so there is nothing left to
+    // hard-fail on. We log a loud WARNING (so the duplicate prefix is visible
+    // and can be cleaned up to keep creation-order tidy) and proceed.
     {
       const prefixOf = (v: string) => v.split("_")[0];
       const byPrefix = new Map<string, string[]>();
@@ -283,14 +287,18 @@ export async function runMigrations(
         arr.push(f.version);
         byPrefix.set(prefixOf(f.version), arr);
       }
+      const warned = new Set<string>();
       for (const f of pending) {
-        const siblings = byPrefix.get(prefixOf(f.version))!;
-        if (siblings.length > 1) {
-          throw new Error(
-            `Migration prefix collision: ${siblings.join(", ")} share prefix ` +
-              `"${prefixOf(f.version)}". Every migration needs a UNIQUE prefix — ` +
-              `use a UTC timestamp (YYYYMMDDHHMMSS_<slug>.sql), not a sequential ` +
-              `integer. Rename the unapplied migration(s) to a fresh timestamp.`,
+        const p = prefixOf(f.version);
+        const siblings = byPrefix.get(p)!;
+        if (siblings.length > 1 && !warned.has(p)) {
+          warned.add(p);
+          console.warn(
+            `[migrate] WARNING: migrations share prefix "${p}": ${
+              siblings.join(", ")
+            }. Non-fatal — they apply in full-filename order and all land. ` +
+              `Prefer a UNIQUE timestamp prefix (YYYYMMDDHHMMSS_<slug>.sql) per ` +
+              `migration to keep creation-order clean across parallel branches.`,
           );
         }
       }
