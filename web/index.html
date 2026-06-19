@@ -85,6 +85,11 @@
   </head>
   <body>
     <div id="app"></div>
+    <!-- Overlay root: portal target for modals/dialogs/toasts. A body-level
+         sibling of #app so `position: fixed` overlays resolve against the
+         viewport, never clipped by an ancestor transform/overflow inside the
+         app shell. See web/src/lib/portal.ts + components/Modal.svelte. -->
+    <div id="overlay-root"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

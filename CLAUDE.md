@@ -300,6 +300,56 @@ replace("/apps");
 
 **SPA error redirects: use `replace()`, not `push()`.** When a page load fails (403, 404, catch block) and you redirect away, `push()` creates a back-button loop.
 
+### Modals, dialogs, and overlays — use `<Modal>`, never hand-roll
+
+**There is a design-system modal. Use it. Do not write a `.modal-backdrop` +
+`position: fixed` block in a route.** The primitive is `web/src/components/Modal.svelte`,
+backed by two actions: `web/src/lib/portal.ts` and `web/src/lib/modal.ts`.
+
+```svelte
+<script>
+  import Modal from "../components/Modal.svelte";
+  let open = $state(false);
+</script>
+
+<button onclick={() => (open = true)}>New quote</button>
+
+<Modal {open} title="New quote" onClose={() => (open = false)} size="md">
+  <p>Body content.</p>
+  {#snippet footer()}
+    <button class="btn btn-secondary" onclick={() => (open = false)}>Cancel</button>
+    <button class="btn btn-primary" onclick={save}>Save</button>
+  {/snippet}
+</Modal>
+```
+
+`<Modal>` gives you, for free: portal-out to `#overlay-root`, dimmed backdrop,
+backdrop-click + ESC + close-button dismissal, body scroll-lock (ref-counted so
+stacked overlays behave), and focus capture/restore. Props: `open`, `title?`,
+`onClose`, `size?` (`sm`/`md`/`lg`), `closeOnBackdrop?`, plus a `children` body
+and an optional `footer` snippet.
+
+**Why hand-rolling breaks (the containing-block trap):** every route renders
+inside `.app-main { overflow-y: auto }`. The instant any ancestor gains a
+`transform`, `filter`, `will-change`, or a route-entry animation with a
+`transform` keyframe, that ancestor becomes the *containing block* for
+`position: fixed` descendants. A `fixed; inset: 0` backdrop then resolves
+against that ancestor instead of the viewport, so the modal renders clipped
+into the content column (off-center, jammed under the header) even though the
+CSS looks correct. The bug is invisible in code and only appears once rendered.
+`<Modal>` sidesteps it by portalling the node to `#overlay-root` (a `<body>`
+child, sibling of `#app`), which always resolves against the viewport.
+
+**Overlay z-index register** (keep overlays consistent and correctly stacked):
+`<Modal>` backdrop = `1000`; the security-critical session-timeout overlay =
+`9999` (must always win); the dev panel = `999999`. A new overlay type slots
+between these, it does not invent a higher number than the session-timeout
+warning.
+
+`SessionTimeoutWarning.svelte` is deliberately NOT built on `<Modal>` — it is
+non-dismissable (no backdrop click, no ESC) by security design. That is the one
+sanctioned exception; everything else uses `<Modal>`.
+
 ### API Calls
 
 Use the typed client from `web/src/lib/api.ts`:
