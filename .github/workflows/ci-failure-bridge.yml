@@ -1,0 +1,117 @@
+# CI Failure Bridge — self-healing: a red CI run on staging/main POSTs the
+# failure to the platform (/webhooks/ci-failure), which cuts ONE deduped fix
+# ticket on THIS project so the agent repairs it instead of leaving CI red.
+# Requires repo (or org) secret CI_FAILURE_WEBHOOK_SECRET + variable ALCHEMIST_API.
+# Source of truth: alchemist-ai deploy-templates/ci-failure-bridge.github-workflow.yml
+
+name: CI Failure Bridge
+
+on:
+  workflow_run:
+    workflows: ["CI", "desktop-release", "Customer Runtime Image"]
+    types: [completed]
+
+permissions:
+  actions: read     # list a run's jobs + download job logs via GITHUB_TOKEN
+  contents: read
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    # Only act on a GENUINE failure on a protected branch. Ignore success,
+    # cancelled, and manual workflow_dispatch re-runs + feature-branch runs.
+    # (The endpoint re-gates server-side too — defense in depth.)
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      (github.event.workflow_run.head_branch == 'staging' || github.event.workflow_run.head_branch == 'main') &&
+      github.event.workflow_run.event != 'workflow_dispatch'
+    steps:
+      - name: Collect failure + POST to platform
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CI_FAILURE_WEBHOOK_SECRET: ${{ secrets.CI_FAILURE_WEBHOOK_SECRET }}
+          ALCHEMIST_API: ${{ vars.ALCHEMIST_API }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          EVENT_NAME: ${{ github.event.workflow_run.event }}
+        run: |
+          set -euo pipefail
+
+          REPO="${GITHUB_REPOSITORY}"
+          echo "CI Failure Bridge: workflow='${WORKFLOW_NAME}' branch='${HEAD_BRANCH}' run=${RUN_ID}"
+
+          # 1. List the run's jobs; pick the FIRST failed job. NO --paginate:
+          #    on some gh versions it concatenates per-page JSON OBJECTS
+          #    (breaking jq); per_page=100 (one page) is far more than any
+          #    real run has, so the first failed job is always on it.
+          JOBS_JSON="$(gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" 2>/dev/null || echo '{}')"
+          FAILED_JOB="$(printf '%s' "$JOBS_JSON" | jq -c 'first(.jobs[]? | select(.conclusion=="failure")) // empty')"
+          FAILED_JOB_ID="$(printf '%s' "$FAILED_JOB" | jq -r '.id // empty')"
+          FAILED_JOB_NAME="$(printf '%s' "$FAILED_JOB" | jq -r '.name // empty')"
+          # 2. First failed step within that job.
+          FAILED_STEP="$(printf '%s' "$FAILED_JOB" | jq -r 'first(.steps[]? | select(.conclusion=="failure")).name // empty')"
+
+          echo "  failed job: ${FAILED_JOB_NAME:-<none>} (id=${FAILED_JOB_ID:-<none>})"
+          echo "  failed step: ${FAILED_STEP:-<none>}"
+
+          # 3. Download that job's log + tail ~200 lines (the failed step's
+          #    output is at the tail). Tolerate a fetch failure — post
+          #    whatever we have rather than failing the bridge red.
+          LOG_EXCERPT=""
+          if [ -n "$FAILED_JOB_ID" ]; then
+            RAW_LOG="$(gh api "repos/${REPO}/actions/jobs/${FAILED_JOB_ID}/logs" 2>/dev/null || true)"
+            LOG_EXCERPT="$(printf '%s' "$RAW_LOG" | tail -n 200)"
+          fi
+
+          # 4. Build the JSON payload with jq --arg (NO shell interpolation
+          #    into the JSON body → injection-safe per docs/security-review-checklist.md §13).
+          jq -n \
+            --arg workflowName "$WORKFLOW_NAME" \
+            --arg runId "$RUN_ID" \
+            --arg runUrl "$RUN_URL" \
+            --arg repo "$REPO" \
+            --arg headBranch "$HEAD_BRANCH" \
+            --arg headSha "$HEAD_SHA" \
+            --arg conclusion "failure" \
+            --arg event "$EVENT_NAME" \
+            --arg failedJob "$FAILED_JOB_NAME" \
+            --arg failedStep "$FAILED_STEP" \
+            --arg logExcerpt "$LOG_EXCERPT" \
+            '{
+              workflowName: $workflowName,
+              runId: $runId,
+              runUrl: $runUrl,
+              repo: $repo,
+              headBranch: $headBranch,
+              headSha: $headSha,
+              conclusion: $conclusion,
+              event: $event,
+              failedJob: (if $failedJob == "" then null else $failedJob end),
+              failedStep: (if $failedStep == "" then null else $failedStep end),
+              logExcerpt: $logExcerpt
+            }' > payload.json
+
+          # 5. POST to the platform. The secret is NEVER echoed (GitHub also
+          #    masks it). Tolerate any non-2xx — a red bridge would be its
+          #    own blind spot.
+          if [ -z "${ALCHEMIST_API:-}" ]; then
+            echo "::warning::ALCHEMIST_API repo variable not set — cannot POST CI failure to platform."
+            exit 0
+          fi
+          HTTP_STATUS="$(curl -sS -o response.txt -w '%{http_code}' \
+            -X POST "${ALCHEMIST_API}/webhooks/ci-failure" \
+            -H "Authorization: Bearer ${CI_FAILURE_WEBHOOK_SECRET:-}" \
+            -H "Content-Type: application/json" \
+            --data-binary @payload.json || echo '000')"
+          echo "platform responded HTTP ${HTTP_STATUS}"
+          cat response.txt 2>/dev/null || true
+
+          if [ "${HTTP_STATUS}" = "503" ]; then
+            echo "::warning::Platform returned 503 — CI_FAILURE_WEBHOOK_SECRET likely not set on the platform pod (fail-closed). Bridge is inert until the rollout TODO is done."
+          fi
+          # Always succeed: never let the bridge itself go red.
+          exit 0
