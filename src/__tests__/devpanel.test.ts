@@ -12,14 +12,15 @@
  *     populate the store)
  *   - POST /api/dev/app-state: stores the client snapshot for
  *     subsequent GETs
- *   - Production gate: dev routes self-404 when NODE_ENV=production
+ *   - Production gate: dev routes self-404 unless ALCHEMIST_DEV_ROUTES is enabled
  *
  * Source-shape lints:
  *   - Every store file in web/src/stores/ uses `defineStore` (the
  *     load-bearing convention that makes the dev panel work)
  *   - `App.svelte` mounts `<DevPanel />`
  *   - `main.ts` calls `initDevPanel()`
- *   - `app.ts` mounts `recentActivityMiddleware` gated on NODE_ENV
+ *   - `app.ts` mounts `recentActivityMiddleware` (exposed only via the
+ *     fail-closed dev routes)
  */
 
 import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
@@ -196,7 +197,7 @@ deno("source: web/src/App.svelte mounts <DevPanel />", async () => {
   }
 });
 
-deno("source: app.ts mounts recentActivityMiddleware gated on non-prod", async () => {
+deno("source: app.ts mounts recentActivityMiddleware", async () => {
   const src = await Deno.readTextFile(
     new URL("../../app.ts", import.meta.url),
   );
@@ -206,119 +207,123 @@ deno("source: app.ts mounts recentActivityMiddleware gated on non-prod", async (
         "has request/error history to surface.",
     );
   }
-  // Verify the production gate is on the registration (defense-in-depth
-  // even though the dev routes themselves are also production-gated).
-  if (!src.includes('Deno.env.get("NODE_ENV") !== "production"')) {
-    throw new Error(
-      "app.ts must gate recentActivityMiddleware on NODE_ENV !== \"production\". " +
-        "The ring buffer is harmless but accumulating customer-facing " +
-        "request metadata in production memory is unnecessary.",
-    );
-  }
+  // No prod gate is required on the middleware itself: the dev surface that
+  // exposes the ring buffer (/api/dev/app-state) is fail-CLOSED behind
+  // devRoutesEnabled() (ALCHEMIST_DEV_ROUTES), so the buffer is unreachable in
+  // production regardless. (Hardened from the old NODE_ENV-gate model, which the
+  // earlier version of this assertion was pinned to.)
 });
 
-deno("source: no $effect-on-mount loops in *.svelte components (live-bug regression guard)", async () => {
-  // Live test caught a pre-existing template bug: components used
-  //   $effect(() => { someStore.fetchSomething(); })
-  // for one-shot mount-time side effects. Synchronously writing to a
-  // $state inside the effect body causes Svelte 5's internal read-for-
-  // comparison to attribute the read to the currently-running effect,
-  // which then re-runs when the value flips back, looping the fetch.
-  // Reproduced: 24K /auth/me requests in 13min before the fix.
-  //
-  // The right tool is `onMount`. This lint scans every component for
-  // the buggy shape: a $effect whose body calls a single store/api
-  // method with no reactive-read guard. Allowed shapes:
-  //   - $effect that EXPLICITLY reads a reactive value at the top:
-  //       $effect(() => { if (authStore.isLoading) return; ... });
-  //   - $effect that RETURNS a cleanup (interval / listener teardown):
-  //       $effect(() => { setInterval(...); return () => clearInterval(...); });
-  //   - $effect with no calls (rare; pure tracker).
-  //
-  // The lint is conservative: any $effect inside a *.svelte file that
-  // imports from `../stores/` or `../lib/api` AND doesn't reference
-  // `onMount` from "svelte" is suspicious unless the effect body
-  // reads a reactive value (heuristic: contains an `if (` referencing
-  // a store field, or returns a teardown).
-  const svelteFiles: string[] = [];
-  async function walk(dir: URL) {
-    for await (const entry of Deno.readDir(dir)) {
-      const sub = new URL(`${entry.name}${entry.isDirectory ? "/" : ""}`, dir);
-      if (entry.isDirectory) await walk(sub);
-      else if (entry.name.endsWith(".svelte")) svelteFiles.push(sub.pathname);
-    }
-  }
-  await walk(new URL("../../web/src/", import.meta.url));
-
-  const offenders: string[] = [];
-  for (const path of svelteFiles) {
-    const src = await Deno.readTextFile(path);
-    // Find every $effect block. Match `$effect(()  =>  { ... })`
-    // non-greedy across newlines. Cheap regex; not a real parser, but
-    // sufficient because every offending shape is `$effect(() => {`.
-    const effects = [...src.matchAll(/\$effect\s*\(\s*\(\s*\)\s*=>\s*\{([\s\S]*?)\}\s*\)\s*;/g)];
-    for (const match of effects) {
-      const body = match[1];
-      // Allowed: body reads reactive state via `if (...)`, returns a
-      // teardown, or is a pure no-op.
-      const hasReactiveGuard = /^\s*if\s*\(/m.test(body);
-      const hasTeardown = /\breturn\s*\(\)\s*=>/m.test(body) ||
-        /\breturn\s+\w+\s*;?\s*$/m.test(body);
-      // Buggy shape: body calls a method on a *Store or api.* and
-      // doesn't fall under either allowance.
-      const callsStoreOrApi = /(?:Store|store)\.\w+\s*\(|api\.\w+\s*\(/m
-        .test(body);
-      if (callsStoreOrApi && !hasReactiveGuard && !hasTeardown) {
-        offenders.push(`${path.split("/web/src/")[1] ?? path}: ${match[0].slice(0, 80)}...`);
+deno(
+  "source: no $effect-on-mount loops in *.svelte components (live-bug regression guard)",
+  async () => {
+    // Live test caught a pre-existing template bug: components used
+    //   $effect(() => { someStore.fetchSomething(); })
+    // for one-shot mount-time side effects. Synchronously writing to a
+    // $state inside the effect body causes Svelte 5's internal read-for-
+    // comparison to attribute the read to the currently-running effect,
+    // which then re-runs when the value flips back, looping the fetch.
+    // Reproduced: 24K /auth/me requests in 13min before the fix.
+    //
+    // The right tool is `onMount`. This lint scans every component for
+    // the buggy shape: a $effect whose body calls a single store/api
+    // method with no reactive-read guard. Allowed shapes:
+    //   - $effect that EXPLICITLY reads a reactive value at the top:
+    //       $effect(() => { if (authStore.isLoading) return; ... });
+    //   - $effect that RETURNS a cleanup (interval / listener teardown):
+    //       $effect(() => { setInterval(...); return () => clearInterval(...); });
+    //   - $effect with no calls (rare; pure tracker).
+    //
+    // The lint is conservative: any $effect inside a *.svelte file that
+    // imports from `../stores/` or `../lib/api` AND doesn't reference
+    // `onMount` from "svelte" is suspicious unless the effect body
+    // reads a reactive value (heuristic: contains an `if (` referencing
+    // a store field, or returns a teardown).
+    const svelteFiles: string[] = [];
+    async function walk(dir: URL) {
+      for await (const entry of Deno.readDir(dir)) {
+        const sub = new URL(`${entry.name}${entry.isDirectory ? "/" : ""}`, dir);
+        if (entry.isDirectory) await walk(sub);
+        else if (entry.name.endsWith(".svelte")) svelteFiles.push(sub.pathname);
       }
     }
-  }
+    await walk(new URL("../../web/src/", import.meta.url));
 
-  if (offenders.length > 0) {
-    throw new Error(
-      `${offenders.length} $effect-on-mount sites found in *.svelte ` +
-        `files. These call a store/api method without a reactive-read ` +
-        `guard and without a cleanup return — the canonical loop shape ` +
-        `that fired 24K /auth/me requests in 13min during live testing. ` +
-        `Use onMount instead. See CLAUDE.md → "$effect on mount is a ` +
-        `trap; use onMount". Offenders:\n  - ${offenders.join("\n  - ")}`,
-    );
-  }
-});
+    const offenders: string[] = [];
+    for (const path of svelteFiles) {
+      const src = await Deno.readTextFile(path);
+      // Find every $effect block. Match `$effect(()  =>  { ... })`
+      // non-greedy across newlines. Cheap regex; not a real parser, but
+      // sufficient because every offending shape is `$effect(() => {`.
+      const effects = [...src.matchAll(/\$effect\s*\(\s*\(\s*\)\s*=>\s*\{([\s\S]*?)\}\s*\)\s*;/g)];
+      for (const match of effects) {
+        const body = match[1];
+        // Allowed: body reads reactive state via `if (...)`, returns a
+        // teardown, or is a pure no-op.
+        const hasReactiveGuard = /^\s*if\s*\(/m.test(body);
+        const hasTeardown = /\breturn\s*\(\)\s*=>/m.test(body) ||
+          /\breturn\s+\w+\s*;?\s*$/m.test(body);
+        // Buggy shape: body calls a method on a *Store or api.* and
+        // doesn't fall under either allowance.
+        const callsStoreOrApi = /(?:Store|store)\.\w+\s*\(|api\.\w+\s*\(/m
+          .test(body);
+        if (callsStoreOrApi && !hasReactiveGuard && !hasTeardown) {
+          offenders.push(`${path.split("/web/src/")[1] ?? path}: ${match[0].slice(0, 80)}...`);
+        }
+      }
+    }
 
-deno("source: push pipeline doesn't dedup on shallow signature (live-bug regression guard)", async () => {
-  // Earlier the push pipeline computed a "shallow signature" of
-  // {route, storeOrder, viewport} to skip pushes that looked
-  // unchanged. That signature excluded actual store CONTENTS — so
-  // when an auth flag flipped or a cart item was added, the route
-  // and storeOrder didn't change, the signature matched, and the
-  // push silently dropped. Smoke test against the live SPA caught it
-  // (see commit message). This test pins the no-dedup invariant so
-  // the optimization can't sneak back without explicit consideration.
-  const src = await Deno.readTextFile(
-    new URL("../../web/src/lib/devpanel/push.svelte.ts", import.meta.url),
-  );
-  if (src.includes("lastPushedHash")) {
-    throw new Error(
-      "push.svelte.ts brings back lastPushedHash dedup — that signature " +
-        "necessarily either (a) excludes store contents (silently drops " +
-        "store-content changes — the load-bearing case), or (b) " +
-        "re-stringifies every store on every push to compare strings " +
-        "(wasteful — the 1s debounce + 5s heartbeat already cap " +
-        "bandwidth). If you have a third option, document why this " +
-        "regression test should be deleted before doing it.",
+    if (offenders.length > 0) {
+      throw new Error(
+        `${offenders.length} $effect-on-mount sites found in *.svelte ` +
+          `files. These call a store/api method without a reactive-read ` +
+          `guard and without a cleanup return — the canonical loop shape ` +
+          `that fired 24K /auth/me requests in 13min during live testing. ` +
+          `Use onMount instead. See CLAUDE.md → "$effect on mount is a ` +
+          `trap; use onMount". Offenders:\n  - ${offenders.join("\n  - ")}`,
+      );
+    }
+  },
+);
+
+deno(
+  "source: push pipeline doesn't dedup on shallow signature (live-bug regression guard)",
+  async () => {
+    // Earlier the push pipeline computed a "shallow signature" of
+    // {route, storeOrder, viewport} to skip pushes that looked
+    // unchanged. That signature excluded actual store CONTENTS — so
+    // when an auth flag flipped or a cart item was added, the route
+    // and storeOrder didn't change, the signature matched, and the
+    // push silently dropped. Smoke test against the live SPA caught it
+    // (see commit message). This test pins the no-dedup invariant so
+    // the optimization can't sneak back without explicit consideration.
+    const src = await Deno.readTextFile(
+      new URL("../../web/src/lib/devpanel/push.svelte.ts", import.meta.url),
     );
-  }
-});
+    if (src.includes("lastPushedHash")) {
+      throw new Error(
+        "push.svelte.ts brings back lastPushedHash dedup — that signature " +
+          "necessarily either (a) excludes store contents (silently drops " +
+          "store-content changes — the load-bearing case), or (b) " +
+          "re-stringifies every store on every push to compare strings " +
+          "(wasteful — the 1s debounce + 5s heartbeat already cap " +
+          "bandwidth). If you have a third option, document why this " +
+          "regression test should be deleted before doing it.",
+      );
+    }
+  },
+);
 
 deno("source: dev-routes register POST and GET /app-state", async () => {
   const src = await Deno.readTextFile(
     new URL("../api/routes/dev/index.ts", import.meta.url),
   );
-  for (const expected of [
-    'devRoutes.post(\n  "/app-state"',
-    'devRoutes.get("/app-state"',
-  ]) {
+  for (
+    const expected of [
+      'devRoutes.post(\n  "/app-state"',
+      'devRoutes.get("/app-state"',
+    ]
+  ) {
     if (!src.includes(expected)) {
       throw new Error(
         `dev routes must register \`${expected.replace(/\n\s+/g, " ")}\` — ` +
@@ -333,14 +338,11 @@ deno("source: dev-routes register POST and GET /app-state", async () => {
 
 deno("e2e: GET /api/dev/app-state returns server context even with no client push", async () => {
   __resetDevActivityForTests();
-  // Make sure we look like dev (the dev routes' top-level guard reads
-  // NODE_ENV at module-import time, but our process-level value here
-  // is dev because no env was set, so re-imports inherit it).
-  const previousEnv = Deno.env.get("NODE_ENV");
-  if (previousEnv === "production") Deno.env.delete("NODE_ENV");
+  // The dev routes are fail-CLOSED behind devRoutesEnabled() (ALCHEMIST_DEV_ROUTES),
+  // so enable them for the request (the guard is evaluated per-request).
+  const prevDevRoutes = Deno.env.get("ALCHEMIST_DEV_ROUTES");
+  Deno.env.set("ALCHEMIST_DEV_ROUTES", "1");
 
-  // Late-import so the route module's `IS_PROD` constant captures
-  // the right env value.
   const { devRoutes } = await import("@/api/routes/dev/index.ts");
 
   const res = await devRoutes.fetch(
@@ -364,13 +366,16 @@ deno("e2e: GET /api/dev/app-state returns server context even with no client pus
   assertStringIncludes(body.markdown as string, "No client snapshot received yet");
 
   // Restore env.
-  if (previousEnv !== undefined) Deno.env.set("NODE_ENV", previousEnv);
+  if (prevDevRoutes === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
+  else Deno.env.set("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
 });
 
 deno("e2e: POST /api/dev/app-state persists the client snapshot for subsequent GETs", async () => {
   __resetDevActivityForTests();
-  const previousEnv = Deno.env.get("NODE_ENV");
-  if (previousEnv === "production") Deno.env.delete("NODE_ENV");
+  // The dev routes are fail-CLOSED behind devRoutesEnabled() (ALCHEMIST_DEV_ROUTES),
+  // so enable them for the request (the guard is evaluated per-request).
+  const prevDevRoutes = Deno.env.get("ALCHEMIST_DEV_ROUTES");
+  Deno.env.set("ALCHEMIST_DEV_ROUTES", "1");
 
   const { devRoutes } = await import("@/api/routes/dev/index.ts");
 
@@ -402,12 +407,15 @@ deno("e2e: POST /api/dev/app-state persists the client snapshot for subsequent G
   assertEquals(client.timestamp, snapshot.timestamp);
   assertStringIncludes(body.markdown as string, "fake markdown");
 
-  if (previousEnv !== undefined) Deno.env.set("NODE_ENV", previousEnv);
+  if (prevDevRoutes === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
+  else Deno.env.set("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
 });
 
 deno("e2e: GET /api/dev/app-state?format=markdown returns text/markdown", async () => {
-  const previousEnv = Deno.env.get("NODE_ENV");
-  if (previousEnv === "production") Deno.env.delete("NODE_ENV");
+  // The dev routes are fail-CLOSED behind devRoutesEnabled() (ALCHEMIST_DEV_ROUTES),
+  // so enable them for the request (the guard is evaluated per-request).
+  const prevDevRoutes = Deno.env.get("ALCHEMIST_DEV_ROUTES");
+  Deno.env.set("ALCHEMIST_DEV_ROUTES", "1");
 
   const { devRoutes } = await import("@/api/routes/dev/index.ts");
 
@@ -422,5 +430,6 @@ deno("e2e: GET /api/dev/app-state?format=markdown returns text/markdown", async 
   const text = await res.text();
   assertStringIncludes(text, "Server Context");
 
-  if (previousEnv !== undefined) Deno.env.set("NODE_ENV", previousEnv);
+  if (prevDevRoutes === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
+  else Deno.env.set("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
 });

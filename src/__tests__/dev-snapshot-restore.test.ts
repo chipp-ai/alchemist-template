@@ -24,8 +24,7 @@ function deno(name: string, fn: () => void | Promise<void>) {
   Deno.test({ name, sanitizeResources: false, sanitizeOps: false, fn });
 }
 
-const DEV_ROUTES_PATH =
-  new URL("../api/routes/dev/index.ts", import.meta.url).pathname;
+const DEV_ROUTES_PATH = new URL("../api/routes/dev/index.ts", import.meta.url).pathname;
 const source = await Deno.readTextFile(DEV_ROUTES_PATH);
 
 // ── Route registration ────────────────────────────────────────────────────
@@ -80,7 +79,7 @@ deno("get-login: redirect param is restricted to relative paths", () => {
   // redirector (?email=...&redirect=https://evil.example.com).
   assertStringIncludes(
     source,
-    "redirect.startsWith(\"/\") ? redirect : \"/\"",
+    'redirect.startsWith("/") ? redirect : "/"',
   );
 });
 
@@ -92,9 +91,12 @@ deno("get-login: schema accepts email + optional redirect", () => {
 
 // ── Production guard ─────────────────────────────────────────────────────
 
-deno("prod-guard: NODE_ENV=production short-circuits to NotFoundError", () => {
-  assertStringIncludes(source, "const IS_PROD = Deno.env.get(\"NODE_ENV\") === \"production\"");
-  assertStringIncludes(source, "throw new NotFoundError(\"Route not found\")");
+deno("prod-guard: fail-closed unless ALCHEMIST_DEV_ROUTES is enabled", () => {
+  // Hardened from the old fail-OPEN `NODE_ENV !== "production"` check to a
+  // fail-CLOSED positive opt-in: the guard 404s every path unless
+  // devRoutesEnabled() (ALCHEMIST_DEV_ROUTES truthy), evaluated per-request.
+  assertStringIncludes(source, "if (!devRoutesEnabled())");
+  assertStringIncludes(source, 'throw new NotFoundError("Route not found")');
 });
 
 deno("prod-guard: every dev route is mounted behind the IS_PROD check", () => {
@@ -102,7 +104,7 @@ deno("prod-guard: every dev route is mounted behind the IS_PROD check", () => {
   // registration. Source check confirms it's the FIRST devRoutes.*
   // invocation — anything registered before the guard wouldn't be
   // gated by it.
-  const guardIdx = source.indexOf("devRoutes.use(\"*\"");
+  const guardIdx = source.indexOf('devRoutes.use("*"');
   // Search for the first GET/POST registration (the actual source
   // splits the call across lines, so we match the opening `devRoutes.
   // (get|post)(` rather than the full single-line shape).
