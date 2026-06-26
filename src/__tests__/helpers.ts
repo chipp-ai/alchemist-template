@@ -17,9 +17,16 @@
  */
 
 import { Hono } from "hono";
-import { db, sql } from "@/db/client.ts";
+import { db, ensureTestSchema, sql } from "@/db/client.ts";
 import type { Database } from "@/db/schema.ts";
 import type { Kysely } from "kysely";
+
+// Provision THIS worker's isolated test schema BEFORE any test in a file that
+// imports these helpers runs (top-level await blocks the importing module until
+// it resolves). This is what makes `deno test --parallel` deterministic: each
+// worker process builds + uses its own `test_p<pid>` schema, so parallel files
+// can never see each other's rows (VALORV-494). No-op outside parallel-test mode.
+await ensureTestSchema();
 
 // ── Types ──
 
@@ -64,6 +71,9 @@ function uniqueTestId(): string {
 export async function createIsolatedUser(
   role: "owner" | "admin" | "member" | "viewer" = "owner",
 ): Promise<IsolatedTestContext> {
+  // Defensive: ensure this worker's schema exists even if a test file used
+  // createIsolatedUser without importing at module top (cached → cheap).
+  await ensureTestSchema();
   const id = uniqueTestId();
   const email = `test-${id}@test.local`;
   const orgName = `Test Org ${id}`;

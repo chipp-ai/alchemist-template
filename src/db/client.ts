@@ -17,6 +17,25 @@ const connectionString =
   Deno.env.get("TEST_DATABASE_URL") ||
   Deno.env.get("DATABASE_URL");
 
+// ── Per-worker test-schema isolation (deterministic parallel tests) ──
+//
+// `deno test --parallel` runs test FILES in separate worker PROCESSES that all
+// hit the SAME database. Without isolation, a test that reads un-scoped state
+// (count(*) over a table, a fixed id, an un-scoped DELETE) sees another worker's
+// rows → flaky. Fix: give EACH worker its OWN Postgres schema (`test_p<pid>`)
+// and point its connections' search_path at it, so cross-worker interference is
+// impossible regardless of how a test is written. Provisioned by
+// ensureTestSchema() (below), which helpers.ts awaits at module load.
+//
+// Gated HARD on the explicit `TEST_PARALLEL_ISOLATION=1` flag (set only by the
+// `test*` tasks in deno.json) so production — where DATABASE_URL is set but the
+// flag is NOT — can never accidentally route real queries into a `test_p<pid>`
+// schema. (VALORV-494)
+const TEST_SCHEMA =
+  Deno.env.get("TEST_PARALLEL_ISOLATION") === "1" && connectionString
+    ? `test_p${Deno.pid}`
+    : null;
+
 function createDatabaseClient(): {
   sql: ReturnType<typeof postgres>;
   db: Kysely<Database>;
@@ -52,6 +71,10 @@ function createDatabaseClient(): {
     connection: {
       application_name: "alchemist-template",
       statement_timeout: 15000,
+      // Each parallel test worker resolves unqualified table refs to its OWN
+      // schema first → deterministic under --parallel (VALORV-494). `public`
+      // stays on the path for extensions/shared types. No-op in prod (null).
+      ...(TEST_SCHEMA ? { search_path: `${TEST_SCHEMA},public` } : {}),
     },
   });
 
@@ -72,6 +95,49 @@ const { sql, db, configured: dbConfigured } = createDatabaseClient();
 
 export { sql, db };
 export const isDatabaseConfigured = () => dbConfigured;
+
+// ── Per-worker test-schema provisioning ──
+
+/** The schema this test worker is isolated into, or null outside parallel-test mode. */
+export const testSchemaName = TEST_SCHEMA;
+
+let testSchemaReady: Promise<void> | null = null;
+
+/**
+ * Provision THIS worker's isolated test schema (VALORV-494): drop+recreate
+ * `test_p<pid>` (DROP+CREATE so a reused PID starts clean), then apply
+ * `db/test-schema.sql` into it. The DDL is all-UNQUALIFIED and the connection's
+ * search_path leads with `test_p<pid>`, so every table/type/function lands in
+ * this worker's private schema. `CREATE SCHEMA` is qualified, so it doesn't
+ * depend on search_path resolving first.
+ *
+ * Idempotent (cached promise) + a no-op outside parallel-test mode, so it's safe
+ * to call from many test files. `helpers.ts` awaits it at module load, so every
+ * worker has a fully-built private schema before its first test runs.
+ */
+export function ensureTestSchema(): Promise<void> {
+  if (!TEST_SCHEMA || !dbConfigured) return Promise.resolve();
+  if (!testSchemaReady) {
+    testSchemaReady = (async () => {
+      const ddl = await Deno.readTextFile(
+        new URL("../../db/test-schema.sql", import.meta.url),
+      );
+      // Strip the file's outer BEGIN;/COMMIT; — postgres.js rejects an explicit
+      // transaction on a pooled connection ("UNSAFE_TRANSACTION"). The DDL is
+      // idempotent and applied to a freshly-created schema, so per-statement
+      // autocommit is fine. (Matches only standalone `BEGIN;`/`COMMIT;` lines, so
+      // a PL/pgSQL `BEGIN`/`END;` inside a `$$` function body is untouched.)
+      const body = ddl
+        .replace(/^\s*BEGIN\s*;\s*$/gim, "")
+        .replace(/^\s*COMMIT\s*;\s*$/gim, "");
+      await sql.unsafe(
+        `DROP SCHEMA IF EXISTS "${TEST_SCHEMA}" CASCADE; CREATE SCHEMA "${TEST_SCHEMA}"`,
+      );
+      await sql.unsafe(body);
+    })();
+  }
+  return testSchemaReady;
+}
 
 // ── Timeout utilities ──
 
