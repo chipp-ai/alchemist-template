@@ -263,6 +263,16 @@ async function extensionsReferencedByMigrations(dir: string): Promise<string[]> 
   return [...found];
 }
 
+// Provision THIS worker's isolated schema at MODULE LOAD — every test that
+// touches the DB imports `@/db/client.ts` (for `sql`/`db`), so doing it here
+// (rather than only in helpers.ts) guarantees provisioning even for test files
+// that use `sql` directly and never import the test helpers. Without this, such
+// a file's queries resolve against an unprovisioned (empty `public`) schema and
+// fail with "relation ... does not exist". A no-op outside parallel-test mode
+// (ensureTestSchema returns immediately when TEST_SCHEMA is null), so production
+// import cost is zero. (VALORV-494)
+await ensureTestSchema();
+
 // ── Timeout utilities ──
 
 /**

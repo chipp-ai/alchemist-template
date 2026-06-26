@@ -21,10 +21,23 @@ export interface Hazard {
   snippet: string;
 }
 
+/**
+ * Inline opt-out: a line carrying `parallel-safe-ignore` (or whose immediately
+ * preceding line does) is exempt — for a DELIBERATE global-table reset that is
+ * coordinated some other way (e.g. `withGlobalTableLock`), where an un-scoped
+ * write is intentional and safe. Mirrors the `deno-lint-ignore` convention; keep
+ * the reason on the same comment so the intent is auditable.
+ */
+const IGNORE_MARKER = "parallel-safe-ignore";
+
 export function findParallelHazards(source: string): Hazard[] {
   const hazards: Hazard[] = [];
-  source.split("\n").forEach((raw, i) => {
+  const lines = source.split("\n");
+  lines.forEach((raw, i) => {
     const ln = i + 1;
+    if (raw.includes(IGNORE_MARKER) || (i > 0 && lines[i - 1].includes(IGNORE_MARKER))) {
+      return; // explicitly opted out on this or the preceding line
+    }
     // Only EXECUTED SQL — single-line `sql`...`` tagged templates. This
     // deliberately ignores string assertions ABOUT source code
     // (`assertStringIncludes(src, `TRUNCATE ...`)`, plain "TRUNCATE" strings),

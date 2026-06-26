@@ -33,6 +33,21 @@ Deno.test("findParallelHazards: a WHERE-scoped delete is SAFE", () => {
   assertEquals(findParallelHazards("await sql`DELETE FROM users WHERE id = ${id}`;"), []);
 });
 
+Deno.test("findParallelHazards: an inline parallel-safe-ignore opts a line out", () => {
+  // Same-line marker.
+  assertEquals(
+    findParallelHazards("await sql`DELETE FROM users`; // parallel-safe-ignore: global reset"),
+    [],
+  );
+  // Preceding-line marker.
+  assertEquals(
+    findParallelHazards("// parallel-safe-ignore: lock-coordinated\nawait sql`DELETE FROM users`;"),
+    [],
+  );
+  // Without the marker it is still flagged.
+  assertEquals(findParallelHazards("await sql`DELETE FROM users`;")[0].rule, "unscoped-write");
+});
+
 Deno.test("findParallelHazards: a multi-line delete (WHERE on next line) is not falsely flagged", () => {
   // Only the first line has DELETE FROM but no closing backtick → not flagged.
   const src = "await sql`DELETE FROM users\n  WHERE org_id = ${org.id}`;";
@@ -66,7 +81,9 @@ Deno.test("no test file contains a parallel-unsafe destructive SQL pattern", asy
   assertEquals(
     hazards,
     [],
-    `parallel-unsafe patterns found (scope deletes with WHERE; never TRUNCATE/DROP in a test):\n${hazards.join("\n")}`,
+    `parallel-unsafe patterns found (scope deletes with WHERE; never TRUNCATE/DROP in a test):\n${
+      hazards.join("\n")
+    }`,
   );
 });
 
