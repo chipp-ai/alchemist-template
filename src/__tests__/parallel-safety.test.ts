@@ -77,10 +77,16 @@ Deno.test("parallel-test isolation is wired: worker is pinned to its own schema"
   // A direct `deno test` without the flag legitimately runs un-isolated.
   if (Deno.env.get("TEST_PARALLEL_ISOLATION") !== "1") return;
   if (!isDatabaseConfigured()) return; // no DB configured → nothing to isolate
-  assertEquals(
-    testSchemaName,
-    `test_p${Deno.pid}`,
+  assert(
+    testSchemaName !== null,
     "per-worker schema isolation must be active under the test tasks",
   );
-  assert(testSchemaName!.startsWith("test_p"), "schema must be a per-pid test schema");
+  // The name is `test_p<pid>_<random>` — the random suffix is what makes it
+  // unique PER ISOLATE (workers share Deno.pid), so assert the shape, not a
+  // pid-exact value. A bare `test_p<pid>` (no suffix) would be the old, broken,
+  // collision-prone key.
+  assert(
+    /^test_p\d+_[0-9a-f]{12}$/.test(testSchemaName!),
+    `schema must be a per-isolate test schema (test_p<pid>_<random>), got: ${testSchemaName}`,
+  );
 });

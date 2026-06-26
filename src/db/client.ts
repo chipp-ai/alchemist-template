@@ -13,28 +13,35 @@ import type { Database } from "./schema.ts";
 
 // ── Connection setup ──
 
-const connectionString =
-  Deno.env.get("TEST_DATABASE_URL") ||
+const connectionString = Deno.env.get("TEST_DATABASE_URL") ||
   Deno.env.get("DATABASE_URL");
 
 // ── Per-worker test-schema isolation (deterministic parallel tests) ──
 //
-// `deno test --parallel` runs test FILES in separate worker PROCESSES that all
-// hit the SAME database. Without isolation, a test that reads un-scoped state
+// `deno test --parallel` runs test FILES across multiple workers that all hit
+// the SAME database. Without isolation, a test that reads un-scoped state
 // (count(*) over a table, a fixed id, an un-scoped DELETE) sees another worker's
-// rows → flaky. Fix: give EACH worker its OWN Postgres schema (`test_p<pid>`)
-// and point its connections' search_path at it, so cross-worker interference is
-// impossible regardless of how a test is written. Provisioned by
-// ensureTestSchema() (below), which helpers.ts awaits at module load.
+// rows → flaky. Fix: give EACH worker its OWN Postgres schema and point its
+// connections' search_path at it, so cross-worker interference is impossible
+// regardless of how a test is written. Provisioned by ensureTestSchema()
+// (below), which helpers.ts awaits at module load.
+//
+// CRITICAL — the schema name must be unique PER WORKER, and a worker is a V8
+// ISOLATE, NOT a process. Deno's `--parallel` runs workers as separate isolates
+// inside ONE process, so `Deno.pid` is IDENTICAL across all of them — keying on
+// it makes every worker target the SAME schema and stomp each other's
+// DROP/CREATE/migrate (observed on Valor Victoria: flaky, WORSE than no
+// isolation). Each isolate evaluates this module exactly once, so a random id
+// minted here is unique per worker. (`Deno.pid` stays as a human-readable prefix
+// only.)
 //
 // Gated HARD on the explicit `TEST_PARALLEL_ISOLATION=1` flag (set only by the
 // `test*` tasks in deno.json) so production — where DATABASE_URL is set but the
-// flag is NOT — can never accidentally route real queries into a `test_p<pid>`
-// schema. (VALORV-494)
-const TEST_SCHEMA =
-  Deno.env.get("TEST_PARALLEL_ISOLATION") === "1" && connectionString
-    ? `test_p${Deno.pid}`
-    : null;
+// flag is NOT — can never accidentally route real queries into a test schema.
+// (VALORV-494)
+const TEST_SCHEMA = Deno.env.get("TEST_PARALLEL_ISOLATION") === "1" && connectionString
+  ? `test_p${Deno.pid}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`
+  : null;
 
 function createDatabaseClient(): {
   sql: ReturnType<typeof postgres>;
@@ -93,7 +100,7 @@ function createDatabaseClient(): {
 
 const { sql, db, configured: dbConfigured } = createDatabaseClient();
 
-export { sql, db };
+export { db, sql };
 export const isDatabaseConfigured = () => dbConfigured;
 
 // ── Per-worker test-schema provisioning ──
@@ -104,39 +111,102 @@ export const testSchemaName = TEST_SCHEMA;
 let testSchemaReady: Promise<void> | null = null;
 
 /**
+ * Fixed advisory-lock key that SERIALIZES per-worker schema provisioning across
+ * parallel test workers (VALORV-494). The per-worker schemas themselves don't
+ * conflict, but the migrations' shared, DB-level `CREATE EXTENSION` statements
+ * race if N workers run them at once (observed on Valor Victoria: most workers'
+ * provisioning failed under concurrency). Serializing the whole provisioning
+ * section is simple + correct: the first worker creates the extensions, every
+ * later worker's `CREATE EXTENSION IF NOT EXISTS` is then a no-op.
+ */
+const PROVISION_LOCK_KEY = 494494;
+
+/**
  * Provision THIS worker's isolated test schema (VALORV-494): drop+recreate
- * `test_p<pid>` (DROP+CREATE so a reused PID starts clean), then apply
- * `db/test-schema.sql` into it. The DDL is all-UNQUALIFIED and the connection's
- * search_path leads with `test_p<pid>`, so every table/type/function lands in
- * this worker's private schema. `CREATE SCHEMA` is qualified, so it doesn't
- * depend on search_path resolving first.
+ * `test_p<pid>`, then apply the FULL MIGRATION set into it.
  *
- * Idempotent (cached promise) + a no-op outside parallel-test mode, so it's safe
- * to call from many test files. `helpers.ts` awaits it at module load, so every
- * worker has a fully-built private schema before its first test runs.
+ * Provisioned from MIGRATIONS, NOT `db/test-schema.sql`: that file drifts from
+ * the real schema on customer repos (e.g. Valor Victoria's was stale, missing
+ * dozens of tables) and customer CI builds the test DB from migrations anyway.
+ * Migration DDL is all-UNQUALIFIED, so it lands in whichever schema leads the
+ * search_path. `runMigrations` opens its OWN connection, so the per-worker
+ * search_path is threaded through the connection URL's `options` param (verified
+ * postgres.js honors `?options=-c search_path=...`). A computed import specifier
+ * keeps the shared prod runner out of `deno check`'s graph.
+ *
+ * Two concurrency hazards, both closed by holding a session ADVISORY LOCK across
+ * the whole provisioning section (see PROVISION_LOCK_KEY):
+ *   1. RACE — N workers running the migrations' shared `CREATE EXTENSION` at once.
+ *   2. WRONG SCHEMA — an unqualified `CREATE EXTENSION` in a migration installs
+ *      the extension's functions into the leading search_path schema (this
+ *      worker's `test_p<pid>`), so OTHER workers can't resolve `uuid_generate_v4`
+ *      etc. Fix: pre-create every extension the migrations reference explicitly in
+ *      `public` (`SCHEMA public`) before migrating — they land shared, and each
+ *      migration's own `CREATE EXTENSION IF NOT EXISTS` then no-ops. Every worker
+ *      resolves them via its `,public` search_path suffix.
+ *
+ * Idempotent (cached promise) + a no-op outside parallel-test mode; `helpers.ts`
+ * awaits it at module load so every worker has a fully-migrated private schema
+ * before its first test.
  */
 export function ensureTestSchema(): Promise<void> {
-  if (!TEST_SCHEMA || !dbConfigured) return Promise.resolve();
+  if (!TEST_SCHEMA || !dbConfigured || !connectionString) return Promise.resolve();
   if (!testSchemaReady) {
     testSchemaReady = (async () => {
-      const ddl = await Deno.readTextFile(
-        new URL("../../db/test-schema.sql", import.meta.url),
-      );
-      // Strip the file's outer BEGIN;/COMMIT; — postgres.js rejects an explicit
-      // transaction on a pooled connection ("UNSAFE_TRANSACTION"). The DDL is
-      // idempotent and applied to a freshly-created schema, so per-statement
-      // autocommit is fine. (Matches only standalone `BEGIN;`/`COMMIT;` lines, so
-      // a PL/pgSQL `BEGIN`/`END;` inside a `$$` function body is untouched.)
-      const body = ddl
-        .replace(/^\s*BEGIN\s*;\s*$/gim, "")
-        .replace(/^\s*COMMIT\s*;\s*$/gim, "");
-      await sql.unsafe(
-        `DROP SCHEMA IF EXISTS "${TEST_SCHEMA}" CASCADE; CREATE SCHEMA "${TEST_SCHEMA}"`,
-      );
-      await sql.unsafe(body);
+      const migrationsDir = new URL("../../db/migrations/", import.meta.url).pathname;
+      const runnerUrl = new URL("../../db/_runner.ts", import.meta.url).href;
+      const { runMigrations } = await import(runnerUrl) as {
+        runMigrations: (
+          o: { migrationsDir: string; databaseUrl?: string },
+        ) => Promise<void>;
+      };
+      const url = new URL(connectionString);
+      url.searchParams.set("options", `-c search_path=${TEST_SCHEMA},public`);
+      // Hold the advisory lock on a reserved connection across runMigrations
+      // (which uses its OWN connection) so provisioning is serialized worker-wide.
+      const lock = await sql.reserve();
+      try {
+        await lock`SELECT pg_advisory_lock(${PROVISION_LOCK_KEY})`;
+        await lock.unsafe(
+          `DROP SCHEMA IF EXISTS "${TEST_SCHEMA}" CASCADE; CREATE SCHEMA "${TEST_SCHEMA}"`,
+        );
+        for (const ext of await extensionsReferencedByMigrations(migrationsDir)) {
+          // Best-effort: a migration may guard an unavailable extension in a DO
+          // block, so don't let one missing extension abort provisioning.
+          try {
+            await lock.unsafe(`CREATE EXTENSION IF NOT EXISTS "${ext}" SCHEMA public`);
+          } catch { /* migration's own guarded CREATE handles absence */ }
+        }
+        await runMigrations({ migrationsDir, databaseUrl: url.toString() });
+      } finally {
+        try {
+          await lock`SELECT pg_advisory_unlock(${PROVISION_LOCK_KEY})`;
+        } catch { /* best-effort */ }
+        lock.release();
+      }
     })();
   }
   return testSchemaReady;
+}
+
+/**
+ * Scan the migration SQL for the extensions it creates, so we can pre-install
+ * them into `public` (shared) instead of letting an unqualified `CREATE EXTENSION`
+ * land in a single worker's private schema. Matches `CREATE EXTENSION [IF NOT
+ * EXISTS] <name|"name">` — the leading `CREATE EXTENSION` keyword is what counts,
+ * so a guarded one inside a DO block is still found.
+ */
+async function extensionsReferencedByMigrations(dir: string): Promise<string[]> {
+  const found = new Set<string>();
+  const re = /CREATE\s+EXTENSION\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?([a-zA-Z0-9_-]+)["']?/gi;
+  try {
+    for await (const entry of Deno.readDir(dir)) {
+      if (!entry.isFile || !entry.name.endsWith(".sql")) continue;
+      const text = await Deno.readTextFile(`${dir}${entry.name}`);
+      for (const m of text.matchAll(re)) found.add(m[1]);
+    }
+  } catch { /* no migrations dir → nothing to pre-create */ }
+  return [...found];
 }
 
 // ── Timeout utilities ──
@@ -157,7 +227,10 @@ export function withTimeout<T>(
   let timerId: ReturnType<typeof setTimeout>;
   const timer = new Promise<never>((_, reject) => {
     timerId = setTimeout(
-      () => reject(new Error(`DB operation timed out after ${timeoutMs}ms (including pool acquisition)`)),
+      () =>
+        reject(
+          new Error(`DB operation timed out after ${timeoutMs}ms (including pool acquisition)`),
+        ),
       timeoutMs,
     );
   });
@@ -175,7 +248,10 @@ export function raceTimeout<T>(timeoutMs: number, promise: Promise<T>): Promise<
   let timerId: ReturnType<typeof setTimeout>;
   const timer = new Promise<never>((_, reject) => {
     timerId = setTimeout(
-      () => reject(new Error(`DB operation timed out after ${timeoutMs}ms (including pool acquisition)`)),
+      () =>
+        reject(
+          new Error(`DB operation timed out after ${timeoutMs}ms (including pool acquisition)`),
+        ),
       timeoutMs,
     );
   });
