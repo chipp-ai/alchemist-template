@@ -49,8 +49,12 @@ RUN addgroup --system --gid 1001 deno-app && \
 # Copy compiled application (includes web/dist/ from the SPA build stage,
 # folded in during the Deno builder stage above).
 COPY --chown=deno-app:deno-app --from=builder /app .
-# Copy cached Deno dependencies
-COPY --chown=deno-app:deno-app --from=builder /root/.cache/deno /home/deno-app/.cache/deno
+# Copy cached Deno dependencies. The denoland/deno base image sets
+# DENO_DIR=/deno-dir, so the builder's `deno cache` / `deno check` populate
+# /deno-dir (NOT /root/.cache/deno). Copy from there and keep the same path so
+# the runtime's deno (same DENO_DIR) finds the pre-cached graph and never
+# re-downloads at startup.
+COPY --chown=deno-app:deno-app --from=builder /deno-dir /deno-dir
 
 USER deno-app
 
