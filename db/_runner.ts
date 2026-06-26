@@ -209,10 +209,184 @@ function splitSqlStatements(sql: string): string[] {
 
 const NO_TRANSACTION_MARKER = /^--\s*@no-transaction\b/m;
 
+// Read-only retry budget. A migration run can race a brief DB-level read-only
+// window — Cloud SQL maintenance/failover (or a momentary pgbouncer route to a
+// replica) leaves the primary in `default_transaction_read_only` for a few
+// seconds. Because MIGRATE_ON_START=1 runs on every pod boot, treating that
+// transient as fatal turns it into a crash-loop. We retry the whole run with
+// bounded backoff, capped well inside the customer pod's startup-probe window
+// (~300s) so a single boot can ride through a failover without a restart.
+const READ_ONLY_RETRY_BUDGET_MS = 180_000; // ~3 min
+const READ_ONLY_RETRY_BASE_MS = 1_000;
+const READ_ONLY_RETRY_MAX_MS = 10_000;
+
+/**
+ * True when `err` is a Postgres "cannot execute X in a read-only transaction"
+ * error (SQLSTATE 25006 / PreventCommandIfReadOnly). This is the signature of
+ * a writable-primary that has momentarily gone read-only during a Cloud SQL
+ * failover/maintenance event — distinct from a permanent permission error, and
+ * safe to retry because the DB flips back to writable on its own.
+ */
+function isReadOnlyTransactionError(err: unknown): boolean {
+  const code = err && typeof err === "object" ? (err as { code?: unknown }).code : undefined;
+  if (code === "25006") return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /read-only transaction/i.test(msg) ||
+    /PreventCommandIfReadOnly/i.test(msg);
+}
+
+/**
+ * Run the migration ledger setup + apply every pending migration against the
+ * given connection. Idempotent: re-running re-derives the applied set and
+ * skips already-applied versions, and each transactional migration rolls back
+ * on failure — so a read-only error mid-run can be safely retried from the top
+ * on a fresh connection.
+ */
+async function applyPendingMigrations(
+  // deno-lint-ignore ban-types -- match the `{}` row-type postgres() infers
+  sql: postgres.Sql<{}>,
+  migrationsDir: string,
+): Promise<void> {
+  console.log("Starting database migration...\n");
+
+  await sql`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version VARCHAR(255) PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
+  const appliedRows = await sql<{ version: string }[]>`
+      SELECT version FROM schema_migrations ORDER BY version
+    `;
+  const applied = new Set(appliedRows.map((r) => r.version));
+
+  const files: { version: string; path: string }[] = [];
+  for await (const entry of Deno.readDir(migrationsDir)) {
+    if (entry.isFile && entry.name.endsWith(".sql")) {
+      files.push({
+        version: entry.name.replace(/\.sql$/, ""),
+        path: `${migrationsDir}${entry.name}`,
+      });
+    }
+  }
+  files.sort((a, b) => a.version.localeCompare(b.version));
+
+  const pending = files.filter((f) => !applied.has(f.version));
+
+  // Prefix-collision check — WARN, never crash.
+  //
+  // Migrations apply + are tracked by their FULL filename, and `files` is
+  // sorted by `version.localeCompare` above, so two migrations sharing a
+  // PREFIX but with DIFFERENT slugs (e.g. two parallel agent branches both
+  // stamping `20260612000000_<slug>.sql`) apply in a deterministic order and
+  // BOTH land cleanly. A benign cross-branch prefix clash must therefore
+  // never crash-loop a customer pod — that was the #339/#505 failure mode,
+  // where the old hard-throw guard turned a harmless duplicate prefix into a
+  // ProgressDeadlineExceeded deploy crash. A TRUE duplicate (same FULL
+  // filename) can't exist on a filesystem, so there is nothing left to
+  // hard-fail on. We log a loud WARNING (so the duplicate prefix is visible
+  // and can be cleaned up to keep creation-order tidy) and proceed.
+  {
+    const prefixOf = (v: string) => v.split("_")[0];
+    const byPrefix = new Map<string, string[]>();
+    for (const f of files) {
+      const arr = byPrefix.get(prefixOf(f.version)) ?? [];
+      arr.push(f.version);
+      byPrefix.set(prefixOf(f.version), arr);
+    }
+    const warned = new Set<string>();
+    for (const f of pending) {
+      const p = prefixOf(f.version);
+      const siblings = byPrefix.get(p)!;
+      if (siblings.length > 1 && !warned.has(p)) {
+        warned.add(p);
+        console.warn(
+          `[migrate] WARNING: migrations share prefix "${p}": ${
+            siblings.join(", ")
+          }. Non-fatal — they apply in full-filename order and all land. ` +
+            `Prefer a UNIQUE timestamp prefix (YYYYMMDDHHMMSS_<slug>.sql) per ` +
+            `migration to keep creation-order clean across parallel branches.`,
+        );
+      }
+    }
+  }
+
+  if (pending.length === 0) {
+    console.log("No pending migrations.");
+    return;
+  }
+
+  console.log(`Found ${pending.length} pending migration(s).\n`);
+
+  for (const migration of pending) {
+    const content = await Deno.readTextFile(migration.path);
+    const useTransaction = !NO_TRANSACTION_MARKER.test(content);
+
+    console.log(
+      `Applying: ${migration.version}${useTransaction ? "" : " (no-transaction)"}`,
+    );
+
+    try {
+      if (useTransaction) {
+        await sql.begin(async (tx) => {
+          await tx.unsafe(content);
+          await tx`
+              INSERT INTO schema_migrations (version) VALUES (${migration.version})
+            `;
+        });
+      } else {
+        // No outer transaction. CRITICAL: split the migration text
+        // into individual statements and execute each separately —
+        // postgres.js's `unsafe(content)` sends a multi-statement
+        // batch via the simple query protocol, which PG treats as
+        // ONE implicit transaction even without an explicit BEGIN.
+        // That breaks the canonical use case for `@no-transaction`:
+        // `ALTER TYPE ... ADD VALUE 'x'` followed by a statement
+        // referencing 'x' fails with PG 55P04 ("unsafe use of new
+        // value of enum type") because the new enum value isn't
+        // committed yet. Splitting + calling unsafe() per statement
+        // gives each one its own PG message → its own implicit txn
+        // → autocommits before the next one runs.
+        //
+        // Idempotency is the migration author's responsibility — a
+        // mid-file crash leaves the DB partially mutated with no
+        // ledger entry, so every statement should guard with
+        // IF NOT EXISTS / WHERE clauses so a re-run resumes cleanly.
+        const statements = splitSqlStatements(content);
+        for (const stmt of statements) {
+          await sql.unsafe(stmt);
+        }
+        await sql`
+            INSERT INTO schema_migrations (version) VALUES (${migration.version})
+          `;
+      }
+      console.log(`  Applied successfully.\n`);
+    } catch (err) {
+      console.error(`\n  Failed to apply ${migration.version}:`);
+      console.error(
+        `  ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      console.error(
+        useTransaction
+          ? "Migration rolled back. Fix the issue and re-run."
+          : "WARNING: this migration ran without a transaction wrapper; the DB may be partially mutated. Migration files using `-- @no-transaction` MUST be idempotent so a re-run resumes cleanly.",
+      );
+      throw err;
+    }
+  }
+
+  console.log("All migrations applied successfully.");
+}
+
 /**
  * Apply all pending SQL migrations in `migrationsDir`. Throws on any
  * failure (after logging) — callers handle the exit code so this
  * function can be unit-tested without process-killing side effects.
+ *
+ * A momentarily read-only database (Cloud SQL failover/maintenance) is
+ * retried with bounded backoff rather than treated as fatal — see
+ * `READ_ONLY_RETRY_BUDGET_MS`. Any non-read-only error is fatal immediately.
  */
 export async function runMigrations(
   options: RunMigrationsOptions,
@@ -236,142 +410,40 @@ export async function runMigrations(
   // before the customer pod starts; the DB always exists by then.
   await ensureDatabaseExists(databaseUrl);
 
-  const sql = postgres(databaseUrl, { max: 1 });
-
-  try {
-    console.log("Starting database migration...\n");
-
-    await sql`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        version VARCHAR(255) PRIMARY KEY,
-        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `;
-
-    const appliedRows = await sql<{ version: string }[]>`
-      SELECT version FROM schema_migrations ORDER BY version
-    `;
-    const applied = new Set(appliedRows.map((r) => r.version));
-
-    const files: { version: string; path: string }[] = [];
-    for await (const entry of Deno.readDir(options.migrationsDir)) {
-      if (entry.isFile && entry.name.endsWith(".sql")) {
-        files.push({
-          version: entry.name.replace(/\.sql$/, ""),
-          path: `${options.migrationsDir}${entry.name}`,
-        });
-      }
-    }
-    files.sort((a, b) => a.version.localeCompare(b.version));
-
-    const pending = files.filter((f) => !applied.has(f.version));
-
-    // Prefix-collision check — WARN, never crash.
-    //
-    // Migrations apply + are tracked by their FULL filename, and `files` is
-    // sorted by `version.localeCompare` above, so two migrations sharing a
-    // PREFIX but with DIFFERENT slugs (e.g. two parallel agent branches both
-    // stamping `20260612000000_<slug>.sql`) apply in a deterministic order and
-    // BOTH land cleanly. A benign cross-branch prefix clash must therefore
-    // never crash-loop a customer pod — that was the #339/#505 failure mode,
-    // where the old hard-throw guard turned a harmless duplicate prefix into a
-    // ProgressDeadlineExceeded deploy crash. A TRUE duplicate (same FULL
-    // filename) can't exist on a filesystem, so there is nothing left to
-    // hard-fail on. We log a loud WARNING (so the duplicate prefix is visible
-    // and can be cleaned up to keep creation-order tidy) and proceed.
-    {
-      const prefixOf = (v: string) => v.split("_")[0];
-      const byPrefix = new Map<string, string[]>();
-      for (const f of files) {
-        const arr = byPrefix.get(prefixOf(f.version)) ?? [];
-        arr.push(f.version);
-        byPrefix.set(prefixOf(f.version), arr);
-      }
-      const warned = new Set<string>();
-      for (const f of pending) {
-        const p = prefixOf(f.version);
-        const siblings = byPrefix.get(p)!;
-        if (siblings.length > 1 && !warned.has(p)) {
-          warned.add(p);
-          console.warn(
-            `[migrate] WARNING: migrations share prefix "${p}": ${
-              siblings.join(", ")
-            }. Non-fatal — they apply in full-filename order and all land. ` +
-              `Prefer a UNIQUE timestamp prefix (YYYYMMDDHHMMSS_<slug>.sql) per ` +
-              `migration to keep creation-order clean across parallel branches.`,
-          );
-        }
-      }
-    }
-
-    if (pending.length === 0) {
-      console.log("No pending migrations.");
+  const deadline = Date.now() + READ_ONLY_RETRY_BUDGET_MS;
+  let attempt = 0;
+  for (;;) {
+    attempt++;
+    // Re-establish the connection on each attempt: a Cloud SQL failover can
+    // drop the existing socket as the primary restarts, so reusing a stale
+    // connection across the read-only window is unreliable.
+    const sql = postgres(databaseUrl, { max: 1 });
+    try {
+      await applyPendingMigrations(sql, options.migrationsDir);
       return;
-    }
-
-    console.log(`Found ${pending.length} pending migration(s).\n`);
-
-    for (const migration of pending) {
-      const content = await Deno.readTextFile(migration.path);
-      const useTransaction = !NO_TRANSACTION_MARKER.test(content);
-
-      console.log(
-        `Applying: ${migration.version}${
-          useTransaction ? "" : " (no-transaction)"
-        }`,
-      );
-
-      try {
-        if (useTransaction) {
-          await sql.begin(async (tx) => {
-            await tx.unsafe(content);
-            await tx`
-              INSERT INTO schema_migrations (version) VALUES (${migration.version})
-            `;
-          });
-        } else {
-          // No outer transaction. CRITICAL: split the migration text
-          // into individual statements and execute each separately —
-          // postgres.js's `unsafe(content)` sends a multi-statement
-          // batch via the simple query protocol, which PG treats as
-          // ONE implicit transaction even without an explicit BEGIN.
-          // That breaks the canonical use case for `@no-transaction`:
-          // `ALTER TYPE ... ADD VALUE 'x'` followed by a statement
-          // referencing 'x' fails with PG 55P04 ("unsafe use of new
-          // value of enum type") because the new enum value isn't
-          // committed yet. Splitting + calling unsafe() per statement
-          // gives each one its own PG message → its own implicit txn
-          // → autocommits before the next one runs.
-          //
-          // Idempotency is the migration author's responsibility — a
-          // mid-file crash leaves the DB partially mutated with no
-          // ledger entry, so every statement should guard with
-          // IF NOT EXISTS / WHERE clauses so a re-run resumes cleanly.
-          const statements = splitSqlStatements(content);
-          for (const stmt of statements) {
-            await sql.unsafe(stmt);
-          }
-          await sql`
-            INSERT INTO schema_migrations (version) VALUES (${migration.version})
-          `;
-        }
-        console.log(`  Applied successfully.\n`);
-      } catch (err) {
-        console.error(`\n  Failed to apply ${migration.version}:`);
-        console.error(
-          `  ${err instanceof Error ? err.message : String(err)}\n`,
+    } catch (err) {
+      const retryable = isReadOnlyTransactionError(err);
+      if (retryable && Date.now() < deadline) {
+        const delayMs = Math.min(
+          READ_ONLY_RETRY_BASE_MS * 2 ** (attempt - 1),
+          READ_ONLY_RETRY_MAX_MS,
         );
-        console.error(
-          useTransaction
-            ? "Migration rolled back. Fix the issue and re-run."
-            : "WARNING: this migration ran without a transaction wrapper; the DB may be partially mutated. Migration files using `-- @no-transaction` MUST be idempotent so a re-run resumes cleanly.",
+        console.warn(
+          `[migrate] database is read-only (likely Cloud SQL ` +
+            `failover/maintenance); attempt ${attempt}, retrying in ${delayMs}ms...`,
         );
-        throw err;
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
       }
+      if (retryable) {
+        console.error(
+          `[migrate] database still read-only after ${attempt} attempt(s) ` +
+            `(~${Math.round(READ_ONLY_RETRY_BUDGET_MS / 1000)}s budget exhausted); giving up.`,
+        );
+      }
+      throw err;
+    } finally {
+      await sql.end({ timeout: 5 }).catch(() => {});
     }
-
-    console.log("All migrations applied successfully.");
-  } finally {
-    await sql.end();
   }
 }
