@@ -68,11 +68,17 @@ jobs:
         run: deno run --allow-net --allow-env --allow-read db/migrate.ts
 
       - name: Run tests
+        # Per-worker schema isolation (VALORV-494) makes `--parallel`
+        # deterministic: each worker isolate provisions its own
+        # `test_p<pid>_<rand>` schema (gated on TEST_PARALLEL_ISOLATION=1). Keeps
+        # type-checking (no `--no-check`) because the Type Check job only covers
+        # main.ts's graph, NOT test files — `deno test` is what type-checks them.
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
           JWT_SECRET: test-secret-for-ci-only
           NODE_ENV: test
-        run: deno test --allow-net --allow-env --allow-read
+          TEST_PARALLEL_ISOLATION: "1"
+        run: deno test --parallel --allow-net --allow-env --allow-read
 
   build:
     name: Build Docker Image
