@@ -116,9 +116,25 @@ export async function createIsolatedUser(
     }
   };
 
+  // The schema marks `users.organizationId` and `organizations.slug` as
+  // nullable, but we just INSERTed both with non-null values above — narrow the
+  // Selectable result back to the non-null shape IsolatedTestContext expects.
+  // Without this, `deno test` (which type-checks test files — the Type Check job's
+  // `deno check main.ts` does NOT reach them) fails with TS2322 in every test
+  // that calls createIsolatedUser.
   return {
-    user: userRow,
-    org: orgRow,
+    user: {
+      id: userRow.id,
+      email: userRow.email,
+      name: userRow.name,
+      role: userRow.role,
+      organizationId: userRow.organizationId as string,
+    },
+    org: {
+      id: orgRow.id,
+      name: orgRow.name,
+      slug: orgRow.slug as string,
+    },
     cleanup,
   };
 }
