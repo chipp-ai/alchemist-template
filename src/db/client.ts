@@ -70,9 +70,27 @@ function createDatabaseClient(): {
   const isLocalDb = connUrl.hostname === "localhost" || connUrl.hostname === "127.0.0.1";
   const poolMax = isLocalDb ? 5 : Number(Deno.env.get("DB_POOL_MAX")) || 10;
 
+  // Idle-connection reaping. In production the pod is long-lived, so reaping
+  // idle connections (idle_timeout=20s) is correct — it frees server-side slots
+  // when traffic is quiet. For a LOCAL DB (dev + the `deno test --parallel`
+  // suite) the idle reaper is disabled (0 → postgres.js installs a no-op timer,
+  // see connection.js `timer()`). Rationale: under the parallel test runner each
+  // worker leaves pooled connections idle for >20s (services issue queries
+  // sequentially, so the pool's spare connections sit idle), the reaper fires
+  // `end()` which writes a Terminate packet, and that timer-driven `socket.write`
+  // racing the worker's event-loop teardown trips the known Deno + postgres.js
+  // bug `TypeError: May not write null values to stream` (deno#29262, nextWrite
+  // via 02_timers.js) — an UNCAUGHT throw that crashes the worker and fails the
+  // whole suite with exit=1 even though every test passed. Disabling the idle
+  // timer removes that timer-driven write entirely for the test/dev pool;
+  // connections are released when the worker process exits. max_lifetime (600s)
+  // never fires inside a <4min test process. Production is unchanged (remote
+  // host → idle reaper stays at 20s). (VALORV-494, ported from Valor Victoria.)
+  const idleTimeout = isLocalDb ? 0 : 20;
+
   const sqlClient = postgres(connectionString, {
     max: poolMax,
-    idle_timeout: 20,
+    idle_timeout: idleTimeout,
     connect_timeout: 5,
     max_lifetime: 600,
     connection: {
@@ -99,6 +117,42 @@ function createDatabaseClient(): {
 }
 
 const { sql, db, configured: dbConfigured } = createDatabaseClient();
+
+// ── deno#29262 teardown-race guard (test/dev only) ──
+//
+// Under `deno test --parallel`, each worker holds pooled postgres.js
+// connections that are never explicitly closed (tests share the module
+// singleton `sql`). When the worker tears down, a postgres.js buffered protocol
+// write scheduled via `setImmediate` (`nextWrite`, connection.js) — or a
+// connection-lifecycle timer's Terminate write — can fire AFTER Deno has nulled
+// the socket's underlying stream, throwing an UNCAUGHT `TypeError: May not write
+// null values to stream` (deno#29262, status "not planned"). Because that throw
+// originates from a timer/event handler and not from inside any test, the `deno
+// test` runner reports "uncaught error … caused the test runner to fail" and the
+// whole suite exits non-zero EVEN THOUGH every test passed — a recurring
+// `[FAIL exit=1]` gate symptom.
+//
+// Disabling the idle reaper (`idle_timeout=0`, above) removes one source of the
+// doomed write but not the buffered-protocol-write source, so we also swallow
+// this ONE specific teardown error at the isolate level. The match is narrow
+// (exact `TypeError` message) so no genuine error is ever masked, and it is
+// scoped to non-production only — the live pod is long-lived and never hits a
+// `deno test` worker-teardown race. (VALORV-494, ported from Valor Victoria.)
+if (Deno.env.get("NODE_ENV") !== "production") {
+  const isPostgresTeardownNullWrite = (reason: unknown): boolean =>
+    reason instanceof TypeError &&
+    reason.message.includes("May not write null values to stream");
+  globalThis.addEventListener("error", (event) => {
+    if (isPostgresTeardownNullWrite((event as ErrorEvent).error)) {
+      event.preventDefault();
+    }
+  });
+  globalThis.addEventListener("unhandledrejection", (event) => {
+    if (isPostgresTeardownNullWrite((event as PromiseRejectionEvent).reason)) {
+      event.preventDefault();
+    }
+  });
+}
 
 export { db, sql };
 export const isDatabaseConfigured = () => dbConfigured;
