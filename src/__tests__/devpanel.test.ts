@@ -127,15 +127,24 @@ deno("source: every web/src/stores/*.svelte.ts uses defineStore", async () => {
   }
   for (const name of stores) {
     const src = await Deno.readTextFile(new URL(name, dir));
-    if (!src.includes(`from "../lib/devpanel/store.svelte"`)) {
+    // Two blessed conventions (both DevPanel-introspectable):
+    //   - defineStore for client-only state (UI flags, drafts, wizards)
+    //   - createQuery (lib/query.svelte) for server-mirroring state --
+    //     its cache entries ARE defineStores named `query:<key>`, so the
+    //     introspection guarantee holds transitively.
+    const usesDefineStore = src.includes(`from "../lib/devpanel/store.svelte"`);
+    const usesQuery = src.includes(`from "../lib/query.svelte"`);
+    if (!usesDefineStore && !usesQuery) {
       throw new Error(
-        `web/src/stores/${name} doesn't import defineStore from ` +
-          `../lib/devpanel/store.svelte — every shared store must go ` +
-          `through defineStore so the dev panel can introspect it. ` +
-          `See web/src/lib/devpanel/store.svelte.ts for the convention.`,
+        `web/src/stores/${name} imports neither defineStore ` +
+          `(../lib/devpanel/store.svelte) nor createQuery ` +
+          `(../lib/query.svelte) — every shared store must go through ` +
+          `one of the two so the dev panel can introspect it. ` +
+          `Server-mirroring data -> createQuery; client-only state -> ` +
+          `defineStore. See web/src/lib/query.svelte.ts for the split.`,
       );
     }
-    if (!src.includes("defineStore<")) {
+    if (usesDefineStore && !src.includes("defineStore<")) {
       throw new Error(
         `web/src/stores/${name} imports defineStore but doesn't call it. ` +
           `Did you accidentally leave bare module-level $state in this ` +
@@ -432,4 +441,26 @@ deno("e2e: GET /api/dev/app-state?format=markdown returns text/markdown", async 
 
   if (prevDevRoutes === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
   else Deno.env.set("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
+});
+
+deno("source: lib/query.svelte.ts exists with the SWR contract intact", async () => {
+  // The stale-while-revalidate query layer (2026-07-05 operator directive:
+  // "TanStack-style stale-while-revalidate baked into the template").
+  // Agents build server-mirroring stores on it; these shape assertions
+  // keep the public contract from drifting.
+  const src = await Deno.readTextFile(
+    new URL("../../web/src/lib/query.svelte.ts", import.meta.url),
+  );
+  for (const needle of [
+    "export function createQuery<",
+    "export function invalidateQueries(",
+    // The DevPanel-introspection guarantee: every cache entry IS a defineStore.
+    'defineStore<QueryState<T>>(`query:${opts.key}`',
+    // Focus revalidation is part of the "data just live-reloads" contract.
+    'window.addEventListener("focus"',
+    // Background-tab guard: intervals must not burn requests unseen.
+    'document.visibilityState !== "visible"',
+  ]) {
+    assertStringIncludes(src, needle);
+  }
 });

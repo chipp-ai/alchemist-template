@@ -459,6 +459,54 @@ Component-local `$state` inside `*.svelte` components is fine — that's
 component scratch state, not shared store state, and the DevPanel
 doesn't try to introspect it.
 
+### Server-mirroring state — use `createQuery` (stale-while-revalidate)
+
+State that MIRRORS SERVER DATA (lists, details, dashboards — anything a
+`fetch` fills) goes through `createQuery` from `web/src/lib/query.svelte.ts`,
+NOT a hand-rolled `fetchX()` + `defineStore` pair. It gives TanStack-Query
+semantics with zero dependencies: instant cached reads, background
+revalidation past `staleTime`, window-focus refresh, optional
+`refetchInterval` (auto-paused for background tabs / unused queries), and
+key-prefix invalidation so mutations live-reload every dependent view.
+
+```typescript
+import { createQuery, invalidateQueries } from "../lib/query.svelte";
+import { api } from "../lib/api";
+
+const ordersQuery = createQuery({
+  key: "orders:list",
+  fetcher: () => api.get<{ orders: Order[] }>("/orders"),
+  staleTime: 15_000,
+  refetchInterval: 60_000,
+});
+
+export const orderStore = {
+  get orders() { return ordersQuery.data?.orders ?? []; },
+  get isLoading() { return ordersQuery.isLoading; },
+  get error() { return ordersQuery.error; },
+  async createOrder(input: NewOrder) {
+    await api.post("/orders", input);
+    invalidateQueries("orders:");   // every orders:* view refreshes itself
+  },
+};
+```
+
+Rules:
+
+- **Every mutation invalidates its key prefix.** That is the mechanism that
+  makes data "just live-reload" — a mutation that forgets to invalidate
+  leaves every other surface stale until its `staleTime` lapses.
+- Key convention: `<domain>:<qualifier>` (`orders:list`, `orders:<id>`).
+  Prefix-invalidate the domain after writes.
+- `createQuery` is idempotent per key (same key returns the same handle),
+  so per-entity key factories are safe to call from components.
+- The public store getter API stays the same shape as before — components
+  never import queries directly, they read the store facade.
+- DevPanel introspection is preserved automatically: each cache entry IS a
+  `defineStore` named `query:<key>`.
+- Client-ONLY state (UI flags, wizard steps, drafts) stays on plain
+  `defineStore` — don't wrap non-server state in a query.
+
 **Why this matters: the agent's L1 verification check.** Before
 driving the browser to verify a change, the verification subagent
 runs `curl http://localhost:$PORT/api/dev/app-state` to read the
