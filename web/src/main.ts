@@ -21,6 +21,7 @@ installBreadcrumbs();
 import "./stores/auth.svelte";
 import "./stores/organization.svelte";
 import "./stores/sessionTimeout.svelte";
+import "./stores/billing.svelte";
 
 import { initDevPanel } from "./lib/devpanel/init";
 

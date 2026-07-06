@@ -760,6 +760,65 @@ this for `*.adaas.dev` automatically — see chipp-ai/alchemist-ai
 adds the origin to the bucket-level rule when the customer registers
 the domain (see `R2 Bucket CORS` in alchemist-ai/CLAUDE.md).
 
+## Selling things — built-in Stripe monetization (do NOT rebuild this)
+
+The template ships a complete "sell something" layer on top of Stripe:
+one-time products AND monthly/yearly subscription products, with checkout,
+webhook fulfillment, and org-level entitlements. **When a ticket says
+"charge for X", "add a premium tier", "sell an add-on", or "paywall this
+feature", wire it through this layer — never hand-roll new Stripe calls,
+products tables, or webhook handlers.**
+
+### The pieces
+
+| Piece | Where |
+|---|---|
+| `products` + `purchases` tables | `db/migrations/20260706135633_products_and_purchases.sql` |
+| Catalog + checkout + fulfillment + entitlements | `src/services/product.service.ts` |
+| Routes (`/api/billing/products`, `/purchases`, `/entitlements`, webhook) | `src/api/routes/billing/index.ts` |
+| Server-side feature gate | `requireEntitlement("key")` in `src/api/middleware/entitlement.ts` (402, code `ENTITLEMENT_REQUIRED`) |
+| Client store + checkout redirect | `web/src/stores/billing.svelte.ts` (`billingStore`) |
+| Operator UI (create/archive products, purchases list) | Settings → Billing tab (`web/src/routes/Settings.svelte`) |
+| Shared Stripe client (API-version pin lives here) | `src/lib/stripe.ts` — always `getStripe()`/`requireStripe()`, never `new Stripe(...)` inline |
+
+### Turning on selling (the whole flow)
+
+1. Create a product — Settings → Billing → "New product", or
+   `POST /api/billing/products` (`billing.manage` capability, admin+), or
+   `createProduct()` from a seed script. The service creates the **Stripe
+   Product + Price via the API** — no dashboard steps, no env vars.
+   `type: "one_time"` or `type: "subscription"` + `interval: "month" | "year"`.
+2. Buyers hit `billingStore.startCheckout(productId)` → Stripe Checkout
+   (mode follows the product type) → webhook records the purchase.
+3. Gate the feature:
+   - Server: `requireEntitlement("premium_reports")` after `requireAuth`, or
+     `hasActiveEntitlement(orgId, "premium_reports")` in a service.
+   - Client (UX only, not security): `billingStore.isEntitled("premium_reports")`.
+
+Gate on the **`productKey`** (stable slug like `premium_reports`), never the
+UUID. Price changes go through `updateProduct` (mints a new Stripe Price —
+prices are immutable). Archive with `active: false`; never DELETE a product
+that has purchases (FK is RESTRICT on purpose).
+
+### Invariants (each prevents a real failure mode)
+
+- **Product subscriptions must NEVER touch `organizations.subscription_tier`.**
+  The webhook routes on `metadata.productId`: present → purchases table;
+  absent → plan-tier path. Checkout stamps that metadata on the session AND
+  the subscription (`subscription_data.metadata`). If you add a new checkout
+  surface, stamp both or renewals will corrupt the org's plan tier.
+- **Fulfillment is webhook-driven and idempotent.** Never grant an
+  entitlement in the checkout success redirect (users refresh; Stripe
+  retries). `recordProductPurchase` / `applyProductSubscriptionEvent` are
+  safe under replays and out-of-order delivery — go through them.
+- **`mapSubscriptionToTier` must only return values in the
+  `subscription_tier` enum** (`FREE|STARTER|PRO|ENTERPRISE`). A made-up tier
+  name crashes the org UPDATE inside the webhook.
+- The plan-tier layer (env `STRIPE_PRICE_MONTHLY`/`STRIPE_PRICE_YEARLY`,
+  `GET /api/billing/subscription`, `POST /api/billing/checkout`) is for the
+  org's plan of THIS app. Products are what the app sells on top. Don't
+  merge the two.
+
 ## Verification Checklist
 
 Before reporting any implementation as complete:

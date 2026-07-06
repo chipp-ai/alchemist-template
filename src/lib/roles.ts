@@ -65,6 +65,8 @@ export const CAPABILITIES = [
   "team.remove", // remove (disconnect) another member
   // Organization
   "org.update", // edit org name, slug, etc.
+  // Billing / monetization
+  "billing.manage", // manage the product catalog, open the billing portal config
   // App-data writes (template's domain-specific actions go through this)
   "app.write",
   // Read-only org info — every role above 'viewer' has this implicitly.
@@ -81,6 +83,7 @@ const CAPABILITY_MIN_ROLE: Record<Capability, Role> = {
   "team.update_role": "admin",
   "team.remove": "admin",
   "org.update": "admin",
+  "billing.manage": "admin",
   "app.write": "editor",
   "app.read": "viewer",
 };

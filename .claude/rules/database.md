@@ -33,30 +33,34 @@ here" — the answer is yes everywhere.
 
 ## Kysely + CamelCasePlugin
 
-The CamelCasePlugin transforms column names:
-- **In SELECT results:** snake_case columns become camelCase properties (`created_at` -> `createdAt`)
-- **In WHERE, ORDER BY, ON:** Use the original **snake_case** column names
-- **In INSERT/UPDATE `.set()` and `.values()`:** Use **camelCase** property names
+The CamelCasePlugin transforms identifiers at runtime -- you write
+**camelCase everywhere in Kysely builders** (SELECT, WHERE, ORDER BY, ON,
+`.values()`, `.set()`, `onConflict`), and the plugin emits snake_case SQL.
+The TypeScript table types in `src/db/schema.ts` are camelCase, so a
+snake_case reference like `.where("organization_id", ...)` is a TYPE ERROR
+under `deno task check` -- don't write it.
 
 ```typescript
-// SELECT -- camelCase in results
+// SELECT
 const user = await db
-  .selectFrom("app.users")
+  .selectFrom("users")
   .select(["id", "email", "createdAt"])   // camelCase
-  .where("organization_id", "=", orgId)   // snake_case in WHERE
-  .orderBy("created_at", "desc")          // snake_case in ORDER BY
+  .where("organizationId", "=", orgId)    // camelCase in WHERE too
+  .orderBy("createdAt", "desc")           // camelCase in ORDER BY too
   .executeTakeFirst();
 
 // INSERT -- camelCase in values
 await db
-  .insertInto("app.users")
+  .insertInto("users")
   .values({ email, name, organizationId: orgId })  // camelCase
   .execute();
 ```
 
-Raw `sql<...>` templates STILL go through CamelCasePlugin — raw SQL row
-results are camelCase at runtime. Reading snake_case off them yields
-`undefined` and silently breaks.
+The ONE place snake_case appears is raw SQL strings (`sql\`...\``
+templates and migration files) -- those bypass the query builder, so you
+write the real column names. Raw `sql<...>` template RESULTS still go
+through CamelCasePlugin -- raw SQL row results are camelCase at runtime.
+Reading snake_case off them yields `undefined` and silently breaks.
 
 ## Migrations
 

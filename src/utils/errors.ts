@@ -55,6 +55,25 @@ export class ConflictError extends AppError {
   }
 }
 
+/**
+ * 402 -- the org lacks a paid entitlement for the feature. Thrown by
+ * requireEntitlement(); clients read `code === "ENTITLEMENT_REQUIRED"`
+ * and route the user to the purchase surface for `productKey`.
+ */
+export class EntitlementRequiredError extends AppError {
+  public readonly productKey: string;
+
+  constructor(productKey: string, message?: string) {
+    super(
+      message ?? `This feature requires the "${productKey}" purchase.`,
+      402,
+      "ENTITLEMENT_REQUIRED",
+    );
+    this.name = "EntitlementRequiredError";
+    this.productKey = productKey;
+  }
+}
+
 export class ExternalServiceError extends AppError {
   public readonly service: string;
 

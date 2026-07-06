@@ -9,6 +9,12 @@
     roleLabel,
   } from "../lib/permissions";
   import { api, ApiError } from "../lib/api";
+  import Modal from "../components/Modal.svelte";
+  import {
+    billingStore,
+    formatPrice,
+    type NewProductInput,
+  } from "../stores/billing.svelte";
 
   // ---------- Tabs ----------
 
@@ -108,6 +114,10 @@
 
   let billingLoading = $state(false);
 
+  const canManageBilling = $derived(
+    can(authStore.user?.role ?? "", "billing.manage"),
+  );
+
   async function openBillingPortal() {
     billingLoading = true;
     try {
@@ -118,6 +128,103 @@
     } finally {
       billingLoading = false;
     }
+  }
+
+  // ---------- Products for sale ----------
+
+  let productModalOpen = $state(false);
+  let productSaving = $state(false);
+  let productError = $state<string | null>(null);
+
+  // Price is a TEXT input on purpose — <input type="number"> binds a
+  // JS number (or null when empty), which breaks naive string handling.
+  let npName = $state("");
+  let npKey = $state("");
+  let npDescription = $state("");
+  let npType = $state<"one_time" | "subscription">("subscription");
+  let npInterval = $state<"month" | "year">("month");
+  let npPriceDollars = $state("");
+  let npKeyTouched = $state(false);
+
+  function slugifyKey(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 64);
+  }
+
+  function onNameInput() {
+    if (!npKeyTouched) npKey = slugifyKey(npName);
+  }
+
+  function dollarsToCents(input: string): number | null {
+    const s = String(input ?? "").trim().replace(/^\$/, "");
+    if (!s) return null;
+    const n = Number(s);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return Math.round(n * 100);
+  }
+
+  function openProductModal() {
+    npName = "";
+    npKey = "";
+    npDescription = "";
+    npType = "subscription";
+    npInterval = "month";
+    npPriceDollars = "";
+    npKeyTouched = false;
+    productError = null;
+    productModalOpen = true;
+  }
+
+  async function saveProduct(e: Event) {
+    e.preventDefault();
+    const priceCents = dollarsToCents(npPriceDollars);
+    if (!priceCents) {
+      productError = "Enter a valid price (e.g. 29 or 29.99).";
+      return;
+    }
+    productSaving = true;
+    productError = null;
+    const input: NewProductInput = {
+      productKey: npKey || slugifyKey(npName),
+      name: npName.trim(),
+      description: npDescription.trim() || undefined,
+      type: npType,
+      priceCents,
+      ...(npType === "subscription" ? { interval: npInterval } : {}),
+    };
+    try {
+      await billingStore.createProduct(input);
+      productModalOpen = false;
+    } catch (err) {
+      productError = err instanceof ApiError
+        ? err.message
+        : "Failed to create product.";
+    } finally {
+      productSaving = false;
+    }
+  }
+
+  async function toggleProductActive(id: string, active: boolean) {
+    try {
+      await billingStore.updateProduct(id, { active });
+    } catch (err) {
+      console.error("Failed to update product:", err);
+    }
+  }
+
+  async function buyProduct(productId: string) {
+    try {
+      await billingStore.startCheckout(productId);
+    } catch (err) {
+      console.error("Failed to start checkout:", err);
+    }
+  }
+
+  function purchaseStatusLabel(status: string): string {
+    return status.replace("_", " ");
   }
 </script>
 
@@ -351,6 +458,220 @@
         {billingLoading ? "Loading..." : "Manage Billing"}
       </button>
     </section>
+
+    <!-- Products for sale (catalog management, admin+) -->
+    {#if canManageBilling}
+      <section
+        class="card settings-section"
+        data-testid="settings-section-products"
+      >
+        <div class="section-header">
+          <h2 class="section-title">Products for sale</h2>
+          <button
+            class="btn btn-primary btn-sm"
+            onclick={openProductModal}
+            data-testid="settings-products-btn-new"
+          >
+            New product
+          </button>
+        </div>
+
+        {#if billingStore.products.length === 0}
+          <p class="text-muted">
+            Nothing for sale yet. Create a product to start selling a one-time
+            purchase or a monthly/yearly subscription -- Stripe products and
+            prices are created for you.
+          </p>
+        {:else}
+          <div class="members-list">
+            {#each billingStore.products as product (product.id)}
+              <div class="member-row" data-testid="settings-products-row">
+                <div>
+                  <div class="member-name">
+                    {product.name}
+                    {#if !product.active}
+                      <span class="badge badge-muted">archived</span>
+                    {/if}
+                  </div>
+                  <div class="member-email">
+                    {product.productKey} · {formatPrice(product)}
+                    {product.type === "one_time" ? " · one-time" : ""}
+                  </div>
+                </div>
+                <div class="product-actions">
+                  {#if product.active}
+                    <button
+                      class="btn btn-secondary btn-sm"
+                      onclick={() => buyProduct(product.id)}
+                      data-testid="settings-products-btn-buy"
+                    >
+                      Buy
+                    </button>
+                  {/if}
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    onclick={() => toggleProductActive(product.id, !product.active)}
+                    data-testid="settings-products-btn-toggle"
+                  >
+                    {product.active ? "Archive" : "Unarchive"}
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </section>
+    {/if}
+
+    <!-- Purchases -->
+    {#if billingStore.purchases.length > 0}
+      <section
+        class="card settings-section"
+        data-testid="settings-section-purchases"
+      >
+        <h2 class="section-title">Purchases</h2>
+        <div class="members-list">
+          {#each billingStore.purchases as purchase (purchase.id)}
+            <div class="member-row" data-testid="settings-purchases-row">
+              <div>
+                <div class="member-name">{purchase.productName}</div>
+                <div class="member-email">
+                  {new Date(purchase.createdAt).toLocaleDateString()}
+                  {#if purchase.currentPeriodEnd && purchase.status !== "canceled"}
+                    · renews {new Date(purchase.currentPeriodEnd).toLocaleDateString()}
+                  {/if}
+                </div>
+              </div>
+              <span
+                class="badge"
+                class:badge-muted={purchase.status !== "active"}
+              >
+                {purchaseStatusLabel(purchase.status)}
+              </span>
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    <!-- New product modal -->
+    <Modal
+      open={productModalOpen}
+      title="New product"
+      onClose={() => (productModalOpen = false)}
+      size="md"
+    >
+      <form class="settings-form" onsubmit={saveProduct}>
+        {#if productError}
+          <div class="alert alert-error" data-testid="settings-products-error">
+            {productError}
+          </div>
+        {/if}
+
+        <div class="form-field">
+          <label class="label" for="np-name">Name</label>
+          <input
+            id="np-name"
+            class="input"
+            bind:value={npName}
+            oninput={onNameInput}
+            placeholder="Premium Reports"
+            required
+            data-testid="settings-products-input-name"
+          />
+        </div>
+
+        <div class="form-field">
+          <label class="label" for="np-key">Product key</label>
+          <input
+            id="np-key"
+            class="input"
+            bind:value={npKey}
+            oninput={() => (npKeyTouched = true)}
+            placeholder="premium_reports"
+            pattern="[a-z0-9][a-z0-9_\-]*"
+            required
+            data-testid="settings-products-input-key"
+          />
+          <span class="field-hint">
+            Stable identifier your code gates on. Can't change after purchases exist.
+          </span>
+        </div>
+
+        <div class="form-field">
+          <label class="label" for="np-description">Description (optional)</label>
+          <input
+            id="np-description"
+            class="input"
+            bind:value={npDescription}
+            data-testid="settings-products-input-description"
+          />
+        </div>
+
+        <div class="form-field">
+          <label class="label" for="np-type">Type</label>
+          <select
+            id="np-type"
+            class="input"
+            bind:value={npType}
+            data-testid="settings-products-select-type"
+          >
+            <option value="subscription">Subscription (recurring)</option>
+            <option value="one_time">One-time purchase</option>
+          </select>
+        </div>
+
+        {#if npType === "subscription"}
+          <div class="form-field">
+            <label class="label" for="np-interval">Billing interval</label>
+            <select
+              id="np-interval"
+              class="input"
+              bind:value={npInterval}
+              data-testid="settings-products-select-interval"
+            >
+              <option value="month">Monthly</option>
+              <option value="year">Yearly</option>
+            </select>
+          </div>
+        {/if}
+
+        <div class="form-field">
+          <label class="label" for="np-price">
+            Price (USD{npType === "subscription"
+              ? npInterval === "month" ? ", per month" : ", per year"
+              : ""})
+          </label>
+          <input
+            id="np-price"
+            class="input"
+            bind:value={npPriceDollars}
+            inputmode="decimal"
+            placeholder="29.00"
+            required
+            data-testid="settings-products-input-price"
+          />
+        </div>
+      </form>
+
+      {#snippet footer()}
+        <button
+          class="btn btn-secondary"
+          onclick={() => (productModalOpen = false)}
+          data-testid="settings-products-btn-cancel"
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-primary"
+          onclick={saveProduct}
+          disabled={productSaving}
+          data-testid="settings-products-btn-save"
+        >
+          {productSaving ? "Creating..." : "Create product"}
+        </button>
+      {/snippet}
+    </Modal>
   {/if}
 </div>
 
@@ -470,6 +791,39 @@
   /* Billing */
   .billing-info {
     margin-bottom: var(--space-lg);
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-lg);
+  }
+
+  .section-header .section-title {
+    margin-bottom: 0;
+  }
+
+  .btn-sm {
+    padding: 4px 10px;
+    font-size: var(--text-xs);
+  }
+
+  .product-actions {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
+  }
+
+  .badge-muted {
+    opacity: 0.6;
+    margin-left: var(--space-sm);
+  }
+
+  .field-hint {
+    font-size: var(--text-xs);
+    color: var(--color-muted);
+    margin-top: 4px;
   }
 
   .billing-row {

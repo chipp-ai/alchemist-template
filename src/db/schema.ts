@@ -140,6 +140,62 @@ export interface TokenUsageTable {
 export type TokenUsage = Selectable<TokenUsageTable>;
 export type NewTokenUsage = Insertable<TokenUsageTable>;
 
+// ── monetization (products + purchases) ──
+
+export type ProductType = "one_time" | "subscription";
+export type BillingInterval = "month" | "year";
+export type PurchaseStatus = "active" | "past_due" | "canceled" | "refunded";
+
+/**
+ * App-global sales catalog. Each row is backed by a Stripe Product +
+ * Price created automatically by product.service.ts. Gate features on
+ * `productKey` via hasActiveEntitlement(), never on the UUID.
+ */
+export interface ProductsTable {
+  id: Generated<string>;
+  productKey: string;
+  name: string;
+  description: string | null;
+  type: ProductType;
+  priceCents: number;
+  currency: Generated<string>;
+  billingInterval: BillingInterval | null;
+  stripeProductId: string | null;
+  stripePriceId: string | null;
+  active: Generated<boolean>;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type Product = Selectable<ProductsTable>;
+export type NewProduct = Insertable<ProductsTable>;
+export type ProductUpdate = Updateable<ProductsTable>;
+
+/**
+ * Org-scoped entitlement records, written by the Stripe webhook. One row
+ * per one-time checkout or per product subscription.
+ */
+export interface PurchasesTable {
+  id: Generated<string>;
+  organizationId: string;
+  productId: string;
+  purchasedBy: string | null;
+  status: Generated<PurchaseStatus>;
+  stripeCheckoutSessionId: string | null;
+  stripeSubscriptionId: string | null;
+  stripePaymentIntentId: string | null;
+  amountCents: Generated<number>;
+  currency: Generated<string>;
+  currentPeriodEnd: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  canceledAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type Purchase = Selectable<PurchasesTable>;
+export type NewPurchase = Insertable<PurchasesTable>;
+export type PurchaseUpdate = Updateable<PurchasesTable>;
+
 // ── jobs schema ──
 
 export interface JobHistoryTable {
@@ -201,4 +257,6 @@ export interface Database {
   token_usage: TokenUsageTable;
   job_history: JobHistoryTable;
   doc_search_index: DocSearchIndexTable;
+  products: ProductsTable;
+  purchases: PurchasesTable;
 }

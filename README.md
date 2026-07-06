@@ -27,7 +27,7 @@ It is also the seed repo every customer project on the [Alchemist AI](https://ad
 - **Database** -- PostgreSQL via Kysely with `CamelCasePlugin` (camelCase in TS, snake_case in SQL). Migrations are plain SQL files in `db/migrations/`, auto-applied on startup.
 - **Cache + sessions** -- Redis, with helpers for rate limits and key-scoped invalidation.
 - **Auth** -- Email OTP login, session cookies, JWT for API tokens, OAuth providers via Arctic 2. Includes a documented dev-login escape hatch so local + agent testing works without an SMTP inbox.
-- **Billing** -- Stripe 17. Subscriptions, credit grants, metered usage, customer portal.
+- **Billing** -- Stripe 17. Plan-tier subscriptions, customer portal, AND a built-in product catalog: sell one-time purchases or monthly/yearly subscriptions with automatic Stripe product/price creation, webhook fulfillment, and org-level entitlements (`requireEntitlement`).
 - **Email** -- SMTP via nodemailer with environment-driven configuration.
 - **RBAC + teams** -- Organizations, members, roles, invites. Wired through the auth middleware and routes.
 - **Logging** -- Structured logger (pretty in dev, NDJSON in production), ready for Loki / Datadog / any aggregator.
