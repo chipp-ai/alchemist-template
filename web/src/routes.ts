@@ -3,6 +3,8 @@ import Login from "./routes/Login.svelte";
 import Signup from "./routes/Signup.svelte";
 import Settings from "./routes/Settings.svelte";
 import Docs from "./routes/Docs.svelte";
+import InboundEmails from "./routes/InboundEmails.svelte";
+import InboundEmailDetail from "./routes/InboundEmailDetail.svelte";
 import InviteAccept from "./routes/InviteAccept.svelte";
 import NotFound from "./routes/NotFound.svelte";
 
@@ -21,6 +23,10 @@ const routes: Record<string, any> = {
   // /docs/:slug deep-links to a page.
   "/docs": Docs,
   "/docs/:slug": Docs,
+  // Inbound Email ops surface. Authed (not in the public route sets):
+  // /inbound-emails lists captured emails; /inbound-emails/:id shows one.
+  "/inbound-emails": InboundEmails,
+  "/inbound-emails/:id": InboundEmailDetail,
   // Invite acceptance landing page. Token comes from the URL; the
   // page handles both logged-in and logged-out flows.
   "/invite/:token": InviteAccept,

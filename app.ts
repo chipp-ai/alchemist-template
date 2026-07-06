@@ -26,6 +26,8 @@ import { inviteRoutes } from "@/api/routes/invite/index.ts";
 import { realtimeRoutes } from "@/api/routes/realtime/index.ts";
 import { observabilityRoutes } from "@/api/routes/observability/index.ts";
 import { docsRoutes } from "@/api/routes/docs/index.ts";
+import { ingestEmailRoutes } from "@/api/routes/ingest-email/index.ts";
+import { inboundEmailRoutes } from "@/api/routes/inbound-emails/index.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 
 // ── App types ──
@@ -116,6 +118,16 @@ app.route("/api/files", fileRoutes);
 // nested under /api/org because invitees aren't bound to an org yet
 // when they hit these endpoints. See src/api/routes/invite/index.ts.
 app.route("/api/invite", inviteRoutes);
+
+// Inbound-email ingestion (Postmark webhook -> durable capture). Token-
+// gated (INGEST_EMAIL_TOKEN, fail-closed), NOT session auth -- the caller
+// is Postmark. Dormant until the token is configured. See
+// src/api/routes/ingest-email/index.ts.
+app.route("/api/ingest/email", ingestEmailRoutes);
+
+// Inbound-email dashboard reads (auth-required, org-scoped). See
+// src/api/routes/inbound-emails/index.ts.
+app.route("/api/inbound-emails", inboundEmailRoutes);
 
 // Realtime / WebSocket. Auth via short-lived ws-token (issued from
 // GET /api/auth/ws-token). The baseline route echoes messages so

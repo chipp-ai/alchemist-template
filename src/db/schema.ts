@@ -28,7 +28,11 @@ export interface OrganizationsTable {
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   creditsExhausted: Generated<boolean>;
-  subscriptionCancelledAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  subscriptionCancelledAt: ColumnType<
+    Date | null,
+    Date | null | undefined,
+    Date | null | undefined
+  >;
   subscriptionEndsAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
   createdAt: CreatedAt;
   updatedAt: UpdatedAt;
@@ -247,6 +251,80 @@ export type DocSearchIndexRow = Selectable<DocSearchIndexTable>;
 export type NewDocSearchIndexRow = Insertable<DocSearchIndexTable>;
 export type DocSearchIndexUpdate = Updateable<DocSearchIndexTable>;
 
+// ── inbound email (capture-first ingestion substrate) ──
+
+/**
+ * Terminal-status machine for a captured inbound email.
+ *   received      — captured, not yet extracted (the only non-terminal state)
+ *   extracted     — domain data extracted + applied via the registered profile
+ *   human_message — a person wrote to the inbox; no domain data to apply
+ *   unclear       — looked like data but nothing reliable could be extracted
+ *   failed        — extraction/apply threw; re-pickable by the reaper
+ */
+export type InboundEmailStatus =
+  | "received"
+  | "extracted"
+  | "human_message"
+  | "unclear"
+  | "failed";
+
+/**
+ * One captured inbound email (Postmark webhook -> durable raw). The raw is
+ * IMMUTABLE after capture; extraction only advances status/status_reason/
+ * apply_result/processed_at. `organization_id` is nullable by design
+ * (capture proceeds when INGEST_ORG_ID is unset), and org-null rows are
+ * invisible to the org-scoped dashboard API.
+ */
+export interface InboundEmailTable {
+  id: Generated<string>;
+  organizationId: string | null;
+  messageId: string;
+  fromAddress: string | null;
+  toAddress: string | null;
+  subject: string | null;
+  bodyText: string | null;
+  bodyHtml: string | null;
+  /** JSONB — the full Postmark header array, kept for forensics. */
+  headers: unknown | null;
+  /** RELATIVE storage key of the raw MIME blob (null when not stored). */
+  rawMimeKey: string | null;
+  attachmentCount: Generated<number>;
+  status: Generated<InboundEmailStatus>;
+  statusReason: string | null;
+  /** JSONB — the extraction profile's applyData() outcome. */
+  applyResult: unknown | null;
+  receivedAt: Generated<Date>;
+  processedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+}
+
+export type InboundEmail = Selectable<InboundEmailTable>;
+export type NewInboundEmail = Insertable<InboundEmailTable>;
+export type InboundEmailUpdate = Updateable<InboundEmailTable>;
+
+/**
+ * One attachment on a captured inbound email. `r2_key` is the RELATIVE
+ * storage key (storage.service.ts prepends the tenant prefix); the empty
+ * string is the recorded-but-not-stored sentinel (disallowed type,
+ * oversized, or storage unconfigured) — such attachments are never
+ * silently dropped, just not retrievable.
+ */
+export interface InboundEmailAttachmentTable {
+  id: Generated<string>;
+  inboundEmailId: string;
+  filename: string | null;
+  contentType: string | null;
+  sizeBytes: number | null;
+  sha256: string | null;
+  r2Key: string;
+  /** JSONB — reserved for freeform per-attachment extraction output. */
+  extractedRaw: unknown | null;
+  createdAt: CreatedAt;
+}
+
+export type InboundEmailAttachment = Selectable<InboundEmailAttachmentTable>;
+export type NewInboundEmailAttachment = Insertable<InboundEmailAttachmentTable>;
+export type InboundEmailAttachmentUpdate = Updateable<InboundEmailAttachmentTable>;
+
 export interface Database {
   organizations: OrganizationsTable;
   users: UsersTable;
@@ -257,6 +335,8 @@ export interface Database {
   token_usage: TokenUsageTable;
   job_history: JobHistoryTable;
   doc_search_index: DocSearchIndexTable;
+  inbound_email: InboundEmailTable;
+  inbound_email_attachment: InboundEmailAttachmentTable;
   products: ProductsTable;
   purchases: PurchasesTable;
 }

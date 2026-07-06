@@ -5,8 +5,9 @@
  */
 
 import { app } from "./app.ts";
-import { initDatabase, closeDatabase } from "@/db/client.ts";
+import { closeDatabase, initDatabase } from "@/db/client.ts";
 import { reindexDocs } from "@/services/docs/reindex.ts";
+import { startInboundEmailReaper, stopInboundEmailReaper } from "@/jobs/inbound-email-reaper.ts";
 import { log } from "@/lib/logger.ts";
 
 const port = parseInt(Deno.env.get("PORT") ?? "8000");
@@ -30,9 +31,18 @@ try {
 // and we don't delay accepting traffic on the embedding round-trip.
 reindexDocs()
   .then((r) => log.info("docs index ready", { source: "startup", ...r }))
-  .catch((err) =>
-    log.warn("docs reindex skipped (non-fatal)", { source: "startup" }, err)
-  );
+  .catch((err) => log.warn("docs reindex skipped (non-fatal)", { source: "startup" }, err));
+
+// ── Inbound-email extraction reaper ──
+// Fire-and-forget background drain of captured inbound_email rows.
+// Dormant unless DB + LLM proxy are configured AND an extraction profile
+// is registered; never throws at boot. Stopped in shutdown() BEFORE
+// closeDatabase() so no tick races the pool teardown.
+try {
+  startInboundEmailReaper();
+} catch (err) {
+  log.warn("inbound-email reaper failed to start (non-fatal)", { source: "startup" }, err);
+}
 
 // ── Start server ──
 
@@ -64,6 +74,14 @@ async function shutdown(signal: string): Promise<void> {
     log.info("HTTP server drained", { source: "shutdown" });
   } catch (err) {
     log.warn("Error draining HTTP server", { source: "shutdown" }, err);
+  }
+
+  // Stop the background reaper BEFORE closing the database so no tick
+  // races the pool teardown.
+  try {
+    stopInboundEmailReaper();
+  } catch (err) {
+    log.warn("Error stopping inbound-email reaper", { source: "shutdown" }, err);
   }
 
   try {
