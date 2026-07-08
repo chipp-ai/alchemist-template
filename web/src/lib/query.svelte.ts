@@ -102,7 +102,7 @@ interface QueryEntry<T> {
 export interface Query<T> {
   readonly data: T | undefined;
   readonly error: string | null;
-  /** True until the FIRST fetch resolves (no data yet). */
+  /** True until the FIRST fetch settles (success OR error; no data yet). */
   readonly isLoading: boolean;
   /** True while any (re)fetch is in flight. */
   readonly isFetching: boolean;
@@ -208,7 +208,16 @@ export function createQuery<T>(opts: {
       return state.error;
     },
     get isLoading() {
-      return state.updatedAt === 0 && state.data === undefined;
+      // "Loading" = the first fetch hasn't SETTLED yet. A FAILED first
+      // fetch must flip this false (error set, data still undefined) or
+      // every `{#if isLoading}` skeleton branch permanently shadows its
+      // `{:else if error}` sibling -- pages sit on loading skeletons
+      // forever whenever the first fetch 401s/errors (Valor Victoria
+      // blank ETA-Feasibility screen, 2026-07-08). A later successful
+      // retry clears `error` and sets `data`, so recovery renders
+      // normally.
+      return state.updatedAt === 0 && state.data === undefined &&
+        state.error === null;
     },
     get isFetching() {
       return state.isFetching;

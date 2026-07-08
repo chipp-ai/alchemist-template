@@ -5,7 +5,6 @@
  */
 
 import { createMiddleware } from "hono/factory";
-import { getCookie } from "hono/cookie";
 import * as jose from "jose";
 import { db, withTimeout } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
@@ -121,6 +120,62 @@ async function verifyToken(token: string): Promise<jose.JWTPayload | null> {
 }
 
 /**
+ * ALL values for the session cookie in the request's Cookie header, in
+ * header order.
+ *
+ * Why not `getCookie(c, SESSION_COOKIE)`: browsers can legitimately send
+ * MULTIPLE cookies named `session_id` on one request. Customer apps are
+ * hosted at `<slug>.on.chipp.ai` -- a subdomain of chipp.ai -- and the
+ * Chipp builder dashboard sets ITS OWN `session_id` cookie with
+ * `Domain=.chipp.ai`, which the browser attaches to every *.chipp.ai
+ * host. A user who is also logged into the Chipp dashboard therefore
+ * sends BOTH the foreign platform JWT (older, domain-wide, ordered
+ * FIRST per RFC 6265 creation-time ordering) and this app's own JWT
+ * (host-only, second). Hono's `getCookie()` keeps only the FIRST
+ * occurrence -- the foreign token -- so verification fails on every
+ * request and login loops forever even after a successful OTP
+ * (Valor Victoria incident, 2026-07-08). Collect every candidate and
+ * try each until one verifies; foreign tokens simply fail this app's
+ * JWT_SECRET and are skipped.
+ */
+function getSessionTokenCandidates(
+  c: { req: { header: (name: string) => string | undefined } },
+): string[] {
+  const raw = c.req.header("Cookie") ?? "";
+  const candidates: string[] = [];
+  for (const part of raw.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() !== SESSION_COOKIE) continue;
+    const value = part.slice(eq + 1).trim();
+    if (!value) continue;
+    try {
+      candidates.push(decodeURIComponent(value));
+    } catch {
+      // Malformed percent-encoding -- try the raw value (JWTs are
+      // base64url and never need decoding anyway).
+      candidates.push(value);
+    }
+  }
+  return candidates;
+}
+
+/**
+ * Verify each session-token candidate in header order and return the
+ * first payload that passes. Only tokens signed with THIS app's secret
+ * can verify, so there is no ambiguity risk.
+ */
+async function verifyFirstValidToken(
+  candidates: string[],
+): Promise<jose.JWTPayload | null> {
+  for (const token of candidates) {
+    const payload = await verifyToken(token);
+    if (payload) return payload;
+  }
+  return null;
+}
+
+/**
  * Resolve user from JWT payload. Always checks `users.tokenInvalidatedBefore`
  * against the JWT's `iat` claim to enforce POST /auth/logout-all
  * server-side — without a check on every request, revocation can't
@@ -179,13 +234,13 @@ async function resolveUser(payload: jose.JWTPayload): Promise<AuthUser | null> {
  * Use `requireAuth` for routes that must be authenticated.
  */
 export const authMiddleware = createMiddleware(async (c, next) => {
-  const token = getCookie(c, SESSION_COOKIE);
-  if (!token) {
+  const candidates = getSessionTokenCandidates(c);
+  if (candidates.length === 0) {
     await next();
     return;
   }
 
-  const payload = await verifyToken(token);
+  const payload = await verifyFirstValidToken(candidates);
   if (!payload) {
     await next();
     return;
@@ -204,12 +259,12 @@ export const authMiddleware = createMiddleware(async (c, next) => {
  * Strict auth middleware. Throws 401 if not authenticated.
  */
 export const requireAuth = createMiddleware(async (c, next) => {
-  const token = getCookie(c, SESSION_COOKIE);
-  if (!token) {
+  const candidates = getSessionTokenCandidates(c);
+  if (candidates.length === 0) {
     throw new UnauthorizedError("Authentication required");
   }
 
-  const payload = await verifyToken(token);
+  const payload = await verifyFirstValidToken(candidates);
   if (!payload) {
     throw new UnauthorizedError("Invalid or expired session");
   }
