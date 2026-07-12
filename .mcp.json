@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "alchemist": {
+      "type": "http",
+      "url": "https://build.chipp.ai/alchemist-api/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${ALCHEMIST_API_KEY}"
+      }
+    }
+  }
+}
