@@ -70,7 +70,7 @@ scripts/
 - **API:** Deno + Hono
 - **Frontend:** Svelte 5 SPA with hash-based routing (`svelte-spa-router`)
 - **Database:** PostgreSQL via Kysely (CamelCasePlugin)
-- **Cache/Sessions:** Redis
+- **Cache / locks / rate limits:** shared platform Redis via `src/lib/redis.ts` (best-effort, fail-open -- see "Shared Redis" below). Sessions are stateless JWT cookies, NOT server-side session storage.
 - **Edge Proxy:** Cloudflare Worker (when deployed)
 
 ## Engineering Preferences
@@ -174,6 +174,56 @@ The production database is reachable ONLY through `query_database` (read-only). 
 > never `CREATE EXTENSION` (the platform installs them); migrations use a
 > `YYYYMMDDHHMMSS_` UTC-timestamp prefix, never sequential integers; CamelCase
 > in SELECT results + INSERT values, snake_case in WHERE/ORDER BY.
+
+## Shared Redis — cache, locks, rate limits (best-effort)
+
+The platform provisions every deployed project with `REDIS_URL` pointing at a
+shared multi-tenant Redis. Your credentials are a per-project Redis ACL user
+confined server-side to your own key prefix (`REDIS_KEY_PREFIX`), so you can
+never see or touch another project's keys. **Always go through the helpers in
+`src/lib/redis.ts`** -- they prepend the prefix automatically, bound every op
+at 500ms, and fail open:
+
+```ts
+import { cacheGet, cacheSet, cacheDelete, acquireLock, releaseLock, rateLimit } from "@/lib/redis.ts";
+
+// Cache an expensive lookup for 60s
+const cached = await cacheGet<Report>(`report:${id}`);
+if (cached) return cached;
+const report = await buildReport(id);
+await cacheSet(`report:${id}`, report, 60);
+
+// Damp abuse on a public endpoint
+const rl = await rateLimit(`signup:${ip}`, { limit: 5, windowSeconds: 3600 });
+if (!rl.allowed) return c.json({ error: "Too many attempts" }, 429);
+
+// De-duplicate a background job across restarts
+if (await acquireLock("nightly-report", 300)) {
+  try { await runNightlyReport(); } finally { await releaseLock("nightly-report"); }
+}
+```
+
+The rules:
+
+- **Redis is a CACHE, never a source of truth.** It runs with LRU eviction and
+  no persistence; any key can vanish at any moment. Durable state (including
+  anything billing- or correctness-critical) belongs in Postgres. Every helper
+  fails OPEN -- a Redis outage degrades to cache misses / allowed actions, it
+  never takes your app down. Never gate correctness on a Redis reply.
+- **Never use a module-level `Map` (or any in-process memo) for state that
+  must survive a restart or be shared across requests.** In-memory state
+  silently evaporates on every deploy and breaks the moment the app scales
+  past one replica. If it is worth caching across requests, use `cacheGet` /
+  `cacheSet`. (Per-request memoization inside one handler call is fine.)
+- **Locks and rate limits are damping, not guarantees.** `acquireLock` and
+  `rateLimit` fail open when Redis is unavailable. For real mutual exclusion
+  use a Postgres advisory lock or row-level locking.
+- **`SCAN`/`KEYS` are denied by the ACL** (they would leak other tenants' key
+  names). If you need to enumerate your own keys, track them explicitly in a
+  Redis SET or in Postgres.
+- **Dev parity:** `scripts/dev.sh` boots a local Redis and exports
+  `REDIS_URL`, so behavior matches production. With `REDIS_URL` unset (tests),
+  every helper is a silent no-op.
 
 ## Testing
 
