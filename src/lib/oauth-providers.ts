@@ -111,7 +111,91 @@ export const PROVIDERS: OAuthProvider[] = [
       providerUserId: String(raw.id),
     }),
   },
+  buildSalesforceProvider(Deno.env.get("SALESFORCE_LOGIN_URL")),
+  ...oidcProviderEntries(Deno.env.toObject()),
 ];
+
+/**
+ * Salesforce. Enable with SALESFORCE_CLIENT_ID + SALESFORCE_CLIENT_SECRET
+ * (a Salesforce Connected App with the OAuth "openid email profile" scopes
+ * and the callback URL registered). Sandbox orgs authenticate against
+ * test.salesforce.com instead of login.salesforce.com: set
+ * SALESFORCE_LOGIN_URL=https://test.salesforce.com for those.
+ *
+ * Exported as a pure builder so tests can exercise the base-URL override
+ * without mutating process env.
+ */
+export function buildSalesforceProvider(loginUrl?: string): OAuthProvider {
+  const base = (loginUrl?.trim() || "https://login.salesforce.com").replace(/\/+$/, "");
+  return {
+    id: "salesforce",
+    label: "Continue with Salesforce",
+    color: "#00A1E0",
+    clientIdEnv: "SALESFORCE_CLIENT_ID",
+    clientSecretEnv: "SALESFORCE_CLIENT_SECRET",
+    authUrl: `${base}/services/oauth2/authorize`,
+    tokenUrl: `${base}/services/oauth2/token`,
+    userInfoUrl: `${base}/services/oauth2/userinfo`,
+    scopes: "openid email profile",
+    mapUser: (raw) => ({
+      email: String(raw.email ?? "").toLowerCase().trim(),
+      name: raw.name ?? null,
+      picture: raw.picture ?? null,
+      // Salesforce userinfo returns `user_id` plus a standard OIDC `sub`.
+      providerUserId: String(raw.user_id ?? raw.sub ?? ""),
+    }),
+  };
+}
+
+/**
+ * Generic OIDC slot: covers Keycloak, Okta, Auth0, Azure AD single-tenant,
+ * and any other spec-compliant IdP WITHOUT a code change. The entry only
+ * exists when the three endpoint env vars are set (they are per-deployment
+ * values, so there is nothing sensible to default them to):
+ *
+ *   OIDC_AUTH_URL      authorization endpoint (browser redirect)
+ *   OIDC_TOKEN_URL     token endpoint (server POST)
+ *   OIDC_USERINFO_URL  userinfo endpoint (server GET, bearer)
+ *   OIDC_CLIENT_ID / OIDC_CLIENT_SECRET   the client credentials
+ *   OIDC_LABEL         optional button label (default "Continue with SSO")
+ *   OIDC_SCOPES        optional scopes (default "openid email profile")
+ *
+ * Endpoint recipes (also in CLAUDE.md → "Social login / SSO is prebuilt"):
+ *   Keycloak:  <issuer>/protocol/openid-connect/{auth,token,userinfo}
+ *              where issuer = https://<host>/realms/<realm>
+ *   Okta:      https://<domain>/oauth2/default/v1/{authorize,token,userinfo}
+ *   Auth0:     https://<domain>/{authorize,oauth/token,userinfo}
+ *
+ * Pure function over an env snapshot so it is unit-testable; the module
+ * calls it once at load with the real env (env is static per deployment).
+ */
+export function oidcProviderEntries(
+  env: Record<string, string | undefined>,
+): OAuthProvider[] {
+  const authUrl = env.OIDC_AUTH_URL?.trim();
+  const tokenUrl = env.OIDC_TOKEN_URL?.trim();
+  const userInfoUrl = env.OIDC_USERINFO_URL?.trim();
+  if (!authUrl || !tokenUrl || !userInfoUrl) return [];
+  return [{
+    id: "oidc",
+    label: env.OIDC_LABEL?.trim() || "Continue with SSO",
+    color: "#5C6BC0",
+    clientIdEnv: "OIDC_CLIENT_ID",
+    clientSecretEnv: "OIDC_CLIENT_SECRET",
+    authUrl,
+    tokenUrl,
+    userInfoUrl,
+    scopes: env.OIDC_SCOPES?.trim() || "openid email profile",
+    mapUser: (raw) => ({
+      // Standard OIDC userinfo claims. `preferred_username` covers IdPs
+      // (some Keycloak realms) that omit `name`.
+      email: String(raw.email ?? "").toLowerCase().trim(),
+      name: raw.name ?? raw.preferred_username ?? null,
+      picture: raw.picture ?? null,
+      providerUserId: String(raw.sub ?? ""),
+    }),
+  }];
+}
 
 /**
  * The subset of providers whose env vars are actually populated at

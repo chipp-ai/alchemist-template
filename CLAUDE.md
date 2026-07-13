@@ -1230,6 +1230,36 @@ app.get("/me", (c) => c.json({ user: c.get("user") }));
 
 NOT the v3 `Hono.Variables` global augmentation pattern. Middleware that mutates the context type without the `Hono<{ Variables: ... }>` generic will type-check but `c.get(...)` will return `unknown` everywhere.
 
+## Social login / SSO is PREBUILT — enable with env vars, never rebuild it
+
+The template ships a complete, flag-gated social-login experience. When a builder asks for "sign in with Google" (or Microsoft, GitHub, Salesforce, Keycloak, Okta, Auth0, any OIDC IdP), the answer is env vars + a credential request, NOT new code. Do not write OAuth routes, do not add login buttons, do not touch the session layer.
+
+How it works (`src/lib/oauth-providers.ts` + `src/api/routes/auth/index.ts` + `web/src/routes/Login.svelte`):
+
+- Email OTP login is always-on (the platform injects SMTP creds). OAuth providers are opt-in per deployment.
+- Setting a provider's env-var pair auto-registers `/api/auth/<id>` + `/api/auth/<id>/callback` and auto-shows its button on the Login page via `/auth/config`. Nothing else to wire.
+- The callback finds-or-creates the user by email, links the OAuth identity (`users.oauthProvider`/`oauthId`), marks the email verified, and issues the normal session. Provider switching on the same email is allowed.
+
+| Provider | Enable with | Notes |
+|---|---|---|
+| Google | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` | offline access + consent prompt already set |
+| Microsoft | `MICROSOFT_CLIENT_ID` + `MICROSOFT_CLIENT_SECRET` | `common` tenant: personal + any work/school account |
+| GitHub | `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET` | private-email recovery via /user/emails is handled |
+| Salesforce | `SALESFORCE_CLIENT_ID` + `SALESFORCE_CLIENT_SECRET` | sandbox orgs: also set `SALESFORCE_LOGIN_URL=https://test.salesforce.com` |
+| Any OIDC IdP (Keycloak / Okta / Auth0 / Azure AD single-tenant / ...) | `OIDC_CLIENT_ID` + `OIDC_CLIENT_SECRET` + `OIDC_AUTH_URL` + `OIDC_TOKEN_URL` + `OIDC_USERINFO_URL` (optional `OIDC_LABEL`, `OIDC_SCOPES`) | endpoint recipes below |
+
+OIDC endpoint recipes:
+
+- Keycloak (issuer `https://<host>/realms/<realm>`): `<issuer>/protocol/openid-connect/auth`, `.../token`, `.../userinfo`
+- Okta: `https://<domain>/oauth2/default/v1/authorize`, `.../v1/token`, `.../v1/userinfo`
+- Auth0: `https://<domain>/authorize`, `https://<domain>/oauth/token`, `https://<domain>/userinfo`
+
+The redirect/callback URL the builder must register in their IdP console is `${APP_URL}/api/auth/<provider-id>/callback` (production: `https://<project>.adaas.dev/api/auth/google/callback` etc.; custom domains use that domain instead).
+
+Getting the credentials: the client id/secret belong to the BUILDER's own IdP tenancy (their Google Cloud project, Azure app registration, Salesforce Connected App, Keycloak realm client). Request them through the platform credential-request flow (`request_human_input` / credential invite) with the exact callback URL and required scopes named in the request; the values are applied to the deployment env by the platform. NEVER paste client secrets into code, tickets, commit messages, or docs, and never invent placeholder values that ship.
+
+If a ticket asks for a provider that genuinely does not fit the generic OIDC slot (e.g. Apple's JWT-based client secret, SAML-only IdPs), add ONE registry entry mirroring the existing pattern in `src/lib/oauth-providers.ts` (see `src/__tests__/oauth-providers.test.ts`) rather than building a parallel auth path.
+
 ### Arctic 2 (`arctic@^2.0.0`)
 
 Arctic 2.0 was a near-total rewrite (Sept 2024). The OOTB providers in `src/lib/oauth-providers.ts` are already on v2 — DO NOT rewrite them. If a ticket asks for a new provider, mirror the v2 pattern from the existing files, NOT the older v1 pattern from public docs.
