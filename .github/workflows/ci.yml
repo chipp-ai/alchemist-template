@@ -67,18 +67,30 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
         run: deno run --allow-net --allow-env --allow-read db/migrate.ts
 
+      - name: Clean test schemas
+        # Mirrors the `test:clean-schemas` prefix on every local `test*`
+        # task (deno.json) — drops leftover `test_p%` per-worker isolation
+        # schemas before the workers start. Fail-soft (no-op on a fresh DB).
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
+        run: deno task test:clean-schemas
+
       - name: Run tests
         # Per-worker schema isolation (VALORV-494) makes `--parallel`
         # deterministic: each worker isolate provisions its own
         # `test_p<pid>_<rand>` schema (gated on TEST_PARALLEL_ISOLATION=1). Keeps
         # type-checking (no `--no-check`) because the Type Check job only covers
         # main.ts's graph, NOT test files — `deno test` is what type-checks them.
+        # Path-scoped to src/__tests__/ and run with `--allow-all` (matching
+        # `deno task test`'s permission set) so this step never diverges from
+        # local/verification runs on file scope or a permission gap (e.g. the
+        # observability writer's best-effort `.scratch/logs` append).
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
           JWT_SECRET: test-secret-for-ci-only
           NODE_ENV: test
           TEST_PARALLEL_ISOLATION: "1"
-        run: deno test --parallel --allow-net --allow-env --allow-read
+        run: deno test --parallel --allow-all src/__tests__/
 
   build:
     name: Build Docker Image

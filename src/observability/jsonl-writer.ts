@@ -92,7 +92,7 @@ export function appendLineSync(line: string): void {
   try {
     Deno.writeTextFileSync(LOG_PATH, line + "\n", { append: true });
   } catch (e) {
-    if (e instanceof Deno.errors.PermissionDenied) {
+    if (isPermissionUnavailable(e)) {
       writeDisabled = true;
       return;
     }
