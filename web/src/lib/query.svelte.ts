@@ -201,7 +201,19 @@ export function createQuery<T>(opts: {
     get data() {
       entry.lastReadAt = Date.now();
       armInterval(entry);
-      ensureFresh(entry);
+      // Defer the revalidation kick to a microtask. `.data` is read from
+      // `$derived(...)` and template expressions, and `revalidate()`
+      // synchronously writes `state.isFetching = true` -- a `$state`
+      // mutation, which Svelte 5 forbids during derived/template evaluation
+      // (`state_unsafe_mutation`). A synchronous kick here crashes the whole
+      // page render for any surface whose FIRST read of a stale query
+      // happens inside the template (2026-07-28 Valor Victoria incident:
+      // every customer-role dashboard froze on its loading skeleton because
+      // an admin-gated skeleton branch fell through to the query read). The
+      // microtask runs immediately after the render batch, so the "first
+      // read fires the fetch" semantics are unchanged; concurrent kicks
+      // still dedupe on `entry.inFlight`.
+      queueMicrotask(() => ensureFresh(entry));
       return state.data;
     },
     get error() {
