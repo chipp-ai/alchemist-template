@@ -82,7 +82,7 @@
 </script>
 
 <div class="auth-page" data-testid="signup-page">
-  <div class="auth-card card">
+  <div class="auth-card card reveal">
     <h1 class="auth-title">Create your account</h1>
     <p class="auth-subtitle">Get started in minutes</p>
 

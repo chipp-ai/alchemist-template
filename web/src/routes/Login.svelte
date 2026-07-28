@@ -133,7 +133,7 @@
 </script>
 
 <div class="auth-page" data-testid="login-page">
-  <div class="auth-card card">
+  <div class="auth-card card reveal">
     <h1 class="auth-title">Welcome back</h1>
     <p class="auth-subtitle">Sign in to your account</p>
 

@@ -24,14 +24,14 @@
 
   {#if orgStore.currentOrg}
     <div class="stats-grid">
-      <div class="card stat-card" data-testid="dashboard-card-plan">
+      <div class="card stat-card reveal" style="--reveal-index: 0" data-testid="dashboard-card-plan">
         <div class="stat-label">Current Plan</div>
         <div class="stat-value">
           <span class="badge">{orgStore.currentOrg.subscriptionTier}</span>
         </div>
       </div>
 
-      <div class="card stat-card" data-testid="dashboard-card-members">
+      <div class="card stat-card reveal" style="--reveal-index: 1" data-testid="dashboard-card-members">
         <div class="stat-label">Team Members</div>
         <div class="stat-value">--</div>
         <div class="stat-hint">
@@ -43,7 +43,7 @@
 
   <section class="recent-section">
     <h2 class="section-title">Recent Activity</h2>
-    <div class="card">
+    <div class="card reveal" style="--reveal-index: 2">
       <div class="empty-state" data-testid="dashboard-empty-activity">
         <p>No recent activity yet.</p>
       </div>
