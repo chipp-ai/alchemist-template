@@ -28,10 +28,20 @@ const LOG_PATH = ".scratch/logs/observability.jsonl";
 const ROTATION_THRESHOLD_BYTES = 10 * 1024 * 1024; // 10 MB
 
 let initialized = false;
-/** Set true on first PermissionDenied (typical case: `deno task
- *  db:migrate` runs without --allow-write). Subsequent appendLineSync
- *  calls become a no-op so we don't pay a thrown-and-caught exception
- *  on every log emit during scripts that don't grant write. */
+/** Set true on first permission-denied-style error (typical case: `deno
+ *  task db:migrate` / CI's `deno test` run without --allow-write).
+ *  Subsequent appendLineSync calls become a no-op so we don't pay a
+ *  thrown-and-caught exception on every log emit during scripts/CI runs
+ *  that don't grant write.
+ *
+ *  Deno 2 throws `Deno.errors.NotCapable` (not `PermissionDenied`) when a
+ *  permission was simply never granted (as opposed to interactively
+ *  denied) -- both must be latched off here, or every single log emit in
+ *  a no-write context re-throws-and-catches indefinitely instead of
+ *  going silent after the first hit. */
+function isPermissionUnavailable(e: unknown): boolean {
+  return e instanceof Deno.errors.PermissionDenied || e instanceof Deno.errors.NotCapable;
+}
 let writeDisabled = false;
 
 function ensureDirSync(): void {
@@ -39,7 +49,7 @@ function ensureDirSync(): void {
     Deno.mkdirSync(".scratch/logs", { recursive: true });
   } catch (e) {
     if (e instanceof Deno.errors.AlreadyExists) return;
-    if (e instanceof Deno.errors.PermissionDenied) {
+    if (isPermissionUnavailable(e)) {
       // Migration / one-shot script context: writes aren't granted.
       // Latch off so subsequent emits don't keep throwing.
       writeDisabled = true;
@@ -82,7 +92,7 @@ export function appendLineSync(line: string): void {
   try {
     Deno.writeTextFileSync(LOG_PATH, line + "\n", { append: true });
   } catch (e) {
-    if (e instanceof Deno.errors.PermissionDenied) {
+    if (isPermissionUnavailable(e)) {
       writeDisabled = true;
       return;
     }

@@ -6,6 +6,7 @@
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "npm:@e2b/code-interpreter@1": "1.5.1",
     "npm:@hono/zod-validator@0.4": "0.4.3_hono@4.12.8_zod@3.25.76",
+    "npm:@types/node@*": "22.12.0",
     "npm:arctic@2": "2.3.4",
     "npm:date-fns@3": "3.6.0",
     "npm:hono@^4.6.0": "4.12.8",
@@ -96,10 +97,16 @@
         "@oslojs/encoding@0.4.1"
       ]
     },
+    "@types/node@22.12.0": {
+      "integrity": "sha512-Fll2FZ1riMjNmlmJOdAyY5pUbkftXslB5DgEzlIuNaiWhXd00FhWxVC/r4yV/4wBb9JfImTu+jiSvXTkJ7F/gA==",
+      "dependencies": [
+        "undici-types@6.20.0"
+      ]
+    },
     "@types/node@25.5.0": {
       "integrity": "sha512-jp2P3tQMSxWugkCUKLRPVUpGaL5MVFwF8RDuSRztfwgN1wmqJeMSbKlnEtQqU8UrhTmzEmZdu2I6v2dpp7XIxw==",
       "dependencies": [
-        "undici-types"
+        "undici-types@7.18.2"
       ]
     },
     "adler-32@1.3.1": {
@@ -305,9 +312,12 @@
     "stripe@17.7.0": {
       "integrity": "sha512-aT2BU9KkizY9SATf14WhhYVv2uOapBWX0OFWF4xvcj1mPaNotlSc2CsxpS4DS46ZueSppmCF5BX1sNYBtwBvfw==",
       "dependencies": [
-        "@types/node",
+        "@types/node@25.5.0",
         "qs"
       ]
+    },
+    "undici-types@6.20.0": {
+      "integrity": "sha512-Ny6QZ2Nju20vw1SRHe3d9jVu6gJ+4e3+MMpqu7pqE5HT6WsTSlce++GQmK5UXS8mzV8DSYHrQH+Xrf2jVcuKNg=="
     },
     "undici-types@7.18.2": {
       "integrity": "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w=="
