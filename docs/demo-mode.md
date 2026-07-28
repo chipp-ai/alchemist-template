@@ -1,8 +1,9 @@
-# DEMO_MODE — boot guards (money + email safety, noindex)
+# DEMO_MODE — boot guards, banner + public landing (money + email safety, noindex)
 
-**Status:** implemented (this slice: boot-time safety guards only — the
-demo banner, `scripts/seed-demo.ts`, and the nightly re-seed loop are
-separate slices of the same ticket and may land in other commits).
+**Status:** implemented — boot-time safety guards, the demo banner, and
+the public landing page. `scripts/seed-demo.ts` and the nightly re-seed
+loop are a separate slice of the same ticket and may land in other
+commits.
 
 ## Problem
 
@@ -56,6 +57,67 @@ change for every normal customer deploy.
     request falls through to whatever handled that path before (the
     SPA static fallback), preserving prior behavior exactly.
 
+- **Demo banner:** `src/api/middleware/demo-banner.ts` exports
+  `demoBannerMiddleware` (mounted `app.use("*", ...)`) and
+  `demoBannerDismissRoute` (mounted `app.get("/demo/dismiss-banner", ...)`).
+  Both no-op when DEMO_MODE is off.
+  - The middleware runs `await next()` first, then -- only when
+    `isDemoMode()` and the dismiss cookie isn't set -- reads the
+    downstream response body, and if it's `text/html` and contains a
+    `<body ...>` tag, splices a fixed, escaped banner string right after
+    it and reassigns `c.res` to a new `Response`. This is genuinely
+    server-rendered: the banner text ships in the HTML bytes the server
+    sends, so it renders with JavaScript fully disabled.
+  - Dismissal is a plain link to `GET /demo/dismiss-banner?to=<path>`,
+    which sets a cookie with **no `maxAge`/`expires`** (a true browser
+    session cookie -- gone when the browser closes, satisfying
+    "session-dismissable") and 302-redirects back to `to`. `to` is
+    validated to be a same-origin relative path (must start with `/`,
+    must not start with `//`) before use, closing the obvious open-
+    redirect hole.
+  - Rejected: building the banner client-side from a `/api/*` flag
+    fetched by the SPA. That fails "no JS required to display" outright,
+    and the SPA is only one of the surfaces that needs the banner (the
+    new landing page and any future public page do too) -- a
+    response-body-splicing middleware covers all of them uniformly with
+    one code path instead of one integration per page.
+  - Ordering gotcha: `c.res = new Response(...)` in Hono 4 MERGES the
+    prior response's headers into the new one (see
+    `Context#set res()` in `hono/dist/context.js`) except `content-type`
+    (kept from the new response) and `set-cookie` (explicitly re-applied
+    from the old response). This means reassigning `c.res` mid-chain is
+    safe: headers set by middleware registered EARLIER than this one
+    (e.g. `demoNoindexHeaderMiddleware`'s `X-Robots-Tag`, which runs its
+    post-`next()` code AFTER this middleware's, per the onion model) are
+    NOT lost. Verified with a composition test
+    (`src/__tests__/demo-banner.test.ts`). `demoBannerMiddleware` must
+    stay registered AFTER `compress()` in `app.ts` so it rewrites the
+    body BEFORE compression happens, not after.
+
+- **Public landing page:** `src/api/routes/demo-landing.ts` exports
+  `demoLandingRoute`, mounted `app.get("/", demoLandingRoute)` ahead of
+  the static-SPA fallback in `app.ts`. The base template's SPA is
+  entirely auth-gated (its only unauthenticated screen is the login
+  form), so a demo visitor hitting bare `/` needs something more
+  informative than a login box. When DEMO_MODE is off it calls `next()`
+  immediately, falling through to the SPA exactly as before this route
+  existed.
+  - The page is static server-rendered HTML (no template engine, no
+    client JS dependency) describing what the template ships, with
+    links into the actual README's section anchors on GitHub
+    (`#whats-in-the-box`, `#architecture`, etc.) and a CTA into the live
+    SPA at `/index.html#/login` -- a DIFFERENT path from the intercepted
+    bare `/`, so the SPA's static file is untouched and still reachable.
+  - Rejected: rewriting the SPA itself to render a public landing
+    route (e.g. a new `/#/welcome` Svelte page). That would require
+    frontend routing changes and duplicate content that's supposed to
+    describe the template's own README, not the app's own product UI --
+    a static server page is simpler, cheaper, and can't drift from the
+    banner's HTML-only spirit.
+  - The `demoBannerMiddleware` still applies to this page's response
+    (it's just another `text/html` response), so the landing page also
+    carries the dismissible demo banner -- no special-casing needed.
+
 ## Public contract
 
 - Env: `DEMO_MODE=1` turns all of the above on. Any other value (or
@@ -68,6 +130,13 @@ change for every normal customer deploy.
   and an info-level structured log line.
 - `GET /robots.txt` and the `X-Robots-Tag` response header — both new
   surfaces, both gated on DEMO_MODE.
+- `demoBannerMiddleware`, `demoBannerDismissRoute`,
+  `DEMO_BANNER_DISMISS_PATH` (`/demo/dismiss-banner`),
+  `DEMO_BANNER_DISMISS_COOKIE` (`demo_banner_dismissed`) —
+  `src/api/middleware/demo-banner.ts`.
+- `demoLandingRoute` — `src/api/routes/demo-landing.ts`; owns the exact
+  `GET /` path under DEMO_MODE. The SPA shell remains reachable at
+  `GET /index.html` regardless of DEMO_MODE.
 
 ## Gotchas
 
@@ -85,3 +154,15 @@ change for every normal customer deploy.
   `next()` from a route handler continues to the next matching
   layer registered after it, same as from `app.use`) to fall through
   cleanly when DEMO_MODE is off.
+- The banner middleware only injects into responses whose body it can
+  find a `<body ...>` tag in. A response served via `c.body(chunk)`
+  streaming or one missing a `<body>` tag (fragment HTML) is left
+  untouched rather than risking a corrupt splice -- acceptable because
+  every real page this template serves (the SPA shell, the demo landing
+  page) is a full document.
+  `/robots.txt` (`text/plain`) is naturally excluded by the
+  `text/html`-only content-type check.
+- `demoLandingRoute` only ever intercepts the EXACT path `/` (`app.get("/", ...)`,
+  not a prefix route) -- it does not shadow `/index.html`, `/assets/*`,
+  or any other static asset the SPA needs, so the "Open the live demo
+  app" CTA keeps working normally.
