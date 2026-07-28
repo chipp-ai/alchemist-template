@@ -269,7 +269,7 @@
   .otp-input {
     text-align: center;
     font-size: var(--text-2xl);
-    font-family: monospace;
+    font-family: var(--font-mono);
     letter-spacing: 0.5em;
     padding: var(--space-md);
   }
