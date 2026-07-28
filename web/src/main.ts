@@ -1,6 +1,7 @@
 import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
+import "./motion.css";
 import { installBreadcrumbs } from "./lib/observability/breadcrumbs";
 
 // Install observability hooks BEFORE store init / DevPanel / app
