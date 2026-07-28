@@ -462,7 +462,7 @@
     height: 420px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
-    background: #ffffff;
+    background: var(--color-surface-raised);
   }
 
   .body-note {
@@ -509,29 +509,31 @@
     word-break: break-word;
   }
 
-  /* ---------- Status badge tones (match the list page) ---------- */
+  /* ---------- Status badge tones (match the list page) ----------
+     Sourced from the shared --color-warning-* / --color-info-* tokens in
+     app.css (color-mix derived, same discipline as success/error). */
   .badge.badge-good {
     background: var(--color-success-bg);
     color: var(--color-success);
-    border-color: rgba(22, 163, 74, 0.25);
+    border-color: var(--color-success-border);
   }
 
   .badge.badge-bad {
     background: var(--color-error-bg);
     color: var(--color-error);
-    border-color: rgba(220, 38, 38, 0.25);
+    border-color: var(--color-error-border);
   }
 
   .badge.badge-warn {
-    background: #fffbeb;
-    color: #b45309;
-    border-color: rgba(180, 83, 9, 0.25);
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+    border-color: var(--color-warning-border);
   }
 
   .badge.badge-info {
-    background: #eff6ff;
-    color: #2c5d99;
-    border-color: rgba(44, 93, 153, 0.25);
+    background: var(--color-info-bg);
+    color: var(--color-info);
+    border-color: var(--color-info-border);
   }
 
   .badge.badge-neutral {

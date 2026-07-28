@@ -377,7 +377,7 @@
   .link-btn {
     background: none;
     border: none;
-    color: var(--color-primary);
+    color: var(--color-accent);
     cursor: pointer;
     font-size: var(--text-sm);
     padding: 0;
@@ -386,16 +386,6 @@
 
   .link-btn:hover {
     opacity: 0.8;
-  }
-
-  .alert-success {
-    color: var(--color-success, #16a34a);
-    background: var(--color-success-bg, #f0fdf4);
-    border: 1px solid var(--color-success-border, #bbf7d0);
-    padding: var(--space-sm) var(--space-md);
-    border-radius: var(--radius-md, 6px);
-    font-size: var(--text-sm);
-    margin-bottom: var(--space-md);
   }
 
   .auth-divider {

@@ -7,6 +7,7 @@
   import Sidebar from "./components/Sidebar.svelte";
   import SessionTimeoutWarning from "./components/SessionTimeoutWarning.svelte";
   import DevPanel from "./components/DevPanel.svelte";
+  import ToastContainer from "./components/ToastContainer.svelte";
 
   // One-shot session check on mount.
   //
@@ -77,6 +78,13 @@
   HIPAA-enabled. On non-HIPAA deployments this stays inert.
 -->
 <SessionTimeoutWarning />
+
+<!--
+  Toast stack: mounts on every route (auth-gated and public alike) so
+  any part of the app can call toastStore.show(...) and have it render.
+  See web/src/stores/toast.svelte.ts + web/src/components/ToastContainer.svelte.
+-->
+<ToastContainer />
 
 <!--
   Dev panel: floating button + expanded view of every store + recent

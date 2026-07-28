@@ -90,6 +90,25 @@
   --color-success-contrast: #ffffff;
 
   /*
+   * Warning + info — same derivation discipline as error/success above.
+   * These back the .badge-warn/.badge-info and .alert-warning/.alert-info
+   * tones used by ops-style screens (e.g. Inbound Email status pills).
+   * Components must reference these tokens, never a hand-picked amber/
+   * blue hex — that was the original bug this pair fixes.
+   */
+  --color-warning: #d97706;
+  --color-warning-hover: color-mix(in srgb, var(--color-warning) 85%, black);
+  --color-warning-bg: color-mix(in srgb, var(--color-warning) 8%, white);
+  --color-warning-border: color-mix(in srgb, var(--color-warning) 20%, transparent);
+  --color-warning-contrast: #ffffff;
+
+  --color-info: #2563eb;
+  --color-info-hover: color-mix(in srgb, var(--color-info) 85%, black);
+  --color-info-bg: color-mix(in srgb, var(--color-info) 8%, white);
+  --color-info-border: color-mix(in srgb, var(--color-info) 20%, transparent);
+  --color-info-contrast: #ffffff;
+
+  /*
    * Brand gradient — v3 (nullable). `gradient.from`/`gradient.to` on
    * brand.json are hex pairs the platform derives from the palette
    * for hero/mesh accents. Consumption sites (e.g. `.brand-gradient`
@@ -329,9 +348,12 @@ textarea:focus-visible,
 /*
  * Loading state — `<button class="btn btn-primary" data-loading>`.
  * The label stays in the DOM (accessible name is preserved) but is
- * visually hidden behind a centered spinner; motion.css defines
- * `.btn[data-loading]::after`'s spin keyframe behind
- * prefers-reduced-motion.
+ * visually hidden behind a centered spinner ring. The ring's color
+ * comes from `--btn-loading-fg`, set per-variant below (it has to be
+ * a custom property rather than `currentColor` because the button's
+ * own `color` is forced transparent to hide the label). The spin
+ * keyframe is disabled under prefers-reduced-motion — the ring still
+ * renders as a static "busy" indicator, it just doesn't rotate.
  */
 .btn[data-loading] {
   position: relative;
@@ -339,11 +361,38 @@ textarea:focus-visible,
   pointer-events: none;
 }
 
+.btn[data-loading]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1em;
+  height: 1em;
+  margin: -0.5em 0 0 -0.5em;
+  border-radius: var(--radius-full);
+  border: 2px solid color-mix(in srgb, var(--btn-loading-fg, currentColor) 30%, transparent);
+  border-top-color: var(--btn-loading-fg, currentColor);
+  animation: btn-spin 0.6s linear infinite;
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn[data-loading]::after {
+    animation: none;
+  }
+}
+
 .btn-primary {
   background: var(--color-accent);
   color: var(--color-accent-text);
   border-color: var(--color-accent);
   box-shadow: var(--shadow-sm);
+  --btn-loading-fg: var(--color-accent-text);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -360,6 +409,7 @@ textarea:focus-visible,
   background: var(--color-bg);
   color: var(--color-text);
   border-color: var(--color-border);
+  --btn-loading-fg: var(--color-text);
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -371,6 +421,7 @@ textarea:focus-visible,
   background: transparent;
   color: var(--color-text-secondary);
   border-color: transparent;
+  --btn-loading-fg: var(--color-text-secondary);
 }
 
 .btn-ghost:hover:not(:disabled) {
@@ -382,6 +433,7 @@ textarea:focus-visible,
   background: var(--color-error);
   color: var(--color-error-contrast);
   border-color: var(--color-error);
+  --btn-loading-fg: var(--color-error-contrast);
 }
 
 .btn-danger:hover:not(:disabled) {
@@ -570,4 +622,16 @@ textarea:focus-visible,
   background: var(--color-success-bg);
   color: var(--color-success);
   border: 1px solid var(--color-success-border);
+}
+
+.alert-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning-border);
+}
+
+.alert-info {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  border: 1px solid var(--color-info-border);
 }
