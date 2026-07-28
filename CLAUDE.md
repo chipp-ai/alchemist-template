@@ -287,6 +287,19 @@ src/__tests__/
 
 ## Frontend Conventions
 
+### Design system — tokens, motion, dark mode, component kit: read `web/DESIGN.md`
+
+The full design-system contract — token usage rules (no raw hex in
+components, colors/spacing/radius/elevation ALWAYS via `var(--...)`),
+typography (`--font-heading`/`--font-sans`/`--font-mono` only, never a
+literal family name), motion conventions (`prefers-reduced-motion`,
+visible-by-default reveal-on-scroll), dark mode as a user-toggled theme, and
+how to add a new component at the bar — lives in **`web/DESIGN.md`**. Read it
+before styling anything customer-facing. It is enforced by
+`src/__tests__/design-guardrails.test.ts` (no raw hex outside the token
+files, no `transition: all`, font-family only via tokens) — a violation
+fails `deno task test`.
+
 ### Hover/interactive transitions animate ONLY compositor properties (transform, opacity)
 
 `box-shadow`, `background`/`background-color`, and `border-color` must NEVER appear in a `transition:` list on cards, list rows, table rows, or any element repeated in a scrollable list. Scrolling sweeps rows under a stationary cursor, and every hover enter/leave that INTERPOLATES a blurred shadow or a background fill repaints that element's area on every frame of the transition — with dozens of rows on screen this is visible scroll jank even though the main thread is completely idle (root-caused on a generated project's dashboards, 2026-07-28: zero long tasks while scrolling; the cost was pure paint). The fix is free visually: keep the `:hover` rules exactly as they are (the shadow/background/border SWAP still happens — instantly, one repaint per flip) and keep `transform`/`opacity` in the transition so the lift or fade the eye tracks still animates.

@@ -7,6 +7,9 @@
   import Sidebar from "./components/Sidebar.svelte";
   import SessionTimeoutWarning from "./components/SessionTimeoutWarning.svelte";
   import DevPanel from "./components/DevPanel.svelte";
+  import ToastContainer from "./components/ToastContainer.svelte";
+  import { initRevealOnScroll } from "./lib/reveal-dom";
+  import { navigateWithTransition } from "./lib/view-transitions-dom";
 
   // One-shot session check on mount.
   //
@@ -22,16 +25,33 @@
   // is a trap; use onMount".
   onMount(() => {
     authStore.checkAuth();
+    // Arm the staggered reveal-on-scroll utility (web/src/motion.css'
+    // `.reveal` class) for whatever's on the initial screen. No-op when
+    // IntersectionObserver is unsupported or prefers-reduced-motion is
+    // set — see web/src/lib/reveal.ts for the fail-safe contract.
+    initRevealOnScroll();
   });
 
-  // Redirect to login when not authenticated and on a protected route
+  // Redirect to login when not authenticated and on a protected route.
+  // Wrapped in a View Transition (web/src/lib/view-transitions.ts) so
+  // browsers that support the API get a cross-fade instead of a hard cut
+  // — degrades to a plain replace() everywhere else (unsupported browser,
+  // prefers-reduced-motion).
   $effect(() => {
     if (authStore.isLoading) return;
     const path = $location;
 
     if (!authStore.isAuthenticated && !isPublicRoute(path)) {
-      replace("/login");
+      navigateWithTransition(replace, "/login");
     }
+  });
+
+  // Re-scan for newly-mounted `.reveal` elements after every route change.
+  // initRevealOnScroll() is idempotent — it skips anything already carrying
+  // data-reveal-observed — so calling it on each navigation is safe.
+  $effect(() => {
+    void $location;
+    initRevealOnScroll();
   });
 
   // HIPAA session-timeout: arm activity tracking + the warning modal
@@ -77,6 +97,13 @@
   HIPAA-enabled. On non-HIPAA deployments this stays inert.
 -->
 <SessionTimeoutWarning />
+
+<!--
+  Toast stack: mounts on every route (auth-gated and public alike) so
+  any part of the app can call toastStore.show(...) and have it render.
+  See web/src/stores/toast.svelte.ts + web/src/components/ToastContainer.svelte.
+-->
+<ToastContainer />
 
 <!--
   Dev panel: floating button + expanded view of every store + recent

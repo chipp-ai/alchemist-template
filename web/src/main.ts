@@ -1,6 +1,7 @@
 import { mount } from "svelte";
 import App from "./App.svelte";
 import "./app.css";
+import "./motion.css";
 import { installBreadcrumbs } from "./lib/observability/breadcrumbs";
 
 // Install observability hooks BEFORE store init / DevPanel / app
@@ -22,6 +23,8 @@ import "./stores/auth.svelte";
 import "./stores/organization.svelte";
 import "./stores/sessionTimeout.svelte";
 import "./stores/billing.svelte";
+import "./stores/toast.svelte";
+import "./stores/theme.svelte";
 
 import { initDevPanel } from "./lib/devpanel/init";
 

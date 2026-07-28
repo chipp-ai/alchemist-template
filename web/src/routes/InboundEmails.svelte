@@ -290,31 +290,31 @@
   }
 
   /* ---------- Status badge tones ----------
-     The template palette only ships success/error tokens; amber (warn)
-     and blue (info) tones are defined locally so each status reads as a
-     distinct color. */
+     Sourced from the shared --color-warning-* / --color-info-* tokens in
+     app.css (color-mix derived, same discipline as success/error) so no
+     status pill hand-picks a hex. */
   .badge.badge-good {
     background: var(--color-success-bg);
     color: var(--color-success);
-    border-color: rgba(22, 163, 74, 0.25);
+    border-color: var(--color-success-border);
   }
 
   .badge.badge-bad {
     background: var(--color-error-bg);
     color: var(--color-error);
-    border-color: rgba(220, 38, 38, 0.25);
+    border-color: var(--color-error-border);
   }
 
   .badge.badge-warn {
-    background: #fffbeb;
-    color: #b45309;
-    border-color: rgba(180, 83, 9, 0.25);
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+    border-color: var(--color-warning-border);
   }
 
   .badge.badge-info {
-    background: #eff6ff;
-    color: #2c5d99;
-    border-color: rgba(44, 93, 153, 0.25);
+    background: var(--color-info-bg);
+    color: var(--color-info);
+    border-color: var(--color-info-border);
   }
 
   .badge.badge-neutral {
