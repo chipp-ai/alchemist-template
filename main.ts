@@ -8,6 +8,7 @@ import { app } from "./app.ts";
 import { closeDatabase, initDatabase } from "@/db/client.ts";
 import { reindexDocs } from "@/services/docs/reindex.ts";
 import { startInboundEmailReaper, stopInboundEmailReaper } from "@/jobs/inbound-email-reaper.ts";
+import { startDemoReseedLoop, stopDemoReseedLoop } from "@/jobs/demo-reseed-loop.ts";
 import { log } from "@/lib/logger.ts";
 import { assertNoLiveStripeKeyInDemoMode } from "@/lib/stripe.ts";
 import { isDemoMode } from "@/config/demo-mode.ts";
@@ -63,6 +64,17 @@ try {
   log.warn("inbound-email reaper failed to start (non-fatal)", { source: "startup" }, err);
 }
 
+// ── Demo nightly re-seed loop ──
+// Fire-and-forget background re-seed of the DEMO_MODE demo content.
+// Dormant unless DEMO_MODE=1 AND the database is configured; never throws
+// at boot. Stopped in shutdown() BEFORE closeDatabase() so no tick races
+// the pool teardown.
+try {
+  startDemoReseedLoop();
+} catch (err) {
+  log.warn("demo reseed loop failed to start (non-fatal)", { source: "startup" }, err);
+}
+
 // ── Start server ──
 
 log.info("Server starting", {
@@ -101,6 +113,12 @@ async function shutdown(signal: string): Promise<void> {
     stopInboundEmailReaper();
   } catch (err) {
     log.warn("Error stopping inbound-email reaper", { source: "shutdown" }, err);
+  }
+
+  try {
+    stopDemoReseedLoop();
+  } catch (err) {
+    log.warn("Error stopping demo reseed loop", { source: "shutdown" }, err);
   }
 
   try {

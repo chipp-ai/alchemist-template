@@ -1,9 +1,37 @@
 # DEMO_MODE — boot guards, banner + public landing (money + email safety, noindex)
 
-**Status:** implemented — boot-time safety guards, the demo banner, and
-the public landing page. `scripts/seed-demo.ts` and the nightly re-seed
-loop are a separate slice of the same ticket and may land in other
-commits.
+**Status:** implemented — boot-time safety guards, the demo banner, the
+public landing page, the curated demo seed, and the nightly re-seed loop.
+
+## Seed + nightly re-seed
+
+- `scripts/seed-demo.ts` exports `seedDemo()`: idempotent (upsert-by-
+  stable-key) seed of a fictional "Acme Metrics (Demo)" org
+  (`DEMO_ORG_SLUG = "acme-metrics-demo"`) + 3 demo users (owner/admin/
+  editor, upserted by email). Before re-seeding it WIPES accumulated
+  public writes scoped to the demo org -- all `purchases` and `invites`
+  rows for that org -- so visitor test-mode checkouts / team invites
+  don't accumulate forever. A best-effort demo product catalog (2 rows)
+  is created via the existing `product.service.ts` ONLY when Stripe is
+  configured; skipped (logged, non-fatal) otherwise, so the seed always
+  succeeds with zero Stripe creds (sandbox/CI/a fresh demo deploy).
+  Rejected: seeding "sample docs content" separately -- the in-app docs
+  search already indexes this repo's own `docs/*.md` at boot
+  (`reindexDocs`), so there's nothing template-specific to seed there.
+  Run directly: `deno run --env --allow-all scripts/seed-demo.ts`.
+- `src/jobs/demo-reseed-loop.ts` copies the `inbound-email-reaper.ts`
+  loop shape exactly (module flags, `setTimeout(tick,0)` kick-off,
+  `pg_try_advisory_lock` on a dedicated connection -- new lock id
+  `838291740022` -- `NODE_ENV=test` no-op, never-throw). Gated on
+  `isDemoMode()` (checked live, every tick) rather than a static
+  "configured" flag, so a normal customer deploy starts the loop, takes
+  one look, and stays dormant forever. First tick fires almost
+  immediately after boot (seeds a fresh demo deploy right away);
+  subsequent ticks are `DEMO_RESEED_INTERVAL_MS` apart (default 24h,
+  clamped [1h, 7d]). `runDemoReseedCycle()` is exported as the testable
+  per-cycle unit (lock + `seedDemo()` + unlock) independent of the
+  scheduling timer. Wired into `main.ts` start/stop exactly like the
+  reaper (`stopDemoReseedLoop()` runs before `closeDatabase()`).
 
 ## Problem
 
