@@ -56,22 +56,6 @@ export function initRevealOnScroll(root: ParentNode = document): RevealHandle {
     return NOOP_HANDLE;
   }
 
-  document.documentElement.classList.add("reveal-ready");
-
-  const elements = Array.from(root.querySelectorAll<HTMLElement>(".reveal:not([data-reveal-observed])"));
-  if (elements.length === 0) {
-    return NOOP_HANDLE;
-  }
-
-  elements.forEach((el, i) => {
-    el.dataset.revealObserved = "true";
-    if (!el.style.getPropertyValue("--reveal-index")) {
-      // Stagger buckets of 6 so long lists don't produce a multi-second
-      // cascade — the 7th item reveals alongside the 1st, etc.
-      el.style.setProperty("--reveal-index", String(i % 6));
-    }
-  });
-
   const observer = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
@@ -84,7 +68,50 @@ export function initRevealOnScroll(root: ParentNode = document): RevealHandle {
     { threshold: 0.15, rootMargin: "0px 0px -10% 0px" },
   );
 
-  elements.forEach((el) => observer.observe(el));
+  let bucket = 0;
+
+  // Find every not-yet-armed `.reveal`, mark + observe it, and — only when
+  // there is actually something to observe — flip the global `reveal-ready`
+  // class that motion.css keys the hidden→revealed transition off.
+  //
+  // Adding `reveal-ready` ONLY inside a pass that found elements (rather than
+  // unconditionally, as an earlier version did) is what keeps the fail-safe
+  // contract honest: a `.reveal` that JS never reaches is never hidden by the
+  // global flag, so it stays visible. The previous version added the class
+  // up-front and then returned early when it found 0 elements — leaving the
+  // class on `<html>` with the real route content still un-mounted, so the
+  // login/dashboard cards that mounted a beat later were globally hidden yet
+  // never observed → stuck at opacity 0 forever.
+  function scan(): void {
+    const elements = Array.from(
+      root.querySelectorAll<HTMLElement>(".reveal:not([data-reveal-observed])"),
+    );
+    if (elements.length === 0) return;
+
+    document.documentElement.classList.add("reveal-ready");
+
+    for (const el of elements) {
+      el.dataset.revealObserved = "true";
+      if (!el.style.getPropertyValue("--reveal-index")) {
+        // Stagger buckets of 6 so long lists don't produce a multi-second
+        // cascade — the 7th item reveals alongside the 1st, etc.
+        el.style.setProperty("--reveal-index", String(bucket % 6));
+        bucket++;
+      }
+      observer.observe(el);
+    }
+  }
+
+  // Scan synchronously for whatever is already in the DOM, then again on the
+  // next frame. The deferred pass is load-bearing: App.svelte arms reveal from
+  // a route-level `$effect`, which Svelte fires BEFORE the freshly-routed
+  // component's DOM is committed — without the rAF re-scan a just-navigated
+  // `.reveal` element is missed and (once any pass has set `reveal-ready`)
+  // stays hidden. Both passes are idempotent via `data-reveal-observed`.
+  scan();
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(scan);
+  }
 
   return {
     destroy() {
