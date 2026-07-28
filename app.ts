@@ -14,6 +14,7 @@ import { AppError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
 import { requestTimingMiddleware } from "@/api/middleware/request-timing.ts";
 import { recentActivityMiddleware } from "@/api/middleware/recent-activity.ts";
+import { demoNoindexHeaderMiddleware, demoRobotsTxtRoute } from "@/api/middleware/demo-noindex.ts";
 
 // Route imports
 import { healthRoutes } from "@/api/routes/health/index.ts";
@@ -75,6 +76,14 @@ app.use("*", compress());
 
 // Timing (Server-Timing header)
 app.use("*", timing());
+
+// DEMO_MODE noindex guard -- X-Robots-Tag on every response, no-op when
+// DEMO_MODE is unset. See src/api/middleware/demo-noindex.ts.
+app.use("*", demoNoindexHeaderMiddleware);
+
+// DEMO_MODE robots.txt -- disallow-all when DEMO_MODE=1, otherwise falls
+// through untouched to whatever would have served this path before.
+app.get("/robots.txt", demoRobotsTxtRoute);
 
 // Request-timing middleware — emits one NDJSON log line per request
 // via the platform logger so Loki/Grafana can alert on error rate +

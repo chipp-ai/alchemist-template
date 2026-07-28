@@ -9,10 +9,29 @@ import { closeDatabase, initDatabase } from "@/db/client.ts";
 import { reindexDocs } from "@/services/docs/reindex.ts";
 import { startInboundEmailReaper, stopInboundEmailReaper } from "@/jobs/inbound-email-reaper.ts";
 import { log } from "@/lib/logger.ts";
+import { assertNoLiveStripeKeyInDemoMode } from "@/lib/stripe.ts";
+import { isDemoMode } from "@/config/demo-mode.ts";
 
 const port = parseInt(Deno.env.get("PORT") ?? "8000");
 const nodeEnv = Deno.env.get("NODE_ENV") ?? "development";
 const version = Deno.env.get("GIT_SHA")?.slice(0, 7) ?? "dev";
+
+// ── DEMO_MODE boot guard ──
+// Refuse to start if this public demo could charge real money via a
+// live-mode Stripe key. Fatal by design -- unlike every other boot step
+// in this file, this one is NOT best-effort, because the failure mode it
+// prevents is real charges.
+if (isDemoMode()) {
+  log.info("DEMO_MODE=1 -- running as a public demo deployment", { source: "startup" });
+  try {
+    assertNoLiveStripeKeyInDemoMode();
+  } catch (err) {
+    log.error("Refusing to start: live Stripe key detected under DEMO_MODE", {
+      source: "startup",
+    }, err as Error);
+    Deno.exit(1);
+  }
+}
 
 // ── Database connection ──
 
