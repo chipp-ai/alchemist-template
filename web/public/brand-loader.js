@@ -50,24 +50,115 @@
  *   re-fetch.
  * - Logo URLs are content-addressed (sha256.png) so they're
  *   safe to cache forever; the URL itself changes when the bytes do.
+ *
+ * # v3 fields (all OPTIONAL / nullable — brand.json may omit any of them)
+ *
+ * - `fontHeading` / `fontBody` (string): a Google Fonts family name.
+ *   Sets `--brand-font-heading` / `--brand-font-body` (quoted, ready to
+ *   drop into a font-family list) AND injects the matching Google Fonts
+ *   <link> (see ensureGoogleFontsLink below — "the fonts partial").
+ * - `radiusScale` ("sharp" | "soft" | "round"): sets `--brand-radius-scale`
+ *   plus a `data-radius-scale` attribute on <html> — app.css keys its
+ *   concrete `--radius-*` px sets off that attribute.
+ * - `gradient.from` / `gradient.to` (hex): sets `--brand-gradient-from` /
+ *   `--brand-gradient-to` for hero/mesh accent surfaces (`.brand-gradient`
+ *   in app.css).
+ *
+ * Every v3 field degrades gracefully when absent — app.css's `var(--brand-x,
+ * <fallback>)` reads render the identical template-default design.
  */
 
 (function () {
-  // True when a #RGB/#RRGGBB hex is light enough to serve as a page/input
-  // background in the light-mode template designs (relative luminance).
-  function isLightSurface(hex) {
-    var m = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex);
-    if (!m) return false;
+  "use strict";
+
+  var HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+  // Shared WCAG relative-luminance formula (sRGB), 0 (black) to 1 (white).
+  // Both isLightSurface() and contrastTextFor() below key off this so the
+  // math lives in exactly one place in this file.
+  function relativeLuminanceHex(hex) {
+    var m = HEX_RE.exec(hex);
+    if (!m) return null;
     var h = m[1];
     if (h.length === 3) h = h.charAt(0) + h.charAt(0) + h.charAt(1) + h.charAt(1) + h.charAt(2) + h.charAt(2);
     function lin(c) { c = c / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
-    var lum = 0.2126 * lin(parseInt(h.slice(0, 2), 16)) +
+    return 0.2126 * lin(parseInt(h.slice(0, 2), 16)) +
       0.7152 * lin(parseInt(h.slice(2, 4), 16)) +
       0.0722 * lin(parseInt(h.slice(4, 6), 16));
-    return lum >= 0.55;
   }
 
-  "use strict";
+  // True when a #RGB/#RRGGBB hex is light enough to serve as a page/input
+  // background in the light-mode template designs (relative luminance).
+  function isLightSurface(hex) {
+    var lum = relativeLuminanceHex(hex);
+    return lum !== null && lum >= 0.55;
+  }
+
+  // WCAG contrast ratio between a hex color and pure white/black — used to
+  // pick whichever of the two reads AA (>=4.5:1) as TEXT on `hex` as a
+  // background (e.g. label text on a solid --brand-primary button). CSS
+  // cannot branch on luminance itself (the `contrast-color()` proposal
+  // isn't shipping yet), so this has to run in JS. Mirrors — and is unit-
+  // tested via — web/src/lib/color-math.ts's pickContrastText(); this copy
+  // is duplicated (not imported) because brand-loader.js is served
+  // unbundled to <head> and can't `import` from the Vite-built web/src
+  // tree.
+  function contrastTextFor(hex) {
+    var lum = relativeLuminanceHex(hex);
+    if (lum === null) return null;
+    var inkLum = relativeLuminanceHex("#111827"); // --color-text ink token
+    var whiteRatio = 1.05 / (lum + 0.05); // white luminance is always 1
+    var lighter = Math.max(lum, inkLum);
+    var darker = Math.min(lum, inkLum);
+    var inkRatio = (lighter + 0.05) / (darker + 0.05);
+    return whiteRatio >= inkRatio ? "#ffffff" : "#111827";
+  }
+
+  var GOOGLE_FONTS_LINK_ID = "alchemist-brand-fonts";
+  var RADIUS_SCALES = ["sharp", "soft", "round"];
+
+  // Google Fonts CSS2 API wants spaces in a family name encoded as "+".
+  function googleFontsFamilyParam(name) {
+    return encodeURIComponent(name).replace(/%20/g, "+");
+  }
+
+  // The "fonts partial": builds a Google Fonts <link> request from the
+  // brand's chosen heading/body families (v3, nullable) with
+  // display=swap so text never sits invisible waiting on the download —
+  // it renders on the system-stack fallback (see app.css --font-heading /
+  // --font-sans) until the real font swaps in. No-ops when neither family
+  // is set (every project before v3 data exists): index.html's static
+  // Inter/JetBrains Mono <link> already covers that case.
+  function ensureGoogleFontsLink(headingFamily, bodyFamily) {
+    var families = [];
+    if (typeof headingFamily === "string" && headingFamily.trim()) {
+      families.push(headingFamily.trim());
+    }
+    if (
+      typeof bodyFamily === "string" && bodyFamily.trim() &&
+      families.indexOf(bodyFamily.trim()) === -1
+    ) {
+      families.push(bodyFamily.trim());
+    }
+    if (families.length === 0) return;
+
+    var params = families
+      .map(function (f) {
+        return "family=" + googleFontsFamilyParam(f) + ":ital,wght@0,400;0,500;0,600;0,700;1,400";
+      })
+      .join("&");
+    var href = "https://fonts.googleapis.com/css2?" + params + "&display=swap";
+
+    var existing = document.getElementById(GOOGLE_FONTS_LINK_ID);
+    if (existing && existing.getAttribute("href") === href) return; // already applied
+
+    var link = document.createElement("link");
+    link.id = GOOGLE_FONTS_LINK_ID;
+    link.rel = "stylesheet";
+    link.href = href;
+    document.head.appendChild(link);
+    if (existing) existing.parentNode.removeChild(existing);
+  }
 
   var DEFAULT_ORIGIN = "https://api.adaas.dev";
   var origin =
@@ -117,6 +208,48 @@
       // apply (it renders half-dark UI, e.g. black inputs on a light page;
       // 2026-07-28 demo bug). Dark values fall back to the CSS default.
       root.style.setProperty("--brand-neutral", brand.neutralColor);
+    }
+
+    // Contrast-safe text color for the primary accent surface (buttons,
+    // badges, ...). Recomputed whenever primaryColor is present so it
+    // always tracks the live brand color, never a stale/default value.
+    if (typeof brand.primaryColor === "string") {
+      var contrast = contrastTextFor(brand.primaryColor);
+      if (contrast) root.style.setProperty("--brand-primary-contrast", contrast);
+    }
+
+    // v3 (nullable): typography. Quoted so the value drops straight into
+    // a font-family list (`var(--brand-font-heading, "Inter")`). Absent/
+    // blank → the CSS var stays unset and app.css's fallback holds.
+    if (typeof brand.fontHeading === "string" && brand.fontHeading.trim()) {
+      root.style.setProperty("--brand-font-heading", '"' + brand.fontHeading.trim() + '"');
+    }
+    if (typeof brand.fontBody === "string" && brand.fontBody.trim()) {
+      root.style.setProperty("--brand-font-body", '"' + brand.fontBody.trim() + '"');
+    }
+    ensureGoogleFontsLink(brand.fontHeading, brand.fontBody);
+
+    // v3 (nullable): radius personality. The concrete px sets live in
+    // app.css's [data-radius-scale="..."] overrides — CSS can't switch a
+    // numeric value off an arbitrary custom-property string without a
+    // selector to key on, so the value is mirrored onto both the CSS var
+    // (for any code that wants the raw label) and the data attribute.
+    if (typeof brand.radiusScale === "string" && RADIUS_SCALES.indexOf(brand.radiusScale) !== -1) {
+      root.style.setProperty("--brand-radius-scale", brand.radiusScale);
+      root.setAttribute("data-radius-scale", brand.radiusScale);
+    }
+
+    // v3 (nullable): gradient pair for hero/mesh accents. Each half is
+    // hex-validated independently so a half-valid pair still lets
+    // whichever half validated apply — app.css's .brand-gradient falls
+    // back to --brand-primary/--brand-accent for the other half.
+    if (brand.gradient && typeof brand.gradient === "object") {
+      if (typeof brand.gradient.from === "string" && HEX_RE.test(brand.gradient.from)) {
+        root.style.setProperty("--brand-gradient-from", brand.gradient.from);
+      }
+      if (typeof brand.gradient.to === "string" && HEX_RE.test(brand.gradient.to)) {
+        root.style.setProperty("--brand-gradient-to", brand.gradient.to);
+      }
     }
 
     // Set the document title. The HTML's static <title> is a
