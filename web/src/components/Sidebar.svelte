@@ -2,6 +2,7 @@
   import { link, location } from "svelte-spa-router";
   import { authStore } from "../stores/auth.svelte";
   import { orgStore } from "../stores/organization.svelte";
+  import ThemeToggle from "./ThemeToggle.svelte";
 
   const navItems = [
     { path: "/", label: "Dashboard", icon: "grid" },
@@ -45,6 +46,7 @@
         <div class="sidebar-user-name">{authStore.user?.name ?? ""}</div>
         <div class="sidebar-user-email">{authStore.user?.email ?? ""}</div>
       </div>
+      <ThemeToggle />
     </div>
     <button
       class="btn btn-ghost sidebar-logout"

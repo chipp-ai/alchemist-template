@@ -224,6 +224,68 @@
   --radius-lg: 28px;
 }
 
+/*
+ * Dark theme — activated by <html data-theme="dark">, set by
+ * web/src/stores/theme.svelte.ts (persisted to localStorage) and, for
+ * the very first paint, by the inline anti-FOUC script in
+ * web/index.html. This is a USER-CHOSEN theme, never an OS-inferred
+ * one: nothing in this template reads `prefers-color-scheme` to decide
+ * the app theme (light is always the default until the user explicitly
+ * flips the toggle) — see docs/design-system-dark-mode.md for the
+ * rationale (and web/DESIGN.md, once the S1 guardrails doc lands, for
+ * the token-usage rules this block follows).
+ *
+ * Brand-neutral guard: --brand-neutral is a LIGHT-surface color by
+ * contract (brand-loader.js clamps it via isLightSurface() before ever
+ * setting it), so it must never leak into a dark canvas. --color-bg
+ * below is a fixed dark value that does NOT reference --brand-neutral
+ * at all (contrast the :root default above, which is
+ * `var(--brand-neutral, #ffffff)`) — that is what keeps "brand neutral
+ * only ever themes light surfaces" true even after this override
+ * applies.
+ *
+ * Everything derived from --color-bg / --color-surface via color-mix()
+ * in the :root block above (e.g. --color-surface-sunken,
+ * --color-accent-soft) recomputes automatically once those two vars
+ * are overridden here — custom properties resolve against the active
+ * cascade at used-value time, not at definition time. Only tokens that
+ * literally hand-picked "white" or "black" as a color-mix endpoint (the
+ * accent hover/active ramp, the status-tint backgrounds) need an
+ * explicit override, because the direction that reads as "premium" on
+ * a light surface (darken on hover) is precisely the direction that
+ * reads as "washed out" on a dark one (which wants to LIGHTEN on
+ * hover instead) — same for the status backgrounds, which mix toward
+ * black instead of white so a tinted alert still looks dark, not like
+ * a hole punched through to a light page.
+ */
+:root[data-theme="dark"] {
+  --color-bg: #0a0b0f;
+  --color-surface: #15171e;
+  --color-surface-raised: #1c1f28;
+
+  --color-border: #262a35;
+  --color-border-strong: #383e4c;
+
+  --color-text: #f1f2f4;
+  --color-text-secondary: #a7adba;
+  --color-muted: #6b7280;
+
+  --color-accent-hover: color-mix(in srgb, var(--brand-primary, #111827) 85%, white);
+  --color-accent-active: color-mix(in srgb, var(--brand-primary, #111827) 70%, white);
+  --color-accent-subtle: color-mix(in srgb, var(--brand-primary, #111827) 22%, black);
+
+  --color-error-bg: color-mix(in srgb, var(--color-error) 20%, black);
+  --color-success-bg: color-mix(in srgb, var(--color-success) 20%, black);
+  --color-warning-bg: color-mix(in srgb, var(--color-warning) 20%, black);
+  --color-info-bg: color-mix(in srgb, var(--color-info) 20%, black);
+
+  /* Elevation — dark surfaces need darker, higher-contrast shadows than
+     the soft light-mode ramp (see the :root elevation comment above). */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 10px -2px rgba(0, 0, 0, 0.6), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 32px -8px rgba(0, 0, 0, 0.7), 0 4px 8px -4px rgba(0, 0, 0, 0.5);
+}
+
 /* ============================================================= */
 /* Reset                                                         */
 /* ============================================================= */

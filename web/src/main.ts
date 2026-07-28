@@ -23,6 +23,7 @@ import "./stores/organization.svelte";
 import "./stores/sessionTimeout.svelte";
 import "./stores/billing.svelte";
 import "./stores/toast.svelte";
+import "./stores/theme.svelte";
 
 import { initDevPanel } from "./lib/devpanel/init";
 
