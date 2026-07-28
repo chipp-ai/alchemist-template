@@ -14,6 +14,13 @@ import { AppError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
 import { requestTimingMiddleware } from "@/api/middleware/request-timing.ts";
 import { recentActivityMiddleware } from "@/api/middleware/recent-activity.ts";
+import { demoNoindexHeaderMiddleware, demoRobotsTxtRoute } from "@/api/middleware/demo-noindex.ts";
+import {
+  DEMO_BANNER_DISMISS_PATH,
+  demoBannerDismissRoute,
+  demoBannerMiddleware,
+} from "@/api/middleware/demo-banner.ts";
+import { demoLandingRoute } from "@/api/routes/demo-landing.ts";
 
 // Route imports
 import { healthRoutes } from "@/api/routes/health/index.ts";
@@ -75,6 +82,36 @@ app.use("*", compress());
 
 // Timing (Server-Timing header)
 app.use("*", timing());
+
+// DEMO_MODE noindex guard -- X-Robots-Tag on every response, no-op when
+// DEMO_MODE is unset. See src/api/middleware/demo-noindex.ts.
+app.use("*", demoNoindexHeaderMiddleware);
+
+// DEMO_MODE robots.txt -- disallow-all when DEMO_MODE=1, otherwise falls
+// through untouched to whatever would have served this path before.
+app.get("/robots.txt", demoRobotsTxtRoute);
+
+// DEMO_MODE banner -- injects a server-rendered, session-dismissable
+// banner into every HTML response. Complete no-op when DEMO_MODE is
+// off. Registered after compress()/secureHeaders()/timing() (all
+// earlier in this file, so they wrap OUTSIDE this middleware) so the
+// body it rewrites is still uncompressed at this point, and any later
+// compression sees the final, banner-injected body. See
+// src/api/middleware/demo-banner.ts.
+app.use("*", demoBannerMiddleware);
+
+// DEMO_MODE banner dismissal -- sets the session cookie and redirects
+// back. Falls through untouched when DEMO_MODE is off.
+app.get(DEMO_BANNER_DISMISS_PATH, demoBannerDismissRoute);
+
+// DEMO_MODE public landing page -- the base template's SPA is
+// auth-gated, so a visitor hitting the bare `/` with no account would
+// otherwise see nothing but a login form. Replaces the EXACT `/` path
+// with a read-only page describing the template when DEMO_MODE=1;
+// falls through to the normal SPA static fallback otherwise. The SPA
+// itself stays reachable at `/index.html` either way. See
+// src/api/routes/demo-landing.ts.
+app.get("/", demoLandingRoute);
 
 // Request-timing middleware — emits one NDJSON log line per request
 // via the platform logger so Loki/Grafana can alert on error rate +

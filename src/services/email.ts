@@ -8,6 +8,7 @@
 import nodemailer from "nodemailer";
 import { log } from "@/lib/logger.ts";
 import { BRAND } from "@/config/brand.ts";
+import { isDemoMode } from "@/config/demo-mode.ts";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,24 @@ interface SendEmailOptions {
 }
 
 export async function sendEmail(opts: SendEmailOptions): Promise<void> {
+  // DEMO_MODE guard: every message this app can send (OTP codes, invite
+  // links, ...) is ultimately routed through this function, and every one
+  // of those recipients is either visitor-entered or a seeded demo
+  // address we don't want spammed on a nightly re-seed loop. Per the
+  // shared DEMO_MODE contract, no real outbound email is ever sent while
+  // a deployment is a public demo -- suppress unconditionally rather than
+  // trying to distinguish "visitor" from "seeded" addresses, which would
+  // require a heuristic on user-entered data.
+  if (isDemoMode()) {
+    log.info("Demo mode: suppressing outbound email", {
+      source: "email",
+      to: opts.to,
+      subject: opts.subject,
+    });
+    console.log(`[demo-mode] Email suppressed (would have sent to ${opts.to}): ${opts.subject}`);
+    return;
+  }
+
   if (!transport) {
     // Dev fallback: log the email to console
     console.log(`[email] To: ${opts.to}`);
