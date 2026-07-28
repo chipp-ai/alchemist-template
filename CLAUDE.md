@@ -287,6 +287,14 @@ src/__tests__/
 
 ## Frontend Conventions
 
+### Hover/interactive transitions animate ONLY compositor properties (transform, opacity)
+
+`box-shadow`, `background`/`background-color`, and `border-color` must NEVER appear in a `transition:` list on cards, list rows, table rows, or any element repeated in a scrollable list. Scrolling sweeps rows under a stationary cursor, and every hover enter/leave that INTERPOLATES a blurred shadow or a background fill repaints that element's area on every frame of the transition — with dozens of rows on screen this is visible scroll jank even though the main thread is completely idle (root-caused on a generated project's dashboards, 2026-07-28: zero long tasks while scrolling; the cost was pure paint). The fix is free visually: keep the `:hover` rules exactly as they are (the shadow/background/border SWAP still happens — instantly, one repaint per flip) and keep `transform`/`opacity` in the transition so the lift or fade the eye tracks still animates.
+
+**Rule:** `transition:` lists on interactive elements contain ONLY `transform` and/or `opacity` (plus `color` on tiny inline controls where the painted area is a few pixels). Hover elevation = static base `box-shadow` + instant swap, or an `opacity`-faded pre-rendered shadow on a pseudo-element (only on elements without `overflow: hidden`, which clips outer shadows). Tiny one-off controls (a single chip, a tab, a segmented button) are tolerated with paint transitions — never rows or cards.
+
+Two related paint rules: (1) never put `background-attachment: fixed` on a scrolling document — a viewport-fixed background repaints in full on every scrolled frame (acceptable only when an inner container scrolls and the document itself never moves); (2) infinite CSS animations (shimmer, pulse) may only exist on elements that unmount when idle (skeletons) — never on permanently-mounted chrome.
+
 ### Svelte 5 — runes only, NOT Svelte 4
 
 `web/package.json` pins `"svelte": "^5.0.0"`, which compiles in runes mode and **rejects Svelte 4 syntax outright**. Most LLM training data is Svelte 4 — consciously override your defaults when writing or editing `*.svelte` files.

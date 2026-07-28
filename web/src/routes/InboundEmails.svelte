@@ -243,7 +243,9 @@
 
   .email-row {
     cursor: pointer;
-    transition: background-color 0.15s;
+    /* Instant hover swap -- paint properties (background/box-shadow/border)
+       never belong in a transition list on list rows; see the
+       "Hover/interactive transitions" rule in CLAUDE.md. */
   }
 
   .email-row:hover td {
