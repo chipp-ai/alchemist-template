@@ -1,0 +1,251 @@
+/* ============================================================= */
+/* Motion language (S1) — see docs/design-system-motion.md        */
+/* ============================================================= */
+
+/*
+ * Every rule in this file is gated behind prefers-reduced-motion, either
+ * by construction (fail-safe defaults that only animate once JS opts a
+ * page in — reveal-on-scroll) or via an explicit override block at the
+ * bottom of each section. Nothing here should ever be the ONLY path to
+ * usable content: reveal defaults to visible, skeletons are a loading
+ * affordance (never the only way to see data), toasts are readable even
+ * with instant enter/exit.
+ *
+ * web/src/main.ts imports this file after app.css so these rules layer
+ * on top of (never replace) the token/component kit.
+ */
+
+:root {
+  /*
+   * Motion tokens — durations tuned for "snappy, not sluggish" (nothing
+   * over 400ms outside the reveal cascade, which is a per-element stagger
+   * rather than one long animation). The spring easing is a standard
+   * overshoot cubic-bezier approximation — real spring physics needs the
+   * Web Animations API, which is overkill for a CSS-transition toast.
+   */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-slow: 400ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ============================================================= */
+/* Reveal-on-scroll (web/src/lib/reveal.ts)                       */
+/* ============================================================= */
+
+/*
+ * Fail-safe by construction: `.reveal` elements are visible by default.
+ * They are ONLY hidden-then-faded-in once `html.reveal-ready` is present,
+ * and that class is added exclusively from reveal.ts's initRevealOnScroll()
+ * — which itself refuses to run under prefers-reduced-motion or when
+ * IntersectionObserver is unsupported. So: JS never loads, JS throws
+ * before wiring the observer, an old browser, a test/SSR render, reduced
+ * motion — every one of those leaves `.reveal` content fully visible.
+ */
+.reveal {
+  opacity: 1;
+  transform: none;
+}
+
+html.reveal-ready .reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity var(--motion-slow) var(--ease-out), transform var(--motion-slow) var(--ease-out);
+  /* Staggered by JS via --reveal-index (0-5, bucketed) — 80ms per step. */
+  transition-delay: calc(var(--reveal-index, 0) * 80ms);
+}
+
+html.reveal-ready .reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* ============================================================= */
+/* Button hover/press micro-states                                */
+/* ============================================================= */
+
+/*
+ * app.css's .btn already carries the base hover/press treatment
+ * (background/border swap on hover, translateY(1px) on press). This is
+ * the reduced-motion safety net for that + any other element opting into
+ * a press micro-interaction via `.motion-press` — a compositor-only
+ * (transform-only) affordance for elements that aren't full `.btn`s
+ * (e.g. an icon button, a card acting as a button).
+ */
+.motion-press {
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+
+.motion-press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* ============================================================= */
+/* Skeleton loaders — content never gets a bare spinner            */
+/* ============================================================= */
+
+/*
+ * Per CLAUDE.md's paint-jank rule, an infinite CSS animation (the shimmer
+ * sweep here) is only allowed on elements that UNMOUNT when idle —
+ * skeletons are exactly that: they exist only while data is loading and
+ * are removed from the DOM the moment real content is ready.
+ */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  /* Placeholder inline size — callers override width/height per usage. */
+  min-height: 1em;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-border-strong) 60%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton-text {
+  height: 0.9em;
+  margin-bottom: var(--space-xs);
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-text:last-child {
+  width: 70%;
+}
+
+.skeleton-circle {
+  border-radius: var(--radius-full);
+  width: 40px;
+  height: 40px;
+}
+
+.skeleton-card {
+  height: 120px;
+  border-radius: var(--radius-lg);
+}
+
+/* ============================================================= */
+/* Toast enter/exit springs                                       */
+/* ============================================================= */
+
+/*
+ * web/src/components/ToastContainer.svelte drives its own enter/exit via
+ * Svelte's `fly` transition (already reduced-motion-gated inline — see
+ * that component). These keyframes are the reusable CSS-only primitive
+ * for anything that wants the same feel WITHOUT a Svelte transition
+ * directive (e.g. a vanilla-DOM notification, or a future non-Svelte
+ * surface) — a spring-flavored overshoot on the way in, a quick fade on
+ * the way out.
+ */
+@keyframes toast-spring-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toast-spring-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+.toast-spring-in {
+  animation: toast-spring-in var(--motion-base) var(--ease-spring);
+}
+
+.toast-spring-out {
+  animation: toast-spring-out var(--motion-fast) var(--ease-out);
+}
+
+/* ============================================================= */
+/* View Transitions API — SPA route changes (web/src/lib/          */
+/* view-transitions.ts), where supported                          */
+/* ============================================================= */
+
+/*
+ * Browsers without View Transitions support simply never populate these
+ * pseudo-elements, so this block is a pure enhancement with no fallback
+ * needed. view-transitions.ts additionally refuses to call
+ * startViewTransition() at all under prefers-reduced-motion — belt and
+ * suspenders with the media query override below.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--motion-base);
+  animation-timing-function: var(--ease-out);
+}
+
+/* ============================================================= */
+/* prefers-reduced-motion — the global override                   */
+/* ============================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * Reveal: even if reveal-ready somehow got added (defensive — the JS
+   * gate should have already prevented this), force full visibility with
+   * no transition.
+   */
+  html.reveal-ready .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .motion-press {
+    transition: none;
+  }
+
+  .motion-press:active:not(:disabled) {
+    transform: none;
+  }
+
+  .skeleton::after {
+    animation: none;
+  }
+
+  .toast-spring-in,
+  .toast-spring-out {
+    animation: none !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -69,6 +69,31 @@
         (typeof __ALCHEMIST_PROJECT_ID__ !== "undefined" ? __ALCHEMIST_PROJECT_ID__ : null);
     </script>
     <script src="/brand-loader.js" defer></script>
+    <!--
+      Dark mode: apply a persisted "dark" choice to <html data-theme>
+      SYNCHRONOUSLY, before first paint, so a reload never flashes
+      light then swaps to dark. This is the ONLY place besides
+      web/src/stores/theme.svelte.ts that touches the
+      "alchemist-theme" localStorage key — keep the two in sync.
+
+      Deliberately does NOT read `prefers-color-scheme`: dark mode in
+      this template is a user-chosen theme, not an OS-inferred one.
+      Absent/invalid/missing localStorage all fail safe to light (no
+      data-theme attribute at all == the :root light defaults in
+      app.css). See web/src/lib/theme.ts + docs/design-system-dark-mode.md.
+    -->
+    <script>
+      (function () {
+        try {
+          if (localStorage.getItem("alchemist-theme") === "dark") {
+            document.documentElement.setAttribute("data-theme", "dark");
+          }
+        } catch (e) {
+          // localStorage unavailable (privacy mode / disabled) — stays
+          // light, the safe default.
+        }
+      })();
+    </script>
     <style>
       /*
        * Template-level fallbacks. Render when brand-loader.js fails

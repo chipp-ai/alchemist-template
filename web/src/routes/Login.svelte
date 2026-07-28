@@ -133,7 +133,7 @@
 </script>
 
 <div class="auth-page" data-testid="login-page">
-  <div class="auth-card card">
+  <div class="auth-card card reveal">
     <h1 class="auth-title">Welcome back</h1>
     <p class="auth-subtitle">Sign in to your account</p>
 
@@ -329,7 +329,7 @@
   .otp-input {
     text-align: center;
     font-size: var(--text-2xl);
-    font-family: monospace;
+    font-family: var(--font-mono);
     letter-spacing: 0.5em;
     padding: var(--space-md);
   }
@@ -360,7 +360,7 @@
     line-height: 1.4;
   }
   .dev-login-help code {
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-size: 0.95em;
     background: var(--color-surface);
     padding: 0 0.25em;
@@ -377,7 +377,7 @@
   .link-btn {
     background: none;
     border: none;
-    color: var(--color-primary);
+    color: var(--color-accent);
     cursor: pointer;
     font-size: var(--text-sm);
     padding: 0;
@@ -386,16 +386,6 @@
 
   .link-btn:hover {
     opacity: 0.8;
-  }
-
-  .alert-success {
-    color: var(--color-success, #16a34a);
-    background: var(--color-success-bg, #f0fdf4);
-    border: 1px solid var(--color-success-border, #bbf7d0);
-    padding: var(--space-sm) var(--space-md);
-    border-radius: var(--radius-md, 6px);
-    font-size: var(--text-sm);
-    margin-bottom: var(--space-md);
   }
 
   .auth-divider {

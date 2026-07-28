@@ -9,7 +9,16 @@
    * fetch fails). All UI colors that should track the brand reference
    * these — never hardcode in component styles.
    *
-   * See alchemist-ai/docs/brand-config.md for the full contract.
+   * v3 (nullable) fields — --brand-font-heading, --brand-font-body,
+   * --brand-radius-scale, --brand-gradient-from/-to, and
+   * --brand-primary-contrast — are only SET by brand-loader.js when
+   * brand.json actually carries them. Every consumer below reaches
+   * for them through `var(--brand-x, <fallback>)` so an unset var
+   * (today's production state for every existing project) renders
+   * the identical fallback design, never a broken/blank value.
+   *
+   * See alchemist-ai/docs/brand-config.md for the full contract and
+   * web/DESIGN.md for the rules on using these tokens.
    */
   --brand-primary: #5e6ad2;
   --brand-accent: #f59e0b;
@@ -19,6 +28,7 @@
   --color-bg: var(--brand-neutral, #ffffff);
   --color-surface: #f9fafb;
   --color-surface-raised: #ffffff;
+  --color-surface-sunken: color-mix(in srgb, var(--color-bg) 92%, black);
 
   /* Borders */
   --color-border: #e5e7eb;
@@ -30,70 +40,250 @@
   --color-muted: #9ca3af;
 
   /*
-   * Accent — primary drives buttons, links, focus rings. The
-   * `*-hover` variant darkens slightly via color-mix; falls back to
-   * a sensible static when color-mix is unsupported.
+   * Accent — everything below is DERIVED from --brand-primary via
+   * color-mix(). Nothing here is a hand-picked hex; a project's brand
+   * color propagates through the whole ramp automatically. Never add
+   * a new accent shade by picking a hex — add another color-mix step.
+   *
+   *   hover   — 88% primary mixed toward black (subtle darken)
+   *   active  — 76% primary mixed toward black (pressed state)
+   *   subtle  — 12% primary mixed toward white (tinted bg, e.g. selected row)
+   *   soft    — 8%  primary mixed into the page surface (very light wash)
+   *   contrast/text — the readable ink color ON TOP of solid accent
+   *                   surfaces. CSS can't branch on luminance (no
+   *                   shipped `contrast-color()` support yet), so
+   *                   `--brand-primary-contrast` is computed in JS by
+   *                   brand-loader.js (see contrastTextFor() there,
+   *                   mirrored + unit-tested in
+   *                   web/src/lib/color-math.ts) and falls back to
+   *                   white here, which is AA-safe against the
+   *                   default --brand-primary.
    */
   --color-accent: var(--brand-primary, #111827);
-  --color-accent-hover: color-mix(
-    in srgb,
-    var(--brand-primary, #111827) 85%,
-    black
-  );
-  --color-accent-text: #ffffff;
+  --color-accent-hover: color-mix(in srgb, var(--brand-primary, #111827) 88%, black);
+  --color-accent-active: color-mix(in srgb, var(--brand-primary, #111827) 76%, black);
+  --color-accent-subtle: color-mix(in srgb, var(--brand-primary, #111827) 12%, white);
+  --color-accent-soft: color-mix(in srgb, var(--brand-primary, #111827) 8%, var(--color-surface));
+  --color-accent-contrast: var(--brand-primary-contrast, #ffffff);
+  --color-accent-text: var(--color-accent-contrast); /* legacy alias — keep for existing component styles */
 
-  /* Status */
+  /* Focus ring — always derived off the live accent, never a fixed hex. */
+  --color-focus-ring: color-mix(in srgb, var(--brand-primary, #111827) 55%, transparent);
+
+  /*
+   * Status colors — same derivation discipline as accent. The base
+   * hue is the one deliberately "hand-picked" value per status (red
+   * for error, green for success is a UX convention, not a brand
+   * token) but every shade off it is color-mix-derived, so no other
+   * rule in the file (or in component styles) hardcodes a status hex.
+   */
   --color-error: #dc2626;
-  --color-error-bg: #fef2f2;
-  --color-success: #16a34a;
-  --color-success-bg: #f0fdf4;
+  --color-error-hover: color-mix(in srgb, var(--color-error) 85%, black);
+  --color-error-bg: color-mix(in srgb, var(--color-error) 8%, white);
+  --color-error-border: color-mix(in srgb, var(--color-error) 20%, transparent);
+  --color-error-contrast: #ffffff;
 
-  /* Spacing scale */
+  --color-success: #16a34a;
+  --color-success-hover: color-mix(in srgb, var(--color-success) 85%, black);
+  --color-success-bg: color-mix(in srgb, var(--color-success) 8%, white);
+  --color-success-border: color-mix(in srgb, var(--color-success) 20%, transparent);
+  --color-success-contrast: #ffffff;
+
+  /*
+   * Warning + info — same derivation discipline as error/success above.
+   * These back the .badge-warn/.badge-info and .alert-warning/.alert-info
+   * tones used by ops-style screens (e.g. Inbound Email status pills).
+   * Components must reference these tokens, never a hand-picked amber/
+   * blue hex — that was the original bug this pair fixes.
+   */
+  --color-warning: #d97706;
+  --color-warning-hover: color-mix(in srgb, var(--color-warning) 85%, black);
+  --color-warning-bg: color-mix(in srgb, var(--color-warning) 8%, white);
+  --color-warning-border: color-mix(in srgb, var(--color-warning) 20%, transparent);
+  --color-warning-contrast: #ffffff;
+
+  --color-info: #2563eb;
+  --color-info-hover: color-mix(in srgb, var(--color-info) 85%, black);
+  --color-info-bg: color-mix(in srgb, var(--color-info) 8%, white);
+  --color-info-border: color-mix(in srgb, var(--color-info) 20%, transparent);
+  --color-info-contrast: #ffffff;
+
+  /*
+   * Brand gradient — v3 (nullable). `gradient.from`/`gradient.to` on
+   * brand.json are hex pairs the platform derives from the palette
+   * for hero/mesh accents. Consumption sites (e.g. `.brand-gradient`
+   * below) always supply a --brand-primary/--brand-accent fallback so
+   * a project without the field still renders a sensible gradient.
+   */
+  --brand-gradient-from: var(--brand-primary);
+  --brand-gradient-to: var(--brand-accent);
+
+  /*
+   * Spacing scale — 4px base unit, doubling-ish progression. Use
+   * these for every margin/padding/gap; a raw px value in a component
+   * is a code-review flag.
+   */
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 16px;
   --space-lg: 24px;
   --space-xl: 32px;
   --space-2xl: 48px;
+  --space-3xl: 64px;
 
   /*
    * Typography — three semantic font tokens, ALL fonts go through them.
    *
-   * `--font-heading` is split out from `--font-sans` so a future
-   * "headings should feel different from body" change is one token
-   * swap, not a find-and-replace across every component. Defaults to
-   * the same family as body (Inter) — perfectly fine as a starting
-   * point; the moment you want editorial flair (serif headings, slab
-   * for "rustic", etc.) update ONLY this token + the Google Fonts
-   * <link> in web/index.html. Component styles should NEVER hardcode
-   * a family — always reference one of these tokens.
+   * `--brand-font-heading` / `--brand-font-body` are v3 (nullable):
+   * brand-loader.js sets them (quoted, ready to drop into a
+   * font-family list) only when brand.json carries fontHeading /
+   * fontBody. `var(--brand-font-heading, "Inter")` falls back to the
+   * template default the instant the custom property is unset — which
+   * is every project today (v3 hasn't shipped on the generator yet).
    *
-   * The web-safe stacks after Inter / JetBrains Mono are the
-   * fallback path while Google Fonts loads (display=swap), and the
-   * permanent path for users behind a webfont-blocking firewall.
+   * The system-stack fallbacks after the brand/Inter names are the
+   * path while the Google Fonts request is in flight (display=swap)
+   * and the permanent path for users behind a webfont-blocking
+   * firewall. `font-size-adjust: from-font` on <html> (see Reset,
+   * below) asks the browser to match the fallback's x-height to
+   * whichever font actually renders, which is the metrics-agnostic
+   * way to damp reflow for an arbitrary brand font we can't know the
+   * metrics of ahead of time (see web/DESIGN.md for the alternative
+   * we rejected: a hand-authored size-adjust table per allow-listed
+   * font, which only S2a's fixed allowlist could support and this
+   * template must work without).
+   *
+   * Component styles should NEVER hardcode a font-family — always
+   * reference one of these three tokens.
    */
-  --font-heading: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  --font-heading: var(--brand-font-heading, "Inter"), ui-sans-serif, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: var(--brand-font-body, "Inter"), ui-sans-serif, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Consolas,
+    "Liberation Mono", Menlo, monospace;
 
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 1rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.25rem;
-  --text-2xl: 1.5rem;
-  --text-3xl: 1.875rem;
-  --text-4xl: 2.25rem;
+  /*
+   * Type scale — modular, ratio 1.25 (major third) off a 16px (1rem)
+   * root. --text-base is step 0; each step up/down multiplies/divides
+   * by 1.25. Values below are `16 * 1.25^n` converted to rem and
+   * rounded to 4 decimal places — see
+   * src/__tests__/design-tokens.test.ts for the check that keeps this
+   * honest.
+   */
+  --text-xs: 0.64rem; /* step -2 · 10.24px */
+  --text-sm: 0.8rem; /* step -1 · 12.8px */
+  --text-base: 1rem; /* step  0 · 16px   */
+  --text-lg: 1.25rem; /* step  1 · 20px   */
+  --text-xl: 1.5625rem; /* step  2 · 25px   */
+  --text-2xl: 1.9531rem; /* step  3 · 31.25px */
+  --text-3xl: 2.4414rem; /* step  4 · 39.06px */
+  --text-4xl: 3.0518rem; /* step  5 · 48.83px */
+  --text-5xl: 3.8147rem; /* step  6 · 61.04px */
 
-  /* Radius */
+  /*
+   * Radius — driven by --brand-radius-scale (v3, nullable: "sharp" |
+   * "soft" | "round"). The concrete px sets live in the
+   * [data-radius-scale] overrides below (brand-loader.js mirrors the
+   * value onto <html data-radius-scale> because CSS can't switch a
+   * numeric value off an arbitrary custom-property STRING without a
+   * selector to key on). This block is the "soft" default — the
+   * personality every project renders on before v3 data exists.
+   */
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
   --radius-full: 9999px;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  /*
+   * Elevation — exactly 3 levels, tuned for LIGHT surfaces (soft,
+   * low-contrast, multi-layer shadows read as "premium"; a single
+   * hard shadow reads cheap). Dark mode overrides these tokens
+   * entirely under [data-theme="dark"] rather than reusing them.
+   */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 10px -2px rgba(15, 23, 42, 0.1), 0 2px 4px -2px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 16px 32px -8px rgba(15, 23, 42, 0.16), 0 4px 8px -4px rgba(15, 23, 42, 0.08);
+}
+
+/*
+ * Radius personality overrides — brand-loader.js sets
+ * data-radius-scale on <html> alongside the --brand-radius-scale
+ * custom property (kept for any code that wants the raw label).
+ * "soft" needs no override block; it's the :root default above.
+ */
+:root[data-radius-scale="sharp"] {
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+}
+
+:root[data-radius-scale="round"] {
+  --radius-sm: 12px;
+  --radius-md: 20px;
+  --radius-lg: 28px;
+}
+
+/*
+ * Dark theme — activated by <html data-theme="dark">, set by
+ * web/src/stores/theme.svelte.ts (persisted to localStorage) and, for
+ * the very first paint, by the inline anti-FOUC script in
+ * web/index.html. This is a USER-CHOSEN theme, never an OS-inferred
+ * one: nothing in this template reads `prefers-color-scheme` to decide
+ * the app theme (light is always the default until the user explicitly
+ * flips the toggle) — see docs/design-system-dark-mode.md for the
+ * rationale (and web/DESIGN.md, once the S1 guardrails doc lands, for
+ * the token-usage rules this block follows).
+ *
+ * Brand-neutral guard: --brand-neutral is a LIGHT-surface color by
+ * contract (brand-loader.js clamps it via isLightSurface() before ever
+ * setting it), so it must never leak into a dark canvas. --color-bg
+ * below is a fixed dark value that does NOT reference --brand-neutral
+ * at all (contrast the :root default above, which is
+ * `var(--brand-neutral, #ffffff)`) — that is what keeps "brand neutral
+ * only ever themes light surfaces" true even after this override
+ * applies.
+ *
+ * Everything derived from --color-bg / --color-surface via color-mix()
+ * in the :root block above (e.g. --color-surface-sunken,
+ * --color-accent-soft) recomputes automatically once those two vars
+ * are overridden here — custom properties resolve against the active
+ * cascade at used-value time, not at definition time. Only tokens that
+ * literally hand-picked "white" or "black" as a color-mix endpoint (the
+ * accent hover/active ramp, the status-tint backgrounds) need an
+ * explicit override, because the direction that reads as "premium" on
+ * a light surface (darken on hover) is precisely the direction that
+ * reads as "washed out" on a dark one (which wants to LIGHTEN on
+ * hover instead) — same for the status backgrounds, which mix toward
+ * black instead of white so a tinted alert still looks dark, not like
+ * a hole punched through to a light page.
+ */
+:root[data-theme="dark"] {
+  --color-bg: #0a0b0f;
+  --color-surface: #15171e;
+  --color-surface-raised: #1c1f28;
+
+  --color-border: #262a35;
+  --color-border-strong: #383e4c;
+
+  --color-text: #f1f2f4;
+  --color-text-secondary: #a7adba;
+  --color-muted: #6b7280;
+
+  --color-accent-hover: color-mix(in srgb, var(--brand-primary, #111827) 85%, white);
+  --color-accent-active: color-mix(in srgb, var(--brand-primary, #111827) 70%, white);
+  --color-accent-subtle: color-mix(in srgb, var(--brand-primary, #111827) 22%, black);
+
+  --color-error-bg: color-mix(in srgb, var(--color-error) 20%, black);
+  --color-success-bg: color-mix(in srgb, var(--color-success) 20%, black);
+  --color-warning-bg: color-mix(in srgb, var(--color-warning) 20%, black);
+  --color-info-bg: color-mix(in srgb, var(--color-info) 20%, black);
+
+  /* Elevation — dark surfaces need darker, higher-contrast shadows than
+     the soft light-mode ramp (see the :root elevation comment above). */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 10px -2px rgba(0, 0, 0, 0.6), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 32px -8px rgba(0, 0, 0, 0.7), 0 4px 8px -4px rgba(0, 0, 0, 0.5);
 }
 
 /* ============================================================= */
@@ -116,6 +306,13 @@ html {
   background: var(--color-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /*
+   * Ask the browser to size-match the active font's fallback (metrics-
+   * agnostic FOUT damping for an arbitrary brand font — see the
+   * --font-sans comment above). No-op in browsers that don't support
+   * it yet; never a regression.
+   */
+  font-size-adjust: from-font;
 }
 
 body {
@@ -163,6 +360,24 @@ code, kbd, samp, pre {
   font-family: var(--font-mono);
 }
 
+/*
+ * Focus-visible — every interactive element gets the SAME derived
+ * ring (never a hand-picked outline color), keyboard-only (mouse
+ * clicks don't trigger :focus-visible in modern browsers, so this
+ * never adds visual noise to a pointer interaction).
+ */
+a:focus-visible,
+button:focus-visible,
+.btn:focus-visible,
+.input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-focus-ring);
+  border-radius: var(--radius-sm);
+}
+
 /* ============================================================= */
 /* Utility classes                                                */
 /* ============================================================= */
@@ -179,8 +394,12 @@ code, kbd, samp, pre {
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, transform 0.1s, box-shadow 0.15s;
   font-family: var(--font-sans);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .btn:disabled {
@@ -188,10 +407,54 @@ code, kbd, samp, pre {
   cursor: not-allowed;
 }
 
+/*
+ * Loading state — `<button class="btn btn-primary" data-loading>`.
+ * The label stays in the DOM (accessible name is preserved) but is
+ * visually hidden behind a centered spinner ring. The ring's color
+ * comes from `--btn-loading-fg`, set per-variant below (it has to be
+ * a custom property rather than `currentColor` because the button's
+ * own `color` is forced transparent to hide the label). The spin
+ * keyframe is disabled under prefers-reduced-motion — the ring still
+ * renders as a static "busy" indicator, it just doesn't rotate.
+ */
+.btn[data-loading] {
+  position: relative;
+  color: transparent !important;
+  pointer-events: none;
+}
+
+.btn[data-loading]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1em;
+  height: 1em;
+  margin: -0.5em 0 0 -0.5em;
+  border-radius: var(--radius-full);
+  border: 2px solid color-mix(in srgb, var(--btn-loading-fg, currentColor) 30%, transparent);
+  border-top-color: var(--btn-loading-fg, currentColor);
+  animation: btn-spin 0.6s linear infinite;
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn[data-loading]::after {
+    animation: none;
+  }
+}
+
 .btn-primary {
   background: var(--color-accent);
   color: var(--color-accent-text);
   border-color: var(--color-accent);
+  box-shadow: var(--shadow-sm);
+  --btn-loading-fg: var(--color-accent-text);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -199,10 +462,16 @@ code, kbd, samp, pre {
   border-color: var(--color-accent-hover);
 }
 
+.btn-primary:active:not(:disabled) {
+  background: var(--color-accent-active);
+  border-color: var(--color-accent-active);
+}
+
 .btn-secondary {
   background: var(--color-bg);
   color: var(--color-text);
   border-color: var(--color-border);
+  --btn-loading-fg: var(--color-text);
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -214,6 +483,7 @@ code, kbd, samp, pre {
   background: transparent;
   color: var(--color-text-secondary);
   border-color: transparent;
+  --btn-loading-fg: var(--color-text-secondary);
 }
 
 .btn-ghost:hover:not(:disabled) {
@@ -223,13 +493,14 @@ code, kbd, samp, pre {
 
 .btn-danger {
   background: var(--color-error);
-  color: #ffffff;
+  color: var(--color-error-contrast);
   border-color: var(--color-error);
+  --btn-loading-fg: var(--color-error-contrast);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #b91c1c;
-  border-color: #b91c1c;
+  background: var(--color-error-hover);
+  border-color: var(--color-error-hover);
 }
 
 .input {
@@ -243,13 +514,23 @@ code, kbd, samp, pre {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   font-family: var(--font-sans);
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input:hover:not(:disabled):not(:focus) {
+  border-color: var(--color-border-strong);
 }
 
 .input:focus {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+  box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
+
+.input:disabled {
+  background: var(--color-surface);
+  color: var(--color-muted);
+  cursor: not-allowed;
 }
 
 .input::placeholder {
@@ -269,6 +550,7 @@ code, kbd, samp, pre {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .badge {
@@ -281,6 +563,22 @@ code, kbd, samp, pre {
   background: var(--color-surface);
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
+}
+
+.badge-accent {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-hover);
+  border-color: transparent;
+}
+
+/*
+ * Brand gradient utility — for a hero/mesh accent surface. Sourced
+ * from --brand-gradient-from/-to (v3, nullable — the :root defaults
+ * above already fall back to --brand-primary/--brand-accent, so this
+ * renders on every project, v3 data or not).
+ */
+.brand-gradient {
+  background-image: linear-gradient(135deg, var(--brand-gradient-from), var(--brand-gradient-to));
 }
 
 /* ============================================================= */
@@ -320,6 +618,52 @@ code, kbd, samp, pre {
   margin-bottom: var(--space-md);
 }
 
+/*
+ * Illustrated-feel empty-state icon slot — a soft radial tint behind
+ * whatever icon markup the caller drops in `.empty-state-icon`
+ * (an inline SVG using currentColor is the expected usage). No image
+ * asset required.
+ */
+.empty-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-full);
+  background: radial-gradient(circle at 50% 40%, var(--color-accent-subtle), var(--color-surface) 70%);
+  color: var(--color-accent);
+  margin-bottom: var(--space-md);
+}
+
+/* ============================================================= */
+/* Tables                                                        */
+/* ============================================================= */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+
+.table td {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.table tbody tr:hover {
+  background: var(--color-surface);
+}
+
 /* ============================================================= */
 /* Error / alert                                                 */
 /* ============================================================= */
@@ -333,11 +677,23 @@ code, kbd, samp, pre {
 .alert-error {
   background: var(--color-error-bg);
   color: var(--color-error);
-  border: 1px solid rgba(220, 38, 38, 0.15);
+  border: 1px solid var(--color-error-border);
 }
 
 .alert-success {
   background: var(--color-success-bg);
   color: var(--color-success);
-  border: 1px solid rgba(22, 163, 74, 0.15);
+  border: 1px solid var(--color-success-border);
+}
+
+.alert-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning-border);
+}
+
+.alert-info {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  border: 1px solid var(--color-info-border);
 }

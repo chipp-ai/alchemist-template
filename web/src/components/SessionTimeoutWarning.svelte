@@ -56,26 +56,27 @@
     z-index: 9999;
   }
   .modal {
-    background: var(--color-card, #fff);
-    border-radius: 8px;
-    padding: var(--space-lg, 24px);
+    background: var(--color-surface-raised);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
     max-width: 420px;
     width: 90%;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-lg);
   }
   .modal h2 {
-    margin: 0 0 var(--space-sm, 12px) 0;
-    font-size: var(--text-lg, 18px);
+    margin: 0 0 var(--space-sm) 0;
+    font-size: var(--text-lg);
     font-weight: 600;
+    color: var(--color-text);
   }
   .modal p {
-    margin: 0 0 var(--space-md, 16px) 0;
-    color: var(--color-muted, #666);
+    margin: 0 0 var(--space-md) 0;
+    color: var(--color-text-secondary);
     line-height: 1.5;
   }
   .actions {
     display: flex;
-    gap: var(--space-sm, 8px);
+    gap: var(--space-sm);
     justify-content: flex-end;
   }
 </style>
