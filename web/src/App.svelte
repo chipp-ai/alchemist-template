@@ -8,8 +8,8 @@
   import SessionTimeoutWarning from "./components/SessionTimeoutWarning.svelte";
   import DevPanel from "./components/DevPanel.svelte";
   import ToastContainer from "./components/ToastContainer.svelte";
-  import { initRevealOnScroll } from "./lib/reveal";
-  import { navigateWithTransition } from "./lib/view-transitions";
+  import { initRevealOnScroll } from "./lib/reveal-dom";
+  import { navigateWithTransition } from "./lib/view-transitions-dom";
 
   // One-shot session check on mount.
   //

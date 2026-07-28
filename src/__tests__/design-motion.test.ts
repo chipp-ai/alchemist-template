@@ -157,12 +157,12 @@ deno("main.ts: imports motion.css after app.css", async () => {
 
 deno("App.svelte: wires initRevealOnScroll on mount and on every route change", async () => {
   const src = await read("web/src/App.svelte");
-  assertStringIncludes(src, 'import { initRevealOnScroll } from "./lib/reveal"');
+  assertStringIncludes(src, 'import { initRevealOnScroll } from "./lib/reveal-dom"');
   assertStringIncludes(src, "initRevealOnScroll()");
 });
 
 deno("App.svelte: routes the login redirect through navigateWithTransition", async () => {
   const src = await read("web/src/App.svelte");
-  assertStringIncludes(src, 'import { navigateWithTransition } from "./lib/view-transitions"');
+  assertStringIncludes(src, 'import { navigateWithTransition } from "./lib/view-transitions-dom"');
   assertStringIncludes(src, 'navigateWithTransition(replace, "/login")');
 });
