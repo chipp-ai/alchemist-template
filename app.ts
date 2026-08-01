@@ -14,6 +14,7 @@ import { AppError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
 import { requestTimingMiddleware } from "@/api/middleware/request-timing.ts";
 import { recentActivityMiddleware } from "@/api/middleware/recent-activity.ts";
+import { chippInsightsMiddleware } from "@/api/middleware/chipp-insights.ts";
 import { demoNoindexHeaderMiddleware, demoRobotsTxtRoute } from "@/api/middleware/demo-noindex.ts";
 import {
   DEMO_BANNER_DISMISS_PATH,
@@ -82,6 +83,17 @@ app.use("*", compress());
 
 // Timing (Server-Timing header)
 app.use("*", timing());
+
+// Chipp Insights -- first-party analytics beacon. Injects a <script> tag
+// referencing https://build.chipp.ai/i/beacon.js right before </head> on
+// every HTML response, ONLY when chipp-insights.json (committed to the
+// repo root by the Alchemist platform at generation time) carries a
+// minted telemetryPublicKey. Complete no-op otherwise -- most template
+// checkouts have no such file. Registered after compress()/
+// secureHeaders()/timing() (mirrors demoBannerMiddleware's ordering
+// below) so the body it rewrites is still uncompressed at this point.
+// See src/api/middleware/chipp-insights.ts.
+app.use("*", chippInsightsMiddleware);
 
 // DEMO_MODE noindex guard -- X-Robots-Tag on every response, no-op when
 // DEMO_MODE is unset. See src/api/middleware/demo-noindex.ts.

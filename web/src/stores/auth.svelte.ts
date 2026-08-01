@@ -14,6 +14,7 @@
 
 import { api, ApiError } from "../lib/api";
 import { defineStore } from "../lib/devpanel/store.svelte";
+import { identifyChippInsightsUser } from "../lib/chipp-insights";
 
 // ---------- Types ----------
 
@@ -69,6 +70,7 @@ async function checkAuth(): Promise<void> {
     state.user = data.user;
     state.hipaaEnabled = data.hipaaEnabled ?? false;
     state.sessionDurationMs = data.sessionDurationMs ?? 30 * 24 * 60 * 60 * 1000;
+    identifyChippInsightsUser(data.user.email);
   } catch (err) {
     // 401 is expected when not logged in.
     if (err instanceof ApiError && err.status === 401) {
@@ -111,6 +113,7 @@ async function verifyOtp(
       ...(name ? { name: name.trim() } : {}),
     });
     state.user = data.user;
+    identifyChippInsightsUser(data.user.email);
   } catch (err) {
     const message = err instanceof ApiError
       ? err.message
