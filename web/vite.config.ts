@@ -60,6 +60,24 @@ export default defineConfig({
     // resolves. Adds .localhost / .local for parity with developer
     // laptops and any future tunnel.
     allowedHosts: [".e2b.app", ".localhost", ".local"],
+    // Hot reload through Chipp's AUTHENTICATED preview proxy.
+    //
+    // The gated preview serves this dev server from
+    // `<previewId>.preview.chipp.ai` (Cloudflare Worker -> the sandbox's
+    // e2b.app host, injecting E2B's traffic token). Vite computes the HMR
+    // WebSocket URL in the BROWSER from the constants it injects at serve
+    // time, so with no override the client dials
+    // `wss://<previewId>.preview.chipp.ai:5173/`. Cloudflare only proxies
+    // HTTPS on 443/2053/2083/2087/2096/8443 -- 5173 is not one of them, so
+    // the socket never connects and the preview goes stale-on-edit. This
+    // cannot be fixed at the proxy; the port has to come from here.
+    //
+    // Env-gated because hardcoding it breaks plain `http://localhost:5173`
+    // dev, where there is no TLS and no 443. The platform sets
+    // VITE_HMR_PUBLIC=1 when it boots the dev server behind the proxy.
+    ...(process.env.VITE_HMR_PUBLIC
+      ? { hmr: { protocol: "wss" as const, clientPort: 443 } }
+      : {}),
     proxy: (() => {
       // VITE_API_PROXY lets the embedding harness override where the
       // SPA proxies /api + /auth + /health. The Alchemist Mac desktop
