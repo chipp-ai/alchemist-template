@@ -4,6 +4,27 @@
 
 **Powered by Alchemist AI** -- Autonomous development platform.
 
+## Writing style
+
+Write in Simplified Technical English (ASD-STE100), following Zinsser's four
+principles: simplicity, brevity, clarity, humanity.
+
+- Short sentences. One idea each.
+- Active voice.
+- One meaning per word. Pick a term and keep it; do not rename the same thing
+  mid-answer.
+- Cut the clutter. Lead with the answer. No preamble, no restating the task
+  before giving the result.
+- Warm and human. A person wrote it, not a manual.
+- No em dashes. No all caps for emphasis.
+
+Concision is not terseness. Keep anything that changes what the reader decides:
+a caveat, a cost, a risk, something you did NOT verify. Cut the words that do
+not. A short answer that hides a caveat is worse than a longer one that
+surfaces it.
+
+Applies to responses, commit messages, docs, and phase reports alike.
+
 ## Local Dev Ports
 
 @.claude/local-dev.md
