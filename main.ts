@@ -9,6 +9,10 @@ import { closeDatabase, initDatabase } from "@/db/client.ts";
 import { reindexDocs } from "@/services/docs/reindex.ts";
 import { startInboundEmailReaper, stopInboundEmailReaper } from "@/jobs/inbound-email-reaper.ts";
 import { startDemoReseedLoop, stopDemoReseedLoop } from "@/jobs/demo-reseed-loop.ts";
+import {
+  startExpirationDigestJob,
+  stopExpirationDigestJob,
+} from "@/jobs/expiration-digest.ts";
 import { log } from "@/lib/logger.ts";
 import { assertNoLiveStripeKeyInDemoMode } from "@/lib/stripe.ts";
 import { isDemoMode } from "@/config/demo-mode.ts";
@@ -101,6 +105,19 @@ if (runsBackgroundWork) {
   }
 }
 
+// ── Expiring-records digest (scheduled-alert scaffold) ──
+// Fire-and-forget periodic "these records expire soon" digest. Dormant
+// unless an app registers an expiring-records provider (see
+// src/services/expiration-digest.ts); never throws at boot. Stopped in
+// shutdown() BEFORE closeDatabase() so no tick races the pool teardown.
+if (runsBackgroundWork) {
+  try {
+    startExpirationDigestJob();
+  } catch (err) {
+    log.warn("expiration digest job failed to start (non-fatal)", { source: "startup" }, err);
+  }
+}
+
 // ── Start server ──
 
 log.info("Server starting", {
@@ -145,6 +162,12 @@ async function shutdown(signal: string): Promise<void> {
     stopDemoReseedLoop();
   } catch (err) {
     log.warn("Error stopping demo reseed loop", { source: "shutdown" }, err);
+  }
+
+  try {
+    stopExpirationDigestJob();
+  } catch (err) {
+    log.warn("Error stopping expiration digest job", { source: "shutdown" }, err);
   }
 
   try {

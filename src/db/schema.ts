@@ -28,6 +28,12 @@ export interface OrganizationsTable {
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   creditsExhausted: Generated<boolean>;
+  /**
+   * Org master switch for ORDINARY outbound email. Auth-critical mail
+   * (OTP, invite, portal link) ignores it. Read by the communications
+   * gate in src/services/communications.service.ts.
+   */
+  communicationsEnabled: Generated<boolean>;
   subscriptionCancelledAt: ColumnType<
     Date | null,
     Date | null | undefined,

@@ -36,6 +36,7 @@ import { observabilityRoutes } from "@/api/routes/observability/index.ts";
 import { docsRoutes } from "@/api/routes/docs/index.ts";
 import { ingestEmailRoutes } from "@/api/routes/ingest-email/index.ts";
 import { inboundEmailRoutes } from "@/api/routes/inbound-emails/index.ts";
+import { emailRoutes } from "@/api/routes/email/index.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 
 // ── App types ──
@@ -177,6 +178,11 @@ app.route("/api/ingest/email", ingestEmailRoutes);
 // Inbound-email dashboard reads (auth-required, org-scoped). See
 // src/api/routes/inbound-emails/index.ts.
 app.route("/api/inbound-emails", inboundEmailRoutes);
+
+// OUTBOUND email admin surface -- kind list, in-browser preview, test
+// send, and the org/personal communications toggles. Auth-required;
+// writes are admin-gated. See src/api/routes/email/index.ts.
+app.route("/api/email", emailRoutes);
 
 // Realtime / WebSocket. Auth via short-lived ws-token (issued from
 // GET /api/auth/ws-token). The baseline route echoes messages so

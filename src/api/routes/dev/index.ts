@@ -46,6 +46,13 @@ import { log } from "@/lib/logger.ts";
 import { BadRequestError, NotFoundError } from "@/utils/errors.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
+import {
+  clearCapturedEmails,
+  isSmtpConfigured,
+  listCapturedEmails,
+  mailboxCaptureEnabled,
+  MAX_CAPTURED_EMAILS,
+} from "@/services/email.ts";
 
 const SESSION_COOKIE = "session_id";
 
@@ -662,6 +669,45 @@ devRoutes.get("/snapshots", async (c) => {
   return c.json({ snapshots: entries });
 });
 
+// ── /api/dev/mailbox ── read + clear captured outbound email ───────────────
+//
+// The sandbox has no way to observe a sent email: SMTP is unconfigured, so
+// mail used to vanish into a console line no test could assert on. Every
+// send now lands in an in-memory ring buffer (src/services/email-mailbox.ts)
+// and this is the read surface for it. Verify an invite, an OTP, or a
+// digest by triggering the flow and reading this endpoint.
+//
+// Gated by the SAME fail-closed guard as instant-login and DB reset (the
+// `devRoutes.use("*")` middleware at the top of this file). A production
+// pod never sets ALCHEMIST_DEV_ROUTES, so these paths 404 there -- and
+// capture itself is off on a pod with real SMTP and no dev flag, so there
+// is nothing to read even if the gate were wrong.
+
+devRoutes.get("/mailbox", (c) => {
+  const kind = c.req.query("kind") ?? undefined;
+  const to = c.req.query("to") ?? undefined;
+  const sinceRaw = c.req.query("since");
+  const since = sinceRaw !== undefined && sinceRaw !== "" ? Number(sinceRaw) : undefined;
+  if (since !== undefined && !Number.isFinite(since)) {
+    throw new BadRequestError("`since` must be a number (the seq of the last email you saw).");
+  }
+
+  const emails = listCapturedEmails({ kind, to, since });
+  return c.json({
+    capturing: mailboxCaptureEnabled(),
+    smtpConfigured: isSmtpConfigured(),
+    max: MAX_CAPTURED_EMAILS,
+    count: emails.length,
+    emails,
+  });
+});
+
+devRoutes.delete("/mailbox", (c) => {
+  const cleared = clearCapturedEmails();
+  log.info("Dev mailbox cleared", { source: "dev", feature: "mailbox", cleared });
+  return c.json({ cleared });
+});
+
 // ── GET /api/dev/info ──
 //
 // Health-check + capability advertisement so the agent can probe what
@@ -691,6 +737,17 @@ devRoutes.get("/info", (c) => {
           "SPA push endpoint. The dev-panel client (web/src/lib/devpanel/) " +
           "POSTs the current store snapshot here on every change + 5s heartbeat.",
         body: { snapshot: "ClientSnapshot", markdown: "string" },
+      },
+      "GET /api/dev/mailbox": {
+        purpose:
+          "Read outbound email captured in-memory (no SMTP needed). The " +
+          "assertion seam for every email flow: trigger the flow, read here.",
+        query: { kind: "string?", to: "string?", since: "number?  // last seq seen" },
+        returns: "{ capturing, smtpConfigured, max, count, emails: CapturedEmail[] }",
+      },
+      "DELETE /api/dev/mailbox": {
+        purpose: "Empty the captured-email buffer before exercising a flow.",
+        returns: "{ cleared: number }",
       },
       "GET /api/dev/app-state": {
         purpose:
