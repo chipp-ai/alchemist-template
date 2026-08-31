@@ -133,6 +133,40 @@ export type Invite = Selectable<InvitesTable>;
 export type NewInvite = Insertable<InvitesTable>;
 export type InviteUpdate = Updateable<InvitesTable>;
 
+/**
+ * One issued portal access link: a long-lived, revocable, re-sendable
+ * token that signs an END USER into the read-only portal for ONE record.
+ * Admins never use this lane (they arrive by invite); end users never use
+ * the invite lane. See src/services/portal-access.service.ts.
+ *
+ * `tokenHash` is a SHA-256 of the secret, never the secret. A re-send
+ * therefore issues a fresh token and revokes the old one.
+ */
+export interface PortalAccessTokensTable {
+  id: Generated<string>;
+  organizationId: string;
+  /** The auto-provisioned (or pre-existing) account the link signs in as. */
+  userId: string;
+  email: string;
+  /** What kind of record this portal shows: 'employee', 'project', ... */
+  subjectType: string;
+  /** The record's id, as text -- the template does not know your PK type. */
+  subjectId: string;
+  tokenHash: string;
+  /** NULL = never expires. */
+  expiresAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  revokedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  lastSentAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  lastUsedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  createdBy: string | null;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type PortalAccessToken = Selectable<PortalAccessTokensTable>;
+export type NewPortalAccessToken = Insertable<PortalAccessTokensTable>;
+export type PortalAccessTokenUpdate = Updateable<PortalAccessTokensTable>;
+
 // ── billing schema ──
 
 export interface TokenUsageTable {
@@ -338,6 +372,7 @@ export interface Database {
   sessions: SessionsTable;
   api_credentials: ApiCredentialsTable;
   invites: InvitesTable;
+  portal_access_tokens: PortalAccessTokensTable;
   token_usage: TokenUsageTable;
   job_history: JobHistoryTable;
   doc_search_index: DocSearchIndexTable;

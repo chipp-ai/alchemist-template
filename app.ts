@@ -37,6 +37,7 @@ import { docsRoutes } from "@/api/routes/docs/index.ts";
 import { ingestEmailRoutes } from "@/api/routes/ingest-email/index.ts";
 import { inboundEmailRoutes } from "@/api/routes/inbound-emails/index.ts";
 import { emailRoutes } from "@/api/routes/email/index.ts";
+import { portalRoutes } from "@/api/routes/portal/index.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 
 // ── App types ──
@@ -183,6 +184,12 @@ app.route("/api/inbound-emails", inboundEmailRoutes);
 // send, and the org/personal communications toggles. Auth-required;
 // writes are admin-gated. See src/api/routes/email/index.ts.
 app.route("/api/email", emailRoutes);
+
+// End-user portal lane. Claim is public (the emailed token IS the
+// credential); reads are self-scoped; issuing and revoking links are
+// admin-gated. Admins arrive by invite, end users NEVER do. See
+// src/api/routes/portal/index.ts.
+app.route("/api/portal", portalRoutes);
 
 // Realtime / WebSocket. Auth via short-lived ws-token (issued from
 // GET /api/auth/ws-token). The baseline route echoes messages so

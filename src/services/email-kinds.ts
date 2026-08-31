@@ -399,6 +399,67 @@ registerEmailKind<OtpEmailData>({
   sample: () => ({ otpCode: "123456" }),
 });
 
+export interface PortalLinkEmailData {
+  organizationName: string;
+  /** Human label for the record the portal shows, when there is one. */
+  subjectLabel?: string | null;
+  portalUrl: string;
+}
+
+/**
+ * The end-user portal link. AUTH-CRITICAL: this link IS how the recipient
+ * signs in, so the communications gate must never suppress it. A muted
+ * workspace still lets its people in.
+ *
+ * See src/services/portal-access.service.ts.
+ */
+registerEmailKind<PortalLinkEmailData>({
+  kind: "portal_link",
+  description: "Personal portal access link for an end user. Sent when an admin issues one.",
+  authCritical: true,
+  subject: (d) => `Your ${d.organizationName || BRAND.name} portal link`,
+  text: (d) =>
+    [
+      d.subjectLabel
+        ? `Here is your personal link to ${d.subjectLabel}.`
+        : `Here is your personal link to ${d.organizationName || BRAND.name}.`,
+      "",
+      d.portalUrl,
+      "",
+      "The link is yours alone. Keep it private, and use it any time.",
+      "If it stops working, ask your administrator to send a new one.",
+    ].join("\n"),
+  body: (d) => ({
+    previewText: `Your personal ${d.organizationName || BRAND.name} portal link`,
+    html: `
+        <h1 style="margin:0 0 10px;font-family:${EMAIL_SERIF};font-size:31px;font-weight:600;line-height:1.1;color:${EMAIL_INK};">Your portal</h1>
+        <p style="margin:0 0 26px;font-family:${EMAIL_SANS};font-size:15px;line-height:1.55;color:${EMAIL_MUTED};">
+          ${
+      d.subjectLabel
+        ? `Here is your personal link to <strong style="color:${EMAIL_INK};">${
+          escapeHtml(d.subjectLabel)
+        }</strong>.`
+        : `Here is your personal link to <strong style="color:${EMAIL_INK};">${
+          escapeHtml(d.organizationName || BRAND.name)
+        }</strong>.`
+    }
+          No password to set, no account to create.
+        </p>
+        ${ctaButton(d.portalUrl, "Open my portal")}
+        ${linkFallback(d.portalUrl)}
+        <p style="margin:26px 0 0;font-family:${EMAIL_SANS};font-size:13px;line-height:1.5;color:${EMAIL_FAINT};">
+          This link is yours alone, so keep it private. If it stops working,
+          ask your administrator to send a new one.
+        </p>
+      `,
+  }),
+  sample: () => ({
+    organizationName: BRAND.name,
+    subjectLabel: "Sample Record",
+    portalUrl: `${appUrl()}/#/portal/claim/sample-token`,
+  }),
+});
+
 export interface ExpirationDigestRecord {
   label: string;
   expiresAt: Date;
