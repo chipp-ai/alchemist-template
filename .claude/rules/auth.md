@@ -97,9 +97,27 @@ and FK'd domain data persist. Re-inviting lands cleanly via the same flow.
 A regression test (`src/__tests__/team.test.ts`) lints the route for
 `organizationId: null` and forbids `db.deleteFrom("users")`.
 
-Invite emails go through `src/services/email.ts → sendInviteEmail`. Falls
-back to `console.log` in dev (no SMTP) so the accept URL is grabbable
-during local testing. `APP_URL` determines the link host.
+Invite emails go through `src/services/email.ts → sendInviteEmail`, which
+routes through the `invite` email kind. With no SMTP the send is captured
+to the dev mailbox (`GET /api/dev/mailbox`) and logged to console, so the
+accept URL is grabbable during local testing. `APP_URL` determines the
+link host.
+
+## Invites are for ADMINS. End users get a portal link.
+
+The invite flow above is the door for people who BELONG to the workspace:
+they carry a role, they appear in Settings, they can be promoted. An
+employee checking their own certifications, a client watching one project,
+or a customer tracking one order is NOT that. Issuing them an invite gives
+away a workspace seat to answer a read-only question.
+
+Those people go through the portal lane instead:
+`src/services/portal-access.service.ts` and `src/api/routes/portal/`. An
+admin issues a tokenized link bound to one record and one address; the
+recipient clicks it and lands in a read-only portal with no admin
+navigation. Minting auto-provisions a `viewer` account and NEVER modifies
+an account that already exists. Full contract: CLAUDE.md → "End-user
+portal lane: use it, never build a parallel portal".
 
 ## WebSocket auth
 

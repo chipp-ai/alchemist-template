@@ -997,6 +997,141 @@ Invariants:
   iframes via `frameSrcdocForEmailHtml()` (CSP blocks remote loads). Keep
   it that way.
 
+## Outbound email: register a kind, never rebuild the shell
+
+Email is a configurable surface, not a place to hand-roll a message.
+**When a ticket says "email them when X happens", "add an alert email", "let
+admins send a test email", or "let people turn notifications off", wire it
+through the pieces below.** Do not copy the branded HTML shell, do not add
+a second `sendEmail` call site with its own markup, and do not invent a
+per-app notification-preferences table.
+
+| Piece | File | What it owns |
+|---|---|---|
+| Front door | `src/services/email.ts` | Facade. Import everything from here. |
+| Transport | `src/services/email-transport.ts` | `sendEmail`: DEMO_MODE, gate, capture, SMTP. |
+| Kind registry | `src/services/email-kinds.ts` | The branded shell + every registered message. |
+| Dev mailbox | `src/services/email-mailbox.ts` | In-memory capture buffer. The test seam. |
+| Gate | `src/services/communications.service.ts` | Org toggle + per-user preference. |
+| Admin routes | `src/api/routes/email/index.ts` | Kind list, preview, test send, toggles. |
+
+**Your ONE integration point is a kind:**
+
+```ts
+registerEmailKind<{ name: string; url: string }>({
+  kind: "welcome",
+  description: "Sent once after a user's first sign-in.",
+  subject: (d) => `Welcome, ${d.name}`,
+  text: (d) => `Welcome, ${d.name}.\n\n${d.url}`,
+  body: (d) => ({ previewText: "Welcome", html: `<p>Hi ${escapeHtml(d.name)}</p>` }),
+  sample: () => ({ name: "Sample Person", url: "https://example.invalid" }),
+});
+
+await sendEmailKind({ kind: "welcome", to, data: { name, url }, organizationId });
+```
+
+Registration buys the shell, the gate, mailbox capture tagged with the
+kind, `GET /api/email/kinds/:kind/preview`, and `POST /api/email/test`.
+Register from a module `main.ts` imports (same rule as the inbound-email
+extraction profile) or the preview and test surfaces will not see it.
+**Escape every interpolated value** with `escapeHtml`; the shell does not
+sanitize what a kind hands it.
+
+Invariants (each one is a defect someone already shipped):
+
+- **`authCritical` is only for mail a person cannot sign in without**:
+  the OTP code, an invite link, a portal link. Auth-critical mail skips
+  the communications gate and gets the verified-sender fallback.
+  Suppressing it is a lockout, not a quiet inbox. Marking a digest
+  auth-critical "to make sure it lands" makes the toggle a lie.
+- **`sendTestEmail()` bypasses the gate on purpose.** It is the "prove
+  delivery works" path; running it through the org toggle makes it fail
+  exactly when an admin is debugging why mail stopped. Keep that ordering.
+- **The org toggle and the personal toggle live on separate endpoints.**
+  The personal one must be writable by any signed-in user including a
+  viewer; the org one must not. One PATCH with two optional fields would
+  widen the wrong gate.
+- **The gate fails OPEN and logs an error.** Dropping customer mail during
+  an unrelated DB outage is worse than one extra notification.
+- **Assert on the mailbox, never on console output.** `listCapturedEmails()`
+  / `lastCapturedEmail({ kind })` in tests; `GET /api/dev/mailbox` in the
+  browser or sandbox (`DELETE` to clear first, `?kind=` / `?to=` / `?since=`
+  to filter). A suppressed message is ABSENT from the buffer, which is the
+  cleanest way to assert "we did not send that".
+- **`/api/dev/mailbox` rides the fail-closed dev gate** (`ALCHEMIST_DEV_ROUTES`),
+  the same one as instant-login and DB reset. Capture is also off on a pod
+  with real SMTP and no dev flag. Do not relax either.
+
+**Scheduled alerts** ("email me before X expires") have a scaffold:
+`src/services/expiration-digest.ts` plus `src/jobs/expiration-digest.ts`.
+Register an expiring-records provider and you get the schedule, the
+advisory lock, the branded digest, and the gating. It is dormant until you
+do. The digest is ORDINARY mail, so a muted org gets nothing. Copy the
+job's shape (setTimeout not setInterval, a session advisory lock on a
+dedicated connection, dead under `NODE_ENV=test`, started under
+`runsBackgroundWork` in `main.ts`) for any other periodic alert.
+
+## End-user portal lane: use it, never build a parallel portal
+
+Two audiences, two doors. **ADMINS are invite-only** through
+`src/services/invite.service.ts`: they belong to the workspace, they carry
+a role, they show up in Settings. **END USERS never touch the invite
+flow** -- an employee checking their own certifications, a client watching
+one project, a customer tracking one order. They get a tokenized portal
+link.
+
+**When a ticket says "let employees see their own records", "give the
+client a login", "send them a link to their portal", or "customers need to
+check their status", issue a portal link.** Do not send them an invite, do
+not add a second login form, do not build a second session mechanism, and
+do not add a "customer" role. All three already exist.
+
+| Piece | File |
+|---|---|
+| Service | `src/services/portal-access.service.ts` |
+| Routes | `src/api/routes/portal/index.ts` |
+| Table | `portal_access_tokens` (`db/migrations/20260831233923_portal_access_tokens.sql`) |
+| Email kind | `portal_link` (auth-critical) in `src/services/email-kinds.ts` |
+| SPA shell | `web/src/components/PortalLayout.svelte` |
+| SPA pages | `web/src/routes/portal/PortalHome.svelte`, `PortalClaim.svelte` |
+
+```
+POST   /api/portal/tokens             admin   issue + email a link
+GET    /api/portal/tokens             admin   list live links for the org
+POST   /api/portal/tokens/:id/resend  admin   fresh link, retires the old one
+DELETE /api/portal/tokens/:id         admin   revoke
+POST   /api/portal/claim              PUBLIC  token -> session cookie
+GET    /api/portal/me                 auth    the caller's OWN bindings only
+```
+
+Invariants:
+
+- **Minting NEVER modifies an account that already exists.** It
+  find-or-creates by email; a pre-existing admin who is also an employee
+  keeps their role and their org. Downgrading them to `viewer` because
+  someone issued a portal link would be a live privilege regression.
+- **Only a SHA-256 of the token is stored.** A database read cannot mint a
+  session. The consequence: a re-send cannot resurrect the same URL, so it
+  ISSUES A FRESH LINK and retires the old one. Tell admins "resend"; the
+  mechanism is a rotation, and it also retires a forwarded copy.
+- **Claim is POST-only and public.** The token is the credential (same
+  trust basis as `claimInvite`), so it mints a session with no OTP. A GET
+  would let a mail client's link prefetch sign someone in.
+- **Claim is NOT single-use.** A portal is somewhere people come back to.
+  Revocation and expiry are the controls, not consumption.
+- **Every service query is org-scoped in its WHERE clause** (CWE-639).
+  Another workspace's id is a 404, not a cross-tenant read. The route gate
+  is not the authorization check.
+- **`GET /api/portal/me` is the portal's only data source.** Do not widen
+  the portal home with an org-scoped read "for context".
+- **The portal shell carries no admin navigation**, and portal routes are
+  registered public so a lapsed session renders "ask for a new link"
+  instead of bouncing an end user to the workspace sign-in form.
+
+Adapt `subjectType` / `subjectId` to your domain: they are the record an
+admin bound the link to. Join them against your own table in
+`PortalHome.svelte` and render the real thing.
+
 ## Browser automation / portal scraping: a platform capability (do NOT build it here)
 
 When a ticket asks to log into a third-party web portal, scrape data from
