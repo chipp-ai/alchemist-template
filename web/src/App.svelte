@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Router, { location, push, replace } from "svelte-spa-router";
-  import routes, { isPublicRoute } from "./routes";
+  import routes, { isPortalRoute, isPublicRoute } from "./routes";
   import { authStore } from "./stores/auth.svelte";
   import { sessionTimeoutStore } from "./stores/sessionTimeout.svelte";
   import Sidebar from "./components/Sidebar.svelte";
@@ -73,7 +73,14 @@
   });
 
   const onPublicRoute = $derived(isPublicRoute($location));
-  const showLayout = $derived(!authStore.isLoading && authStore.isAuthenticated && !onPublicRoute);
+  // Portal routes bring their OWN shell (PortalLayout): brand, the user's
+  // own data, a sign-out button, and no admin navigation. Checked
+  // explicitly rather than leaning on isPublicRoute, so a future change to
+  // the public-route set can never wrap an end user in the admin sidebar.
+  const onPortalRoute = $derived(isPortalRoute($location));
+  const showLayout = $derived(
+    !authStore.isLoading && authStore.isAuthenticated && !onPublicRoute && !onPortalRoute,
+  );
 </script>
 
 {#if authStore.isLoading}

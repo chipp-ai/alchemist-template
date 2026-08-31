@@ -123,14 +123,22 @@ async function verifyOtp(
   }
 }
 
-async function logout(): Promise<void> {
+/**
+ * Sign out and land somewhere sensible.
+ *
+ * `redirectTo` exists for the end-user portal lane: a portal user who
+ * signs out must see "ask for a new link" (`#/portal`), not the
+ * workspace's admin sign-in form, which they have no business
+ * completing. Admin surfaces keep the default.
+ */
+async function logout(redirectTo = "#/login"): Promise<void> {
   try {
     await api.post("/auth/logout");
   } catch {
     // Swallow errors — we clear state regardless.
   }
   state.user = null;
-  window.location.hash = "#/login";
+  window.location.hash = redirectTo;
 }
 
 // ---------- Export ----------
