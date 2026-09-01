@@ -43,17 +43,17 @@ export {
   type RenderedEmail,
   renderEmailKind,
   renderEmailKindPreview,
-  type SendInviteEmailOptions,
   sendEmailKind,
   sendInviteEmail,
+  type SendInviteEmailOptions,
   sendOtpEmail,
   sendTestEmail,
   TEST_EMAIL_SUBJECT_PREFIX,
 } from "@/services/email-kinds.ts";
 
 export {
-  capturedEmailCount,
   type CapturedEmail,
+  capturedEmailCount,
   clearCapturedEmails,
   lastCapturedEmail,
   listCapturedEmails,

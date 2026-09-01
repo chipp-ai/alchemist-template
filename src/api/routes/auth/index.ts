@@ -19,12 +19,12 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import { setCookie, deleteCookie, getCookie } from "hono/cookie";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { db } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
 import { BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
-import { createSessionToken, createWsToken, requireAuth, getUser } from "@/api/middleware/auth.ts";
+import { createSessionToken, createWsToken, getUser, requireAuth } from "@/api/middleware/auth.ts";
 import { getSessionDurationMs, isHipaaEnabled } from "@/utils/session-duration.ts";
 import { sendOtpEmail } from "@/services/email.ts";
 import {
@@ -204,7 +204,9 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
     .where("email", "=", email)
     .executeTakeFirst();
 
-  let organization: { id: string; name: string; slug: string | null; subscriptionTier: string } | undefined;
+  let organization:
+    | { id: string; name: string; slug: string | null; subscriptionTier: string }
+    | undefined;
 
   if (!user) {
     // Create new user with org
@@ -395,79 +397,84 @@ const updateMeSchema = z
     message: "At least one field is required",
   });
 
-authRoutes.patch("/me", requireAuth, zValidator("json", updateMeSchema, validationHook), async (c) => {
-  const user = getUser(c);
-  const body = c.req.valid("json");
+authRoutes.patch(
+  "/me",
+  requireAuth,
+  zValidator("json", updateMeSchema, validationHook),
+  async (c) => {
+    const user = getUser(c);
+    const body = c.req.valid("json");
 
-  // Email collision: 409. Tenants don't share users, but globally a
-  // user row is keyed on email — same address can only belong to one
-  // account. Fail fast so the SPA can show "that address is in use"
-  // rather than letting the UPDATE crash with a unique-constraint 500.
-  if (body.email && body.email !== user.email) {
-    const conflict = await db
-      .selectFrom("users")
-      .select("id")
-      .where("email", "=", body.email)
-      .where("id", "!=", user.id)
-      .executeTakeFirst();
-    if (conflict) {
-      return c.json(
-        { error: "Email is already in use", code: "EMAIL_IN_USE" },
-        409,
-      );
+    // Email collision: 409. Tenants don't share users, but globally a
+    // user row is keyed on email — same address can only belong to one
+    // account. Fail fast so the SPA can show "that address is in use"
+    // rather than letting the UPDATE crash with a unique-constraint 500.
+    if (body.email && body.email !== user.email) {
+      const conflict = await db
+        .selectFrom("users")
+        .select("id")
+        .where("email", "=", body.email)
+        .where("id", "!=", user.id)
+        .executeTakeFirst();
+      if (conflict) {
+        return c.json(
+          { error: "Email is already in use", code: "EMAIL_IN_USE" },
+          409,
+        );
+      }
     }
-  }
 
-  const updates: Partial<{
-    name: string;
-    email: string;
-    picture: string | null;
-    emailVerified: boolean;
-  }> = {};
-  if (body.name !== undefined) updates.name = body.name;
-  if (body.picture !== undefined) updates.picture = body.picture;
-  if (body.email !== undefined && body.email !== user.email) {
-    updates.email = body.email;
-    updates.emailVerified = false;
-  }
+    const updates: Partial<{
+      name: string;
+      email: string;
+      picture: string | null;
+      emailVerified: boolean;
+    }> = {};
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.picture !== undefined) updates.picture = body.picture;
+    if (body.email !== undefined && body.email !== user.email) {
+      updates.email = body.email;
+      updates.emailVerified = false;
+    }
 
-  await db
-    .updateTable("users")
-    .set(updates)
-    .where("id", "=", user.id)
-    .execute();
+    await db
+      .updateTable("users")
+      .set(updates)
+      .where("id", "=", user.id)
+      .execute();
 
-  const updated = await db
-    .selectFrom("users")
-    .select(["id", "email", "name", "picture", "role", "emailVerified"])
-    .where("id", "=", user.id)
-    .executeTakeFirstOrThrow();
+    const updated = await db
+      .selectFrom("users")
+      .select(["id", "email", "name", "picture", "role", "emailVerified"])
+      .where("id", "=", user.id)
+      .executeTakeFirstOrThrow();
 
-  const org = await db
-    .selectFrom("organizations")
-    .select(["id", "name", "slug", "subscriptionTier"])
-    .where("id", "=", user.organizationId)
-    .executeTakeFirst();
+    const org = await db
+      .selectFrom("organizations")
+      .select(["id", "name", "slug", "subscriptionTier"])
+      .where("id", "=", user.organizationId)
+      .executeTakeFirst();
 
-  log.info("Profile updated", {
-    source: "auth",
-    feature: "profile-update",
-    userId: user.id,
-    fieldsChanged: Object.keys(updates),
-  });
+    log.info("Profile updated", {
+      source: "auth",
+      feature: "profile-update",
+      userId: user.id,
+      fieldsChanged: Object.keys(updates),
+    });
 
-  return c.json({
-    user: {
-      id: updated.id,
-      email: updated.email,
-      name: updated.name,
-      picture: updated.picture,
-      role: updated.role,
-      emailVerified: updated.emailVerified,
-    },
-    organization: org ?? null,
-  });
-});
+    return c.json({
+      user: {
+        id: updated.id,
+        email: updated.email,
+        name: updated.name,
+        picture: updated.picture,
+        role: updated.role,
+        emailVerified: updated.emailVerified,
+      },
+      organization: org ?? null,
+    });
+  },
+);
 
 // ── Avatar / picture upload ────────────────────────────────────────────────
 // Customers (or end users) can upload a picture that overrides the OAuth-
@@ -685,8 +692,9 @@ authRoutes.get("/ws-token", requireAuth, async (c) => {
 function buildAuthorizeUrl(provider: OAuthProvider, state: string): string {
   const params = new URLSearchParams({
     client_id: Deno.env.get(provider.clientIdEnv)!,
-    redirect_uri:
-      `${Deno.env.get("APP_URL") ?? "http://localhost:8000"}/api/auth/${provider.id}/callback`,
+    redirect_uri: `${
+      Deno.env.get("APP_URL") ?? "http://localhost:8000"
+    }/api/auth/${provider.id}/callback`,
     response_type: "code",
     scope: provider.scopes,
     state,
@@ -753,8 +761,9 @@ authRoutes.get("/:provider/callback", async (c) => {
 
   const clientId = Deno.env.get(provider.clientIdEnv)!;
   const clientSecret = Deno.env.get(provider.clientSecretEnv)!;
-  const redirectUri =
-    `${Deno.env.get("APP_URL") ?? "http://localhost:8000"}/api/auth/${provider.id}/callback`;
+  const redirectUri = `${
+    Deno.env.get("APP_URL") ?? "http://localhost:8000"
+  }/api/auth/${provider.id}/callback`;
 
   // ── Exchange code for tokens ─────────────────────────────────────────
   // GitHub returns `application/x-www-form-urlencoded` by default; setting

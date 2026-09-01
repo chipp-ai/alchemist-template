@@ -55,7 +55,9 @@ Deno.test("salesforce: defaults to login.salesforce.com, sandbox override honore
 Deno.test("oidc slot: absent without endpoint envs, present and mapped with them", () => {
   assertEquals(oidcProviderEntries({}), []);
   assertEquals(
-    oidcProviderEntries({ OIDC_AUTH_URL: "https://kc.example.com/realms/x/protocol/openid-connect/auth" }),
+    oidcProviderEntries({
+      OIDC_AUTH_URL: "https://kc.example.com/realms/x/protocol/openid-connect/auth",
+    }),
     [],
     "partial endpoint config must not materialize the provider",
   );

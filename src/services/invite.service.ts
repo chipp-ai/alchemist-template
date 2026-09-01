@@ -20,11 +20,7 @@
  */
 
 import { db } from "@/db/client.ts";
-import {
-  BadRequestError,
-  ForbiddenError,
-  NotFoundError,
-} from "@/utils/errors.ts";
+import { BadRequestError, ForbiddenError, NotFoundError } from "@/utils/errors.ts";
 import { sendInviteEmail } from "@/services/email.ts";
 import { ASSIGNABLE_ROLES, type AssignableRole, roleLabel } from "@/lib/roles.ts";
 import { log } from "@/lib/logger.ts";

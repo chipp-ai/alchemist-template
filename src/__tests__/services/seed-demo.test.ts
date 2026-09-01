@@ -81,7 +81,11 @@ test("seedDemo: idempotent -- running twice keeps the same org id and stable row
       .select("id")
       .where("organizationId", "=", first.orgId)
       .execute();
-    assertEquals(users.length, DEMO_USERS.length, "re-running the seed must not duplicate demo users");
+    assertEquals(
+      users.length,
+      DEMO_USERS.length,
+      "re-running the seed must not duplicate demo users",
+    );
   } finally {
     await cleanupDemoOrg();
   }
@@ -161,7 +165,11 @@ test("seedDemo: wipes accumulated public writes (stray purchase + invite) on re-
       .select("id")
       .where("organizationId", "=", first.orgId)
       .execute();
-    assertEquals(afterPurchases.length, 0, "purchases scoped to the demo org must be wiped on re-seed");
+    assertEquals(
+      afterPurchases.length,
+      0,
+      "purchases scoped to the demo org must be wiped on re-seed",
+    );
     assertEquals(afterInvites.length, 0, "invites scoped to the demo org must be wiped on re-seed");
 
     // Cleanup the scratch product row (not FK'd to the org, so seedDemo

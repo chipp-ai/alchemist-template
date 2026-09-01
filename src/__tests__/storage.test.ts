@@ -154,14 +154,16 @@ Deno.test("getSignedDownloadUrl: URL contains prefix + SigV4 params", () => {
     `prefixed key missing from path: ${parsed.pathname}`,
   );
   // Required SigV4 query params.
-  for (const k of [
-    "X-Amz-Algorithm",
-    "X-Amz-Credential",
-    "X-Amz-Date",
-    "X-Amz-Expires",
-    "X-Amz-SignedHeaders",
-    "X-Amz-Signature",
-  ]) {
+  for (
+    const k of [
+      "X-Amz-Algorithm",
+      "X-Amz-Credential",
+      "X-Amz-Date",
+      "X-Amz-Expires",
+      "X-Amz-SignedHeaders",
+      "X-Amz-Signature",
+    ]
+  ) {
     if (!parsed.searchParams.has(k)) {
       throw new Error(`missing SigV4 query param: ${k}`);
     }
@@ -196,7 +198,11 @@ Deno.test("getSignedDownloadUrl: includes responseDisposition when provided", ()
 
 Deno.test("getSignedUploadUrl: requires contentType", () => {
   // Empty contentType is the documented runtime guard target.
-  assertThrows(() => storage.getSignedUploadUrl("upload.bin", ""), Error, "contentType is required");
+  assertThrows(
+    () => storage.getSignedUploadUrl("upload.bin", ""),
+    Error,
+    "contentType is required",
+  );
 });
 
 Deno.test("getSignedUploadUrl: signs Content-Type into the query string", () => {

@@ -35,6 +35,7 @@ export const CAPABILITIES = [
   "team.remove",
   "org.update",
   "billing.manage",
+  "files.review",
   "app.write",
   "app.read",
 ] as const;
@@ -46,6 +47,7 @@ const CAPABILITY_MIN_ROLE: Record<Capability, Role> = {
   "team.remove": "admin",
   "org.update": "admin",
   "billing.manage": "admin",
+  "files.review": "admin",
   "app.write": "editor",
   "app.read": "viewer",
 };

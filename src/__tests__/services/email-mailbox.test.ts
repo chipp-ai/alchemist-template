@@ -15,8 +15,8 @@ import {
   clearCapturedEmails,
   lastCapturedEmail,
   listCapturedEmails,
-  MAX_CAPTURED_EMAILS,
   mailboxCaptureEnabled,
+  MAX_CAPTURED_EMAILS,
   sendEmail,
 } from "@/services/email.ts";
 import { captureEmail } from "@/services/email-mailbox.ts";

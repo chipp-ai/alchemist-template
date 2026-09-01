@@ -451,16 +451,18 @@ deno("source: lib/query.svelte.ts exists with the SWR contract intact", async ()
   const src = await Deno.readTextFile(
     new URL("../../web/src/lib/query.svelte.ts", import.meta.url),
   );
-  for (const needle of [
-    "export function createQuery<",
-    "export function invalidateQueries(",
-    // The DevPanel-introspection guarantee: every cache entry IS a defineStore.
-    'defineStore<QueryState<T>>(`query:${opts.key}`',
-    // Focus revalidation is part of the "data just live-reloads" contract.
-    'window.addEventListener("focus"',
-    // Background-tab guard: intervals must not burn requests unseen.
-    'document.visibilityState !== "visible"',
-  ]) {
+  for (
+    const needle of [
+      "export function createQuery<",
+      "export function invalidateQueries(",
+      // The DevPanel-introspection guarantee: every cache entry IS a defineStore.
+      "defineStore<QueryState<T>>(`query:${opts.key}`",
+      // Focus revalidation is part of the "data just live-reloads" contract.
+      'window.addEventListener("focus"',
+      // Background-tab guard: intervals must not burn requests unseen.
+      'document.visibilityState !== "visible"',
+    ]
+  ) {
     assertStringIncludes(src, needle);
   }
 });

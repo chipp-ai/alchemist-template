@@ -160,6 +160,61 @@ export function getTestSql() {
   return sql;
 }
 
+// ── withLocalStorage ──
+
+const STORAGE_ENV_VARS = [
+  "R2_ENDPOINT",
+  "R2_BUCKET",
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_ACCESS_KEY",
+  "R2_KEY_PREFIX",
+  "LOCAL_STORAGE_DIR",
+  "LOCAL_STORAGE_SIGNING_SECRET",
+] as const;
+
+/**
+ * Run a test with the LOCAL storage driver active, against a throwaway
+ * directory, and put every storage env var back afterwards.
+ *
+ * Two reasons this exists rather than each test setting env by hand.
+ * Test files share a worker process, so a file that sets R2_ENDPOINT at
+ * module load (storage.test.ts does) would otherwise change what an
+ * unrelated file is testing. And a real temp directory per case means an
+ * upload test exercises the actual round trip instead of a mock, which
+ * is the whole point of having a local driver.
+ *
+ * `setKeyPrefix` switches tenant mid-test, for isolation cases that need
+ * project A to write and project B to try to read.
+ */
+export async function withLocalStorage<T>(
+  fn: (ctx: { root: string; setKeyPrefix: (prefix: string) => void }) => Promise<T> | T,
+  opts: { keyPrefix?: string } = {},
+): Promise<T> {
+  const saved = new Map<string, string | undefined>();
+  for (const name of STORAGE_ENV_VARS) saved.set(name, Deno.env.get(name));
+
+  const root = await Deno.makeTempDir({ prefix: "alchemist-storage-" });
+  try {
+    for (const name of ["R2_ENDPOINT", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]) {
+      Deno.env.delete(name);
+    }
+    Deno.env.set("R2_KEY_PREFIX", opts.keyPrefix ?? "");
+    Deno.env.set("LOCAL_STORAGE_DIR", root);
+    Deno.env.set("LOCAL_STORAGE_SIGNING_SECRET", "test-signing-secret");
+
+    return await fn({
+      root,
+      setKeyPrefix: (prefix: string) => Deno.env.set("R2_KEY_PREFIX", prefix),
+    });
+  } finally {
+    for (const [name, value] of saved) {
+      if (value === undefined) Deno.env.delete(name);
+      else Deno.env.set(name, value);
+    }
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+}
+
 // ── withTestServer ──
 
 /**

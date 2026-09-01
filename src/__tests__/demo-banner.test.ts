@@ -20,7 +20,10 @@ import { demoLandingRoute } from "@/api/routes/demo-landing.ts";
 import { demoNoindexHeaderMiddleware } from "@/api/middleware/demo-noindex.ts";
 
 /** Runs `fn` with DEMO_MODE temporarily overridden, restoring it after. */
-async function withDemoMode(value: string | undefined, fn: () => void | Promise<void>): Promise<void> {
+async function withDemoMode(
+  value: string | undefined,
+  fn: () => void | Promise<void>,
+): Promise<void> {
   const prev = Deno.env.get("DEMO_MODE");
   if (value === undefined) Deno.env.delete("DEMO_MODE");
   else Deno.env.set("DEMO_MODE", value);

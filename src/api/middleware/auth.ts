@@ -203,8 +203,7 @@ async function resolveUser(payload: jose.JWTPayload): Promise<AuthUser | null> {
           "tokenInvalidatedBefore",
         ])
         .where("id", "=", userId)
-        .executeTakeFirst()
-    );
+        .executeTakeFirst());
     if (!user || !user.organizationId) return null;
 
     // logout-all enforcement: any JWT signed before the cutoff is

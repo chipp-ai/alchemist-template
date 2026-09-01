@@ -363,7 +363,8 @@ devRoutes.post(
       if (body.raw?.length) {
         for (const entry of body.raw) {
           // deno-lint-ignore no-explicit-any
-          const result = await trx.insertInto(entry.table as any).values(entry.rows as any).executeTakeFirst();
+          const result = await trx.insertInto(entry.table as any).values(entry.rows as any)
+            .executeTakeFirst();
           rawOut.push({
             table: entry.table,
             inserted: Number(result.numInsertedOrUpdatedRows ?? 0),
@@ -570,7 +571,10 @@ devRoutes.post(
     }
 
     const path = `${SNAPSHOT_DIR}/${tag}.json`;
-    await Deno.writeTextFile(path, JSON.stringify({ tag, ts: new Date().toISOString(), dump }, null, 0));
+    await Deno.writeTextFile(
+      path,
+      JSON.stringify({ tag, ts: new Date().toISOString(), dump }, null, 0),
+    );
 
     log.info("Dev snapshot", {
       source: "dev",
@@ -733,14 +737,12 @@ devRoutes.get("/info", (c) => {
         body: { tables: "string[]?  // default = all app/billing/jobs tables" },
       },
       "POST /api/dev/app-state": {
-        purpose:
-          "SPA push endpoint. The dev-panel client (web/src/lib/devpanel/) " +
+        purpose: "SPA push endpoint. The dev-panel client (web/src/lib/devpanel/) " +
           "POSTs the current store snapshot here on every change + 5s heartbeat.",
         body: { snapshot: "ClientSnapshot", markdown: "string" },
       },
       "GET /api/dev/mailbox": {
-        purpose:
-          "Read outbound email captured in-memory (no SMTP needed). The " +
+        purpose: "Read outbound email captured in-memory (no SMTP needed). The " +
           "assertion seam for every email flow: trigger the flow, read here.",
         query: { kind: "string?", to: "string?", since: "number?  // last seq seen" },
         returns: "{ capturing, smtpConfigured, max, count, emails: CapturedEmail[] }",
@@ -750,12 +752,10 @@ devRoutes.get("/info", (c) => {
         returns: "{ cleared: number }",
       },
       "GET /api/dev/app-state": {
-        purpose:
-          "Read the most recent client snapshot, merged with server-side " +
+        purpose: "Read the most recent client snapshot, merged with server-side " +
           "context (recent requests, recent errors, env). The agent's L1 " +
           "verification layer hits this BEFORE driving the browser.",
-        returns:
-          "{ client: ClientSnapshot, server: ServerSnapshot, markdown: string }",
+        returns: "{ client: ClientSnapshot, server: ServerSnapshot, markdown: string }",
       },
     },
   });
@@ -784,10 +784,10 @@ devRoutes.get("/info", (c) => {
 // session anyway.
 
 import {
-  getRecentRequests,
-  getRecentErrors,
-  type DevRequestRecord,
   type DevErrorRecord,
+  type DevRequestRecord,
+  getRecentErrors,
+  getRecentRequests,
 } from "@/lib/dev-activity.ts";
 
 interface ClientSnapshotShape {
@@ -907,8 +907,7 @@ function formatServerMarkdown(server: ServerSnapshot): string {
 
 devRoutes.get("/app-state", (c) => {
   const server = collectServerSnapshot();
-  const wantsMarkdown =
-    c.req.query("format") === "markdown" ||
+  const wantsMarkdown = c.req.query("format") === "markdown" ||
     c.req.header("accept")?.includes("text/markdown");
 
   const clientMarkdown = lastClientMarkdown ?? [

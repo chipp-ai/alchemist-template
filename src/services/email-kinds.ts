@@ -483,8 +483,7 @@ export interface ExpirationDigestData {
 registerEmailKind<ExpirationDigestData>({
   kind: "expiration_digest",
   description: "Digest of records expiring soon. Sent by the scheduled expiration job.",
-  subject: (d) =>
-    `${d.records.length} ${d.recordLabel} expiring in the next ${d.withinDays} days`,
+  subject: (d) => `${d.records.length} ${d.recordLabel} expiring in the next ${d.withinDays} days`,
   text: (d) =>
     [
       `${d.records.length} ${d.recordLabel} in ${d.organizationName} expire within ${d.withinDays} days:`,
@@ -513,9 +512,9 @@ registerEmailKind<ExpirationDigestData>({
           <tr><td style="padding:12px 0;border-bottom:1px solid ${EMAIL_BORDER};font-family:${EMAIL_SANS};font-size:14px;line-height:1.45;color:${EMAIL_INK};">
             ${
         r.url
-          ? `<a href="${escapeHtml(r.url)}" style="color:${BRAND.primaryColor};text-decoration:none;">${
-            escapeHtml(r.label)
-          }</a>`
+          ? `<a href="${
+            escapeHtml(r.url)
+          }" style="color:${BRAND.primaryColor};text-decoration:none;">${escapeHtml(r.label)}</a>`
           : escapeHtml(r.label)
       }
             <div style="font-size:12px;color:${EMAIL_FAINT};">Expires ${

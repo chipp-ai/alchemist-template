@@ -67,6 +67,8 @@ export const CAPABILITIES = [
   "org.update", // edit org name, slug, etc.
   // Billing / monetization
   "billing.manage", // manage the product catalog, open the billing portal config
+  // Uploaded files
+  "files.review", // see the review queue, approve or reject someone else's upload
   // App-data writes (template's domain-specific actions go through this)
   "app.write",
   // Read-only org info — every role above 'viewer' has this implicitly.
@@ -84,6 +86,10 @@ const CAPABILITY_MIN_ROLE: Record<Capability, Role> = {
   "team.remove": "admin",
   "org.update": "admin",
   "billing.manage": "admin",
+  // Deciding whether another person's file is fit to be served is the
+  // same class of call as adding a member, so it sits with the admin
+  // capabilities rather than with app.write.
+  "files.review": "admin",
   "app.write": "editor",
   "app.read": "viewer",
 };

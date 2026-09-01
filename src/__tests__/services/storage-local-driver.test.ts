@@ -21,7 +21,7 @@
  */
 
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { withTestServer } from "../helpers.ts";
+import { withLocalStorage, withTestServer } from "../helpers.ts";
 import { storageLocalRoutes } from "@/api/routes/storage-local/index.ts";
 import {
   deleteObject,
@@ -37,45 +37,12 @@ import {
 } from "@/services/storage.service.ts";
 import { buildLocalSignedUrl, LOCAL_SIGNED_URL_PATH } from "@/services/storage-local.ts";
 
-const R2_VARS = [
-  "R2_ENDPOINT",
-  "R2_BUCKET",
-  "R2_ACCESS_KEY_ID",
-  "R2_SECRET_ACCESS_KEY",
-] as const;
-
-const MANAGED_VARS = [
-  ...R2_VARS,
-  "R2_KEY_PREFIX",
-  "LOCAL_STORAGE_DIR",
-  "LOCAL_STORAGE_SIGNING_SECRET",
-] as const;
-
-/**
- * Run `fn` with the local driver active, a fresh temp storage root, and
- * a chosen tenant prefix. Restores every managed variable afterwards.
- */
-async function withLocalDriver(
+/** The shared helper, with the tenant prefix as a positional argument. */
+function withLocalDriver(
   prefix: string,
-  fn: (ctx: { root: string }) => Promise<void>,
+  fn: (ctx: { root: string; setKeyPrefix: (p: string) => void }) => Promise<void> | void,
 ): Promise<void> {
-  const saved = new Map<string, string | undefined>();
-  for (const name of MANAGED_VARS) saved.set(name, Deno.env.get(name));
-
-  const root = await Deno.makeTempDir({ prefix: "alchemist-storage-" });
-  try {
-    for (const name of R2_VARS) Deno.env.delete(name);
-    Deno.env.set("R2_KEY_PREFIX", prefix);
-    Deno.env.set("LOCAL_STORAGE_DIR", root);
-    Deno.env.set("LOCAL_STORAGE_SIGNING_SECRET", "test-signing-secret");
-    await fn({ root });
-  } finally {
-    for (const [name, value] of saved) {
-      if (value === undefined) Deno.env.delete(name);
-      else Deno.env.set(name, value);
-    }
-    await Deno.remove(root, { recursive: true }).catch(() => {});
-  }
+  return withLocalStorage(fn, { keyPrefix: prefix });
 }
 
 const app = withTestServer((a) => {
@@ -168,25 +135,16 @@ Deno.test("local driver: the tenant prefix lands on disk", async () => {
 // ── Cross-tenant isolation ─────────────────────────────────────────────────
 
 Deno.test("local driver: tenant B cannot read tenant A's object by relative key", async () => {
-  const root = await Deno.makeTempDir({ prefix: "alchemist-storage-shared-" });
-  const saved = new Map<string, string | undefined>();
-  for (const name of MANAGED_VARS) saved.set(name, Deno.env.get(name));
-
-  try {
-    for (const name of R2_VARS) Deno.env.delete(name);
-    Deno.env.set("LOCAL_STORAGE_DIR", root);
-    Deno.env.set("LOCAL_STORAGE_SIGNING_SECRET", "test-signing-secret");
-
-    // Tenant A writes.
-    Deno.env.set("R2_KEY_PREFIX", "customer-a/");
+  // ONE disk, two tenants, the same relative key. This is the shared-
+  // bucket situation reproduced on a filesystem.
+  await withLocalDriver("customer-a/", async ({ setKeyPrefix }) => {
     await putObject({
       key: "uploads/secret.pdf",
       body: bytes("tenant A only"),
       contentType: "application/pdf",
     });
 
-    // Tenant B asks for the SAME relative key on the SAME disk.
-    Deno.env.set("R2_KEY_PREFIX", "customer-b/");
+    setKeyPrefix("customer-b/");
     assertEquals(await objectExists("uploads/secret.pdf"), false);
     await assertRejects(() => getObject("uploads/secret.pdf"));
 
@@ -194,44 +152,23 @@ Deno.test("local driver: tenant B cannot read tenant A's object by relative key"
     for (const escape of ["../customer-a/uploads/secret.pdf", "/customer-a/uploads/secret.pdf"]) {
       await assertRejects(() => getObject(escape));
     }
-  } finally {
-    for (const [name, value] of saved) {
-      if (value === undefined) Deno.env.delete(name);
-      else Deno.env.set(name, value);
-    }
-    await Deno.remove(root, { recursive: true }).catch(() => {});
-  }
+  });
 });
 
 Deno.test("local driver: a signed URL for another tenant's key is refused", async () => {
-  const root = await Deno.makeTempDir({ prefix: "alchemist-storage-shared-" });
-  const saved = new Map<string, string | undefined>();
-  for (const name of MANAGED_VARS) saved.set(name, Deno.env.get(name));
-
-  try {
-    for (const name of R2_VARS) Deno.env.delete(name);
-    Deno.env.set("LOCAL_STORAGE_DIR", root);
-    Deno.env.set("LOCAL_STORAGE_SIGNING_SECRET", "shared-by-mistake");
-
-    Deno.env.set("R2_KEY_PREFIX", "customer-a/");
+  await withLocalDriver("customer-a/", async ({ setKeyPrefix }) => {
     await putObject({ key: "a.pdf", body: bytes("A"), contentType: "application/pdf" });
-    // A URL minted while A is the tenant, signed with a secret the two
-    // projects share (a copied .env is all that takes).
+    // A URL minted while A is the tenant. Both projects share a signing
+    // secret here, which a copied .env is all it takes to arrange.
     const urlForA = buildLocalSignedUrl("GET", "customer-a/a.pdf", 300);
 
     // Serve it while B is the tenant. The signature verifies, so the
     // prefix check is the only thing left standing. It must hold.
-    Deno.env.set("R2_KEY_PREFIX", "customer-b/");
+    setKeyPrefix("customer-b/");
     const res = await app.request(urlForA);
     assertEquals(res.status, 403);
     await res.body?.cancel();
-  } finally {
-    for (const [name, value] of saved) {
-      if (value === undefined) Deno.env.delete(name);
-      else Deno.env.set(name, value);
-    }
-    await Deno.remove(root, { recursive: true }).catch(() => {});
-  }
+  });
 });
 
 // ── Signed download URLs, served by the real route ─────────────────────────

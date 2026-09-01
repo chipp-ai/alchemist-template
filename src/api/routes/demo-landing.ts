@@ -26,7 +26,8 @@ const FEATURES: ReadonlyArray<{ title: string; body: string }> = [
   { title: "SPA", body: "Svelte 5 (runes) + Vite, hash-based router, typed fetch wrapper." },
   {
     title: "Database",
-    body: "PostgreSQL via Kysely with CamelCasePlugin. Migrations are plain SQL, auto-applied on startup.",
+    body:
+      "PostgreSQL via Kysely with CamelCasePlugin. Migrations are plain SQL, auto-applied on startup.",
   },
   {
     title: "Auth",
@@ -34,7 +35,8 @@ const FEATURES: ReadonlyArray<{ title: string; body: string }> = [
   },
   {
     title: "Billing",
-    body: "Stripe 17 -- plan-tier subscriptions plus a built-in product catalog for one-time and subscription sales.",
+    body:
+      "Stripe 17 -- plan-tier subscriptions plus a built-in product catalog for one-time and subscription sales.",
   },
   {
     title: "RBAC + teams",
@@ -46,7 +48,8 @@ const FEATURES: ReadonlyArray<{ title: string; body: string }> = [
   },
   {
     title: "Agent-native",
-    body: "A CLAUDE.md authored so AI coding agents can extend the app without breaking its conventions.",
+    body:
+      "A CLAUDE.md authored so AI coding agents can extend the app without breaking its conventions.",
   },
 ];
 
@@ -69,8 +72,7 @@ function escapeHtml(input: string): string {
 
 function renderLandingPage(): string {
   const featureItems = FEATURES.map(
-    (f) =>
-      `<li><strong>${escapeHtml(f.title)}</strong> &mdash; ${escapeHtml(f.body)}</li>`,
+    (f) => `<li><strong>${escapeHtml(f.title)}</strong> &mdash; ${escapeHtml(f.body)}</li>`,
   ).join("\n");
 
   const readmeItems = README_LINKS.map(

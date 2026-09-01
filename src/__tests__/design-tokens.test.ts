@@ -176,7 +176,15 @@ deno("app.css: type scale has at least 7 modular steps", async () => {
   const src = await Deno.readTextFile(
     new URL("../../web/src/app.css", import.meta.url),
   );
-  const steps = ["--text-xs", "--text-sm", "--text-base", "--text-lg", "--text-xl", "--text-2xl", "--text-3xl"];
+  const steps = [
+    "--text-xs",
+    "--text-sm",
+    "--text-base",
+    "--text-lg",
+    "--text-xl",
+    "--text-2xl",
+    "--text-3xl",
+  ];
   for (const step of steps) {
     assertStringIncludes(src, `${step}:`, `app.css must define ${step}`);
   }

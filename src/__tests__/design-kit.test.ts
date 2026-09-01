@@ -67,28 +67,37 @@ deno("app.css: .btn[data-loading] renders a real spinner gated on reduced-motion
   // and must disable it rather than removing the visual affordance.
   const reducedIdx = css.indexOf("@media (prefers-reduced-motion: reduce)");
   const spinIdx = css.indexOf("@keyframes btn-spin");
-  assert(reducedIdx > -1 && reducedIdx > spinIdx, "reduced-motion guard must follow the spin keyframe");
+  assert(
+    reducedIdx > -1 && reducedIdx > spinIdx,
+    "reduced-motion guard must follow the spin keyframe",
+  );
   assertStringIncludes(css, "animation: none;");
 });
 
-deno("app.css: every .btn-* variant sets --btn-loading-fg (spinner color, not currentColor)", async () => {
-  const css = await read("web/src/app.css");
-  for (const variant of ["btn-primary", "btn-secondary", "btn-ghost", "btn-danger"]) {
-    const block = css.split(`.${variant} {`)[1]?.split("}")[0] ?? "";
-    assert(
-      block.includes("--btn-loading-fg:"),
-      `.${variant} must set --btn-loading-fg so its loading spinner is visible`,
-    );
-  }
-});
+deno(
+  "app.css: every .btn-* variant sets --btn-loading-fg (spinner color, not currentColor)",
+  async () => {
+    const css = await read("web/src/app.css");
+    for (const variant of ["btn-primary", "btn-secondary", "btn-ghost", "btn-danger"]) {
+      const block = css.split(`.${variant} {`)[1]?.split("}")[0] ?? "";
+      assert(
+        block.includes("--btn-loading-fg:"),
+        `.${variant} must set --btn-loading-fg so its loading spinner is visible`,
+      );
+    }
+  },
+);
 
 // ── Toast kit ────────────────────────────────────────────────────────────────
 
 deno("toast store: registers via defineStore (DevPanel-visible)", async () => {
   const src = await read("web/src/stores/toast.svelte.ts");
-  assertStringIncludes(src, "defineStore<ToastState>(\"toast\"");
+  assertStringIncludes(src, 'defineStore<ToastState>("toast"');
   // Array replacement, not push() — see CLAUDE.md "Stores and the DevPanel".
-  assert(!/state\.toasts\.push\(/.test(src), "toast store must replace the array, never push() in place");
+  assert(
+    !/state\.toasts\.push\(/.test(src),
+    "toast store must replace the array, never push() in place",
+  );
 });
 
 deno("ToastContainer: keyboard + screen-reader accessible", async () => {
@@ -96,7 +105,7 @@ deno("ToastContainer: keyboard + screen-reader accessible", async () => {
   assertStringIncludes(src, 'aria-live="polite"');
   assertStringIncludes(src, 'role="status"');
   assertStringIncludes(src, "<button");
-  assertStringIncludes(src, "aria-label=\"Dismiss notification\"");
+  assertStringIncludes(src, 'aria-label="Dismiss notification"');
   // Portalled like <Modal>, not hand-rolled fixed positioning inside a route.
   assertStringIncludes(src, "use:portal");
 });
@@ -136,30 +145,69 @@ function styleBlocks(svelteSrc: string): string {
   return matches.map((m) => m[1]).join("\n");
 }
 
-deno("Login/Signup: no raw hex left in <style>, and no reference to the undefined --color-primary var", async () => {
-  for (const file of ["web/src/routes/Login.svelte", "web/src/routes/Signup.svelte"]) {
-    const src = await read(file);
-    const style = styleBlocks(src);
-    assert(!HEX_LITERAL.test(style), `${file}: <style> block should not contain a raw hex literal`);
-    assert(!style.includes("--color-primary"), `${file}: --color-primary is not a defined token (use --color-accent)`);
-  }
-});
+deno(
+  "Login/Signup: no raw hex left in <style>, and no reference to the undefined --color-primary var",
+  async () => {
+    for (const file of ["web/src/routes/Login.svelte", "web/src/routes/Signup.svelte"]) {
+      const src = await read(file);
+      const style = styleBlocks(src);
+      assert(
+        !HEX_LITERAL.test(style),
+        `${file}: <style> block should not contain a raw hex literal`,
+      );
+      assert(
+        !style.includes("--color-primary"),
+        `${file}: --color-primary is not a defined token (use --color-accent)`,
+      );
+    }
+  },
+);
 
-deno("Docs.svelte: uses real design tokens, not the orphaned --border/--muted/--accent namespace", async () => {
-  const src = await read("web/src/routes/Docs.svelte");
-  const style = styleBlocks(src);
-  assert(!HEX_LITERAL.test(style), "Docs.svelte: <style> block should not contain a raw hex literal");
-  for (const orphan of ["var(--border", "var(--muted", "var(--accent", "var(--text,", "var(--hover", "var(--code-bg", "var(--code-fg"]) {
-    assert(!style.includes(orphan), `Docs.svelte should not reference the orphaned ${orphan} var`);
-  }
-});
-
-deno("InboundEmails/InboundEmailDetail: status badges derive from --color-warning-*/--color-info-* tokens", async () => {
-  for (const file of ["web/src/routes/InboundEmails.svelte", "web/src/routes/InboundEmailDetail.svelte"]) {
-    const src = await read(file);
+deno(
+  "Docs.svelte: uses real design tokens, not the orphaned --border/--muted/--accent namespace",
+  async () => {
+    const src = await read("web/src/routes/Docs.svelte");
     const style = styleBlocks(src);
-    assert(!HEX_LITERAL.test(style), `${file}: <style> block should not contain a raw hex literal`);
-    assertStringIncludes(style, "var(--color-warning-bg)");
-    assertStringIncludes(style, "var(--color-info-bg)");
-  }
-});
+    assert(
+      !HEX_LITERAL.test(style),
+      "Docs.svelte: <style> block should not contain a raw hex literal",
+    );
+    for (
+      const orphan of [
+        "var(--border",
+        "var(--muted",
+        "var(--accent",
+        "var(--text,",
+        "var(--hover",
+        "var(--code-bg",
+        "var(--code-fg",
+      ]
+    ) {
+      assert(
+        !style.includes(orphan),
+        `Docs.svelte should not reference the orphaned ${orphan} var`,
+      );
+    }
+  },
+);
+
+deno(
+  "InboundEmails/InboundEmailDetail: status badges derive from --color-warning-*/--color-info-* tokens",
+  async () => {
+    for (
+      const file of [
+        "web/src/routes/InboundEmails.svelte",
+        "web/src/routes/InboundEmailDetail.svelte",
+      ]
+    ) {
+      const src = await read(file);
+      const style = styleBlocks(src);
+      assert(
+        !HEX_LITERAL.test(style),
+        `${file}: <style> block should not contain a raw hex literal`,
+      );
+      assertStringIncludes(style, "var(--color-warning-bg)");
+      assertStringIncludes(style, "var(--color-info-bg)");
+    }
+  },
+);

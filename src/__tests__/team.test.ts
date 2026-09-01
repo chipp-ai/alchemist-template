@@ -24,14 +24,14 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import {
   ASSIGNABLE_ROLES,
-  CAPABILITIES,
   can,
   canManage,
+  CAPABILITIES,
+  type Capability,
   hasAtLeast,
   rankOf,
-  ROLES,
   roleLabel,
-  type Capability,
+  ROLES,
 } from "@/lib/roles.ts";
 
 function deno(name: string, fn: () => void | Promise<void>) {
@@ -105,6 +105,16 @@ deno("capabilities: admin can manage billing (product catalog)", () => {
   assertEquals(can("owner", "billing.manage"), true);
 });
 
+deno("capabilities: reviewing uploaded files is an admin call", () => {
+  // Deciding whether someone else's file is fit to be served is the same
+  // class of decision as adding a member, so it sits with the admin
+  // capabilities. An editor can upload; only an admin can approve.
+  assertEquals(can("admin", "files.review"), true);
+  assertEquals(can("owner", "files.review"), true);
+  assertEquals(can("editor", "files.review"), false);
+  assertEquals(can("viewer", "files.review"), false);
+});
+
 deno("capabilities: admin has team + org but is gated from owner-only ops", () => {
   for (const cap of CAPABILITIES) {
     assertEquals(can("admin", cap), true, `admin should have ${cap}`);
@@ -174,13 +184,16 @@ deno("registry: every Capability is tested above (lint)", () => {
   }
 });
 
-deno("registry: ASSIGNABLE_ROLES excludes 'owner' (invite-can-never-confer-ownership invariant)", () => {
-  // Inviting someone to be the OWNER would let an admin steal the
-  // org from the actual owner. ASSIGNABLE_ROLES is the public API
-  // surface — never let it carry 'owner'. Migration to a different
-  // owner is a separate flow (deferred from v1).
-  assertEquals(ASSIGNABLE_ROLES.includes("owner" as never), false);
-});
+deno(
+  "registry: ASSIGNABLE_ROLES excludes 'owner' (invite-can-never-confer-ownership invariant)",
+  () => {
+    // Inviting someone to be the OWNER would let an admin steal the
+    // org from the actual owner. ASSIGNABLE_ROLES is the public API
+    // surface — never let it carry 'owner'. Migration to a different
+    // owner is a separate flow (deferred from v1).
+    assertEquals(ASSIGNABLE_ROLES.includes("owner" as never), false);
+  },
+);
 
 // ── Client mirror lint ────────────────────────────────────────────────────
 
@@ -226,12 +239,14 @@ deno("source: org routes guard team.* with requireCapability", async () => {
   const src = await Deno.readTextFile(
     new URL("../api/routes/org/index.ts", import.meta.url),
   );
-  for (const cap of [
-    "team.invite",
-    "team.update_role",
-    "team.remove",
-    "org.update",
-  ]) {
+  for (
+    const cap of [
+      "team.invite",
+      "team.update_role",
+      "team.remove",
+      "org.update",
+    ]
+  ) {
     assertStringIncludes(
       src,
       `requireCapability("${cap}")`,

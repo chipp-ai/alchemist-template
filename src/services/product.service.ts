@@ -148,9 +148,7 @@ export async function createProduct(
       product: stripeProductId,
       unit_amount: input.priceCents,
       currency,
-      ...(input.type === "subscription"
-        ? { recurring: { interval: input.interval! } }
-        : {}),
+      ...(input.type === "subscription" ? { recurring: { interval: input.interval! } } : {}),
     });
     stripePriceId = stripePrice.id;
   } catch (err) {
@@ -214,9 +212,7 @@ export async function updateProduct(
     ) {
       await stripe.products.update(product.stripeProductId, {
         ...(patch.name !== undefined ? { name: patch.name } : {}),
-        ...(patch.description !== undefined
-          ? { description: patch.description || undefined }
-          : {}),
+        ...(patch.description !== undefined ? { description: patch.description || undefined } : {}),
         ...(patch.active !== undefined ? { active: patch.active } : {}),
       });
     }
@@ -255,9 +251,7 @@ export async function updateProduct(
     .updateTable("products")
     .set({
       ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.description !== undefined
-        ? { description: patch.description }
-        : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
       ...(patch.active !== undefined ? { active: patch.active } : {}),
       ...(patch.priceCents !== undefined ? { priceCents: patch.priceCents } : {}),
       ...(newStripePriceId ? { stripePriceId: newStripePriceId } : {}),
@@ -451,12 +445,8 @@ export async function recordProductPurchase(
           .updateTable("purchases")
           .set({
             stripeCheckoutSessionId: input.checkoutSessionId,
-            ...(input.paymentIntentId
-              ? { stripePaymentIntentId: input.paymentIntentId }
-              : {}),
-            ...(input.amountCents != null
-              ? { amountCents: input.amountCents }
-              : {}),
+            ...(input.paymentIntentId ? { stripePaymentIntentId: input.paymentIntentId } : {}),
+            ...(input.amountCents != null ? { amountCents: input.amountCents } : {}),
             ...(input.currency ? { currency: input.currency } : {}),
             ...(input.purchasedBy ? { purchasedBy: input.purchasedBy } : {}),
             updatedAt: new Date(),
@@ -512,9 +502,7 @@ export async function applyProductSubscriptionEvent(
   input: SubscriptionEventInput,
 ): Promise<void> {
   const status = mapStripeSubscriptionStatus(input.status);
-  const currentPeriodEnd = input.currentPeriodEnd
-    ? new Date(input.currentPeriodEnd * 1000)
-    : null;
+  const currentPeriodEnd = input.currentPeriodEnd ? new Date(input.currentPeriodEnd * 1000) : null;
   const canceledAt = input.canceledAt
     ? new Date(input.canceledAt * 1000)
     : status === "canceled"

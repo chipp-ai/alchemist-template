@@ -32,29 +32,32 @@ deno("routes: /portal and the claim landing page are registered", async () => {
   );
 });
 
-deno("routes: portal paths are public so a lapsed session is not bounced to admin login", async () => {
-  // An end user whose session lapsed needs a new link, not the workspace
-  // sign-in form. The DATA behind the page is still auth-gated server
-  // side (GET /api/portal/me is scoped to the caller).
-  //
-  // Source-shape rather than a call: routes.ts imports .svelte modules,
-  // which this runtime cannot parse. Same reason the design-system files
-  // lint source text.
-  const src = await read("web/src/routes.ts");
-  assert(
-    /PUBLIC_LITERAL_ROUTES = new Set\(\[[^\]]*"\/portal"/.test(src),
-    "/portal must be public, or a lapsed portal session bounces to admin login",
-  );
-  assert(
-    /PUBLIC_PREFIX_ROUTES = \[[^\]]*"\/portal\/"/.test(src),
-    "the claim landing page must be public",
-  );
-  assert(
-    /export function isPortalRoute[\s\S]{0,220}path === "\/portal"[\s\S]{0,120}startsWith\("\/portal\/"\)/
-      .test(src),
-    "isPortalRoute must match the portal namespace exactly, not by loose prefix",
-  );
-});
+deno(
+  "routes: portal paths are public so a lapsed session is not bounced to admin login",
+  async () => {
+    // An end user whose session lapsed needs a new link, not the workspace
+    // sign-in form. The DATA behind the page is still auth-gated server
+    // side (GET /api/portal/me is scoped to the caller).
+    //
+    // Source-shape rather than a call: routes.ts imports .svelte modules,
+    // which this runtime cannot parse. Same reason the design-system files
+    // lint source text.
+    const src = await read("web/src/routes.ts");
+    assert(
+      /PUBLIC_LITERAL_ROUTES = new Set\(\[[^\]]*"\/portal"/.test(src),
+      "/portal must be public, or a lapsed portal session bounces to admin login",
+    );
+    assert(
+      /PUBLIC_PREFIX_ROUTES = \[[^\]]*"\/portal\/"/.test(src),
+      "the claim landing page must be public",
+    );
+    assert(
+      /export function isPortalRoute[\s\S]{0,220}path === "\/portal"[\s\S]{0,120}startsWith\("\/portal\/"\)/
+        .test(src),
+      "isPortalRoute must match the portal namespace exactly, not by loose prefix",
+    );
+  },
+);
 
 deno("App: portal routes are excluded from the admin layout explicitly", async () => {
   const src = await read("web/src/App.svelte");

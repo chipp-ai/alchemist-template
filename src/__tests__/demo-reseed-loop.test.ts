@@ -110,7 +110,11 @@ test("runDemoReseedCycle: two concurrent cycles under DEMO_MODE=1 -- only one ac
       const [a, b] = await Promise.all([runDemoReseedCycle(), runDemoReseedCycle()]);
 
       const ranCount = [a, b].filter((o) => o.ran).length;
-      assertEquals(ranCount, 1, "exactly one concurrent cycle should win the advisory lock and run the seed");
+      assertEquals(
+        ranCount,
+        1,
+        "exactly one concurrent cycle should win the advisory lock and run the seed",
+      );
 
       // The demo org must exist exactly once regardless of which cycle won.
       const orgs = await db

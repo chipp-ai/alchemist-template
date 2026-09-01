@@ -167,6 +167,47 @@ export type PortalAccessToken = Selectable<PortalAccessTokensTable>;
 export type NewPortalAccessToken = Insertable<PortalAccessTokensTable>;
 export type PortalAccessTokenUpdate = Updateable<PortalAccessTokensTable>;
 
+// ── uploaded files ──
+
+export type UploadedFileStatus = "pending_review" | "approved" | "rejected";
+
+/**
+ * One row per end-user upload. See src/services/uploaded-file.service.ts
+ * and db/migrations/20260901000537_uploaded_files.sql.
+ *
+ * `storageKey` is the RELATIVE key (no tenant prefix), which is what
+ * storage.service.ts takes and returns.
+ */
+export interface UploadedFilesTable {
+  id: Generated<string>;
+  organizationId: string;
+  /** NULL once the uploader's account is deleted. The file survives. */
+  uploadedBy: string | null;
+  /** The record this file belongs to, or NULL when it belongs to nothing. */
+  subjectType: string | null;
+  subjectId: string | null;
+  storageKey: string;
+  filename: string;
+  contentType: string;
+  /**
+   * BIGINT. postgres.js hands a bigint back as a STRING, so the select
+   * side is widened and the service coerces with Number() at the mapper.
+   * Reading this field off a raw row without that coercion gives you a
+   * string that compares wrong against a number.
+   */
+  sizeBytes: ColumnType<string | number, number, number>;
+  status: Generated<UploadedFileStatus>;
+  reviewReason: string | null;
+  reviewedBy: string | null;
+  reviewedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type UploadedFileRow = Selectable<UploadedFilesTable>;
+export type NewUploadedFile = Insertable<UploadedFilesTable>;
+export type UploadedFileUpdate = Updateable<UploadedFilesTable>;
+
 // ── billing schema ──
 
 export interface TokenUsageTable {
@@ -373,6 +414,7 @@ export interface Database {
   api_credentials: ApiCredentialsTable;
   invites: InvitesTable;
   portal_access_tokens: PortalAccessTokensTable;
+  uploaded_files: UploadedFilesTable;
   token_usage: TokenUsageTable;
   job_history: JobHistoryTable;
   doc_search_index: DocSearchIndexTable;

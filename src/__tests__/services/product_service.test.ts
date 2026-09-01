@@ -24,10 +24,7 @@ import {
   type StripeLike,
   updateProduct,
 } from "@/services/product.service.ts";
-import {
-  handleStripeWebhookEvent,
-  mapSubscriptionToTier,
-} from "@/api/routes/billing/index.ts";
+import { handleStripeWebhookEvent, mapSubscriptionToTier } from "@/api/routes/billing/index.ts";
 import { BadRequestError, ConflictError } from "@/utils/errors.ts";
 
 // ── Stripe stub ──

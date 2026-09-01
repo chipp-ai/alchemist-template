@@ -30,11 +30,7 @@ import { Hono } from "hono";
 import { createSessionToken, getUser, requireAuth } from "@/api/middleware/auth.ts";
 import { setSessionCookie } from "@/api/routes/auth/index.ts";
 import { ForbiddenError } from "@/utils/errors.ts";
-import {
-  acceptInvite,
-  claimInvite,
-  resolveInviteByToken,
-} from "@/services/invite.service.ts";
+import { acceptInvite, claimInvite, resolveInviteByToken } from "@/services/invite.service.ts";
 import { log } from "@/lib/logger.ts";
 
 const inviteRoutes = new Hono();

@@ -163,8 +163,7 @@ billingRoutes.post(
       throw new BadRequestError("No billing account found. Please subscribe to a plan first.");
     }
 
-    const defaultReturnUrl =
-      Deno.env.get("WEB_APP_URL") ?? "http://localhost:5173";
+    const defaultReturnUrl = Deno.env.get("WEB_APP_URL") ?? "http://localhost:5173";
 
     try {
       const session = await stripe.billingPortal.sessions.create({
@@ -200,8 +199,7 @@ billingRoutes.post(
       throw new BadRequestError("Stripe not configured");
     }
 
-    const defaultWebUrl =
-      Deno.env.get("WEB_APP_URL") ?? "http://localhost:5173";
+    const defaultWebUrl = Deno.env.get("WEB_APP_URL") ?? "http://localhost:5173";
 
     try {
       const customerId = await ensureStripeCustomer(
@@ -420,9 +418,7 @@ export async function handleStripeWebhookEvent(event: Stripe.Event): Promise<voi
       if (meta.productId) {
         await applyProductSubscriptionEvent({
           subscriptionId: subscription.id,
-          status: event.type === "customer.subscription.deleted"
-            ? "canceled"
-            : subscription.status,
+          status: event.type === "customer.subscription.deleted" ? "canceled" : subscription.status,
           currentPeriodEnd: subscription.current_period_end,
           canceledAt: subscription.canceled_at,
           metadata: meta,

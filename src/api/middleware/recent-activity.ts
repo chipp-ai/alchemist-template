@@ -13,7 +13,7 @@
  */
 
 import { createMiddleware } from "hono/factory";
-import { recordRequest, recordError } from "@/lib/dev-activity.ts";
+import { recordError, recordRequest } from "@/lib/dev-activity.ts";
 
 interface ActivityVariables {
   isStreaming?: boolean;
@@ -49,9 +49,7 @@ export const recentActivityMiddleware = createMiddleware<{
 
     if (errorThrown !== undefined) {
       recordError({
-        message: errorThrown instanceof Error
-          ? errorThrown.message
-          : String(errorThrown),
+        message: errorThrown instanceof Error ? errorThrown.message : String(errorThrown),
         stack: errorThrown instanceof Error ? errorThrown.stack : undefined,
         source: "request-timing",
         request: { method, routePath, status },

@@ -27,7 +27,9 @@ Deno.test({
   sanitizeOps: false,
   fn: async () => {
     const script = `
-      import { appendLineSync } from "${new URL("../observability/jsonl-writer.ts", import.meta.url).href}";
+      import { appendLineSync } from "${
+      new URL("../observability/jsonl-writer.ts", import.meta.url).href
+    }";
       // Multiple emits: the first hits the permission error and must latch
       // off; subsequent calls must be silent no-ops, not repeated throws.
       for (let i = 0; i < 5; i++) {
@@ -58,7 +60,11 @@ Deno.test({
       0,
       `subprocess must exit 0 -- the writer must never surface an uncaught exception. stderr:\n${err}`,
     );
-    assertEquals(out.includes("DONE"), true, "script must run to completion past all 5 appendLineSync calls");
+    assertEquals(
+      out.includes("DONE"),
+      true,
+      "script must run to completion past all 5 appendLineSync calls",
+    );
 
     // The latch (writeDisabled) must trip on the FIRST permission failure
     // so the remaining 4 emits are silent no-ops that never even reach a

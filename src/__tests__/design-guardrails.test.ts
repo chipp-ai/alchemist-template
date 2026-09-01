@@ -96,23 +96,26 @@ async function collectCssFiles(): Promise<CssFile[]> {
 
 const HEX_LITERAL_RE = /#[0-9a-fA-F]{3,8}\b/g;
 
-deno("guardrail: no raw hex color literals outside token-definition files or DevPanel", async () => {
-  const files = await collectCssFiles();
-  const offenders: string[] = [];
-  for (const { relPath, css } of files) {
-    if (HEX_EXEMPT_FILES.has(relPath)) continue;
-    const matches = [...css.matchAll(HEX_LITERAL_RE)];
-    if (matches.length > 0) {
-      offenders.push(`${relPath}: ${matches.map((m) => m[0]).join(", ")}`);
+deno(
+  "guardrail: no raw hex color literals outside token-definition files or DevPanel",
+  async () => {
+    const files = await collectCssFiles();
+    const offenders: string[] = [];
+    for (const { relPath, css } of files) {
+      if (HEX_EXEMPT_FILES.has(relPath)) continue;
+      const matches = [...css.matchAll(HEX_LITERAL_RE)];
+      if (matches.length > 0) {
+        offenders.push(`${relPath}: ${matches.map((m) => m[0]).join(", ")}`);
+      }
     }
-  }
-  assert(
-    offenders.length === 0,
-    `Raw hex color literal(s) found outside token-definition files. Use a ` +
-      `var(--color-*) / var(--brand-*) token instead (see web/DESIGN.md):\n` +
-      offenders.join("\n"),
-  );
-});
+    assert(
+      offenders.length === 0,
+      `Raw hex color literal(s) found outside token-definition files. Use a ` +
+        `var(--color-*) / var(--brand-*) token instead (see web/DESIGN.md):\n` +
+        offenders.join("\n"),
+    );
+  },
+);
 
 deno("guardrail: no `transition: all` / `transition-property: all` anywhere", async () => {
   const files = await collectCssFiles();
@@ -163,13 +166,15 @@ deno("guardrail: web/DESIGN.md exists and documents the token/motion/component r
   const text = await Deno.readTextFile(
     new URL("../../web/DESIGN.md", import.meta.url),
   );
-  for (const needle of [
-    "hex",
-    "transition",
-    "font-family",
-    "prefers-reduced-motion",
-    "--brand-primary",
-  ]) {
+  for (
+    const needle of [
+      "hex",
+      "transition",
+      "font-family",
+      "prefers-reduced-motion",
+      "--brand-primary",
+    ]
+  ) {
     assert(
       text.toLowerCase().includes(needle.toLowerCase()),
       `web/DESIGN.md should mention "${needle}"`,

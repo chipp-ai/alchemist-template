@@ -70,7 +70,12 @@ function envInt(key: string, fallback: number, min: number, max: number): number
 function intervalMs(): number {
   // Clamp [1h, 7d] -- ops can retune cadence without redeploying code, but
   // can't accidentally spin this into a hot loop or a once-a-month no-op.
-  return envInt("DEMO_RESEED_INTERVAL_MS", DEFAULT_INTERVAL_MS, 60 * 60 * 1000, 7 * 24 * 60 * 60 * 1000);
+  return envInt(
+    "DEMO_RESEED_INTERVAL_MS",
+    DEFAULT_INTERVAL_MS,
+    60 * 60 * 1000,
+    7 * 24 * 60 * 60 * 1000,
+  );
 }
 
 /**

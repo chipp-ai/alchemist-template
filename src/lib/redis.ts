@@ -166,8 +166,10 @@ export async function cacheSet(
   value: unknown,
   ttlSeconds: number,
 ): Promise<boolean> {
-  const reply = await run("cache-set", (c) =>
-    c.set(k(key), JSON.stringify(value), { ex: Math.max(1, ttlSeconds) }));
+  const reply = await run(
+    "cache-set",
+    (c) => c.set(k(key), JSON.stringify(value), { ex: Math.max(1, ttlSeconds) }),
+  );
   return reply === "OK";
 }
 
@@ -237,8 +239,7 @@ export async function redisPublish(
   channel: string,
   payload: unknown,
 ): Promise<number | null> {
-  return await run("publish", (c) =>
-    c.publish(k(channel), JSON.stringify(payload)));
+  return await run("publish", (c) => c.publish(k(channel), JSON.stringify(payload)));
 }
 
 /** Test seam: reset connection state (e.g. after env var changes). */

@@ -91,7 +91,10 @@ export const demoBannerMiddleware = createMiddleware(async (c, next) => {
   if (!bodyTagMatch) return; // not a full HTML document -- nothing safe to inject into
 
   const redirectTo = c.req.path + (new URL(c.req.url).search ?? "");
-  const injected = original.replace(bodyTagMatch[0], `${bodyTagMatch[0]}\n${bannerHtml(redirectTo)}`);
+  const injected = original.replace(
+    bodyTagMatch[0],
+    `${bodyTagMatch[0]}\n${bannerHtml(redirectTo)}`,
+  );
 
   const headers = new Headers(c.res.headers);
   headers.delete("Content-Length");

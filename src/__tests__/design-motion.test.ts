@@ -67,12 +67,15 @@ deno("shouldArmReveal: false when both signals say no", () => {
   );
 });
 
-deno("shouldArmReveal: true only when IntersectionObserver is present AND motion is allowed", () => {
-  assertEquals(
-    shouldArmReveal({ hasIntersectionObserver: true, prefersReducedMotion: false }),
-    true,
-  );
-});
+deno(
+  "shouldArmReveal: true only when IntersectionObserver is present AND motion is allowed",
+  () => {
+    assertEquals(
+      shouldArmReveal({ hasIntersectionObserver: true, prefersReducedMotion: false }),
+      true,
+    );
+  },
+);
 
 // ── view-transitions.ts: pure fail-safe gate ────────────────────────────────
 
@@ -99,14 +102,17 @@ deno("shouldUseViewTransition: true only when supported AND motion is allowed", 
 
 // ── Source-shape lints: web/src/motion.css ──────────────────────────────────
 
-deno("motion.css: .reveal is visible by default, hidden only once reveal-ready is present", async () => {
-  const css = await read("web/src/motion.css");
-  const bareRevealBlock = css.split(".reveal {")[1]?.split("}")[0] ?? "";
-  assertStringIncludes(bareRevealBlock, "opacity: 1");
-  assertStringIncludes(css, "html.reveal-ready .reveal {");
-  const gatedBlock = css.split("html.reveal-ready .reveal {")[1]?.split("}")[0] ?? "";
-  assertStringIncludes(gatedBlock, "opacity: 0");
-});
+deno(
+  "motion.css: .reveal is visible by default, hidden only once reveal-ready is present",
+  async () => {
+    const css = await read("web/src/motion.css");
+    const bareRevealBlock = css.split(".reveal {")[1]?.split("}")[0] ?? "";
+    assertStringIncludes(bareRevealBlock, "opacity: 1");
+    assertStringIncludes(css, "html.reveal-ready .reveal {");
+    const gatedBlock = css.split("html.reveal-ready .reveal {")[1]?.split("}")[0] ?? "";
+    assertStringIncludes(gatedBlock, "opacity: 0");
+  },
+);
 
 deno("motion.css: reveal stagger reads --reveal-index (set by reveal.ts)", async () => {
   const css = await read("web/src/motion.css");
@@ -132,14 +138,21 @@ deno("motion.css: View Transitions pseudo-elements are styled", async () => {
   assertStringIncludes(css, "::view-transition-new(root)");
 });
 
-deno("motion.css: a single prefers-reduced-motion block disables every animation, including a blanket kill-switch", async () => {
-  const css = await read("web/src/motion.css");
-  const matches = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\)/g)];
-  assertEquals(matches.length, 1, "expected exactly one prefers-reduced-motion block in motion.css");
-  const block = css.slice(matches[0].index);
-  assertStringIncludes(block, "animation-duration: 0.01ms !important");
-  assertStringIncludes(block, "transition-duration: 0.01ms !important");
-});
+deno(
+  "motion.css: a single prefers-reduced-motion block disables every animation, including a blanket kill-switch",
+  async () => {
+    const css = await read("web/src/motion.css");
+    const matches = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\)/g)];
+    assertEquals(
+      matches.length,
+      1,
+      "expected exactly one prefers-reduced-motion block in motion.css",
+    );
+    const block = css.slice(matches[0].index);
+    assertStringIncludes(block, "animation-duration: 0.01ms !important");
+    assertStringIncludes(block, "transition-duration: 0.01ms !important");
+  },
+);
 
 deno("motion.css: never uses transition: all", async () => {
   const css = await read("web/src/motion.css");
@@ -152,7 +165,10 @@ deno("main.ts: imports motion.css after app.css", async () => {
   const src = await read("web/src/main.ts");
   const appCssIdx = src.indexOf('import "./app.css"');
   const motionCssIdx = src.indexOf('import "./motion.css"');
-  assert(appCssIdx > -1 && motionCssIdx > -1 && motionCssIdx > appCssIdx, "motion.css must be imported after app.css");
+  assert(
+    appCssIdx > -1 && motionCssIdx > -1 && motionCssIdx > appCssIdx,
+    "motion.css must be imported after app.css",
+  );
 });
 
 deno("App.svelte: wires initRevealOnScroll on mount and on every route change", async () => {
