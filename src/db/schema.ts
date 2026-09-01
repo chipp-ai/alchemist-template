@@ -208,6 +208,74 @@ export type UploadedFileRow = Selectable<UploadedFilesTable>;
 export type NewUploadedFile = Insertable<UploadedFilesTable>;
 export type UploadedFileUpdate = Updateable<UploadedFilesTable>;
 
+// ── spreadsheet import ──
+
+export type ImportSessionStatus = "parsed" | "mapped" | "committed" | "failed";
+
+/**
+ * One run of the import wizard. See src/services/import/import.service.ts
+ * and db/migrations/20260901003427_import_sessions.sql.
+ *
+ * The file's rows are NOT stored here. The uploaded file lives in
+ * storage; each step re-parses it. `columns` and `mapping` are the only
+ * state a step carries forward.
+ */
+export interface ImportSessionsTable {
+  id: Generated<string>;
+  organizationId: string;
+  /** NULL once the person who ran the import is deleted. The record stays. */
+  createdBy: string | null;
+  /** The registered ImportDefinition's `name`. */
+  definitionName: string;
+  /** NULL once the source file is deleted. The result is still the record. */
+  uploadedFileId: string | null;
+  filename: string;
+  status: Generated<ImportSessionStatus>;
+  sheetName: string | null;
+  headerRowIndex: Generated<number>;
+  /** JSONB -- column labels in file order. */
+  columns: Generated<unknown>;
+  /** JSONB -- [{ columnIndex, fieldKey, custom }]. */
+  mapping: Generated<unknown>;
+  rowCount: Generated<number>;
+  /** JSONB -- the commit outcome: counts plus every row that did not land. */
+  result: unknown | null;
+  committedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type ImportSessionRow = Selectable<ImportSessionsTable>;
+export type NewImportSession = Insertable<ImportSessionsTable>;
+export type ImportSessionUpdate = Updateable<ImportSessionsTable>;
+
+/**
+ * The people roster behind the WORKED EXAMPLE import definition
+ * (src/services/import/examples/people.ts). Copy that definition for
+ * your own import, then delete this table and its migration.
+ */
+export interface ImportDemoPeopleTable {
+  id: Generated<string>;
+  organizationId: string;
+  firstName: string;
+  lastName: string | null;
+  email: string;
+  /**
+   * DATE column. The importer writes the `YYYY-MM-DD` string it
+   * normalized, but postgres.js parses a `date` back into a Date at UTC
+   * MIDNIGHT. Read it with `toISOString().slice(0, 10)`; `String(date)`
+   * or a local getter renders the previous day for anyone west of
+   * Greenwich, which is a date silently off by one on a roster.
+   */
+  startDate: ColumnType<Date | string | null, string | null | undefined, string | null | undefined>;
+  team: string | null;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type ImportDemoPersonRow = Selectable<ImportDemoPeopleTable>;
+export type NewImportDemoPerson = Insertable<ImportDemoPeopleTable>;
+
 // ── billing schema ──
 
 export interface TokenUsageTable {
@@ -415,6 +483,8 @@ export interface Database {
   invites: InvitesTable;
   portal_access_tokens: PortalAccessTokensTable;
   uploaded_files: UploadedFilesTable;
+  import_sessions: ImportSessionsTable;
+  import_demo_people: ImportDemoPeopleTable;
   token_usage: TokenUsageTable;
   job_history: JobHistoryTable;
   doc_search_index: DocSearchIndexTable;

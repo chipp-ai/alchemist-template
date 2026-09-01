@@ -9,14 +9,12 @@ import { closeDatabase, initDatabase } from "@/db/client.ts";
 import { reindexDocs } from "@/services/docs/reindex.ts";
 import { startInboundEmailReaper, stopInboundEmailReaper } from "@/jobs/inbound-email-reaper.ts";
 import { startDemoReseedLoop, stopDemoReseedLoop } from "@/jobs/demo-reseed-loop.ts";
-import {
-  startExpirationDigestJob,
-  stopExpirationDigestJob,
-} from "@/jobs/expiration-digest.ts";
+import { startExpirationDigestJob, stopExpirationDigestJob } from "@/jobs/expiration-digest.ts";
 import { log } from "@/lib/logger.ts";
 import { assertNoLiveStripeKeyInDemoMode } from "@/lib/stripe.ts";
 import { isDemoMode } from "@/config/demo-mode.ts";
 import { getWorkerRole, roleRunsBackgroundWork } from "@/lib/worker-role.ts";
+import { registerPeopleImport } from "@/services/import/examples/people.ts";
 
 const port = parseInt(Deno.env.get("PORT") ?? "8000");
 const nodeEnv = Deno.env.get("NODE_ENV") ?? "development";
@@ -38,6 +36,17 @@ if (isDemoMode()) {
     Deno.exit(1);
   }
 }
+
+// ── Import definitions ──
+// Every spreadsheet import this app offers registers here, before the
+// server starts, because the wizard's routes read the registry on the
+// first request. Registration is pure bookkeeping: no DB, no network,
+// nothing that can fail at boot.
+//
+// Add yours next to this line. `registerPeopleImport()` is the WORKED
+// EXAMPLE (src/services/import/examples/people.ts) -- copy that file for
+// your own import, then delete it and this call.
+registerPeopleImport();
 
 // ── Database connection ──
 

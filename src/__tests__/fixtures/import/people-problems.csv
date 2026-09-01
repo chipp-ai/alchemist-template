@@ -1,0 +1,5 @@
+firstName,lastName,email
+Ana,Ruiz,ana.ruiz@example.com
+Ana,Ruiz,ANA.RUIZ@example.com
+Bo,Lindqvist,not-an-email
+Carla,,carla@example.com

@@ -30,6 +30,7 @@ import { orgRoutes } from "@/api/routes/org/index.ts";
 import { billingRoutes } from "@/api/routes/billing/index.ts";
 import { devRoutes } from "@/api/routes/dev/index.ts";
 import { fileRoutes } from "@/api/routes/files/index.ts";
+import { importRoutes } from "@/api/routes/imports/index.ts";
 import { inviteRoutes } from "@/api/routes/invite/index.ts";
 import { realtimeRoutes } from "@/api/routes/realtime/index.ts";
 import { observabilityRoutes } from "@/api/routes/observability/index.ts";
@@ -172,6 +173,12 @@ app.route("/api/files", fileRoutes);
 // The whole router 404s when R2 is configured, because nothing points
 // here then. See src/api/routes/storage-local/index.ts.
 app.route("/api/storage/local", storageLocalRoutes);
+
+// Spreadsheet import wizard. Auth-required; each import declares its
+// own capability (app.write by default) and every route checks it. The
+// definitions list is a menu and marks what THIS caller may run. See
+// src/services/import/definitions.ts.
+app.route("/api/imports", importRoutes);
 
 // Invite acceptance (public preview + auth-required accept). NOT
 // nested under /api/org because invitees aren't bound to an org yet
