@@ -6,6 +6,7 @@ import Docs from "./routes/Docs.svelte";
 import InboundEmails from "./routes/InboundEmails.svelte";
 import InboundEmailDetail from "./routes/InboundEmailDetail.svelte";
 import ReviewQueue from "./routes/ReviewQueue.svelte";
+import Import from "./routes/Import.svelte";
 import InviteAccept from "./routes/InviteAccept.svelte";
 import PortalHome from "./routes/portal/PortalHome.svelte";
 import PortalClaim from "./routes/portal/PortalClaim.svelte";
@@ -34,6 +35,10 @@ const routes: Record<string, any> = {
   // upload lands pending until somebody decides. The page renders its
   // own "ask an admin" state rather than 404ing a non-reviewer.
   "/files/review": ReviewQueue,
+  // Spreadsheet import wizard. Authed; each registered import declares
+  // the capability it needs and the page says so rather than hiding an
+  // import a person cannot run.
+  "/import": Import,
   // Invite acceptance landing page. Token comes from the URL; the
   // page handles both logged-in and logged-out flows.
   "/invite/:token": InviteAccept,

@@ -24,6 +24,7 @@
 import { assert, assertEquals } from "@std/assert";
 import { createIsolatedUser, getTestDb, withLocalStorage, withTestServer } from "../helpers.ts";
 import { createSessionToken } from "@/api/middleware/auth.ts";
+import { fileRoutes } from "@/api/routes/files/index.ts";
 import { importRoutes } from "@/api/routes/imports/index.ts";
 import {
   findImportDefinition,
@@ -40,6 +41,9 @@ function dbTest(name: string, fn: () => Promise<void>) {
 
 const app = withTestServer((a) => {
   a.route("/api/imports", importRoutes);
+  // The wizard's real first step is <UploadField> posting here, so the
+  // handoff between the two routers is exercised rather than assumed.
+  a.route("/api/files", fileRoutes);
 });
 
 const FIXTURES = new URL("../fixtures/import/", import.meta.url);
@@ -516,6 +520,111 @@ dbTest("a column can be kept as custom data and reaches the handler as an extra"
     });
   } finally {
     await owner.cleanup();
+  }
+});
+
+// ── The wizard's own path: UploadField first, then the session ─────────────
+
+/** Post a file the way <UploadField> does, and return its id. */
+async function uploadThroughPavedRoad(
+  person: Person,
+  opts: { filename: string; contentType: string; body: Uint8Array },
+): Promise<string> {
+  const form = new FormData();
+  form.set("file", new File([opts.body], opts.filename, { type: opts.contentType }));
+  form.set("subjectType", "import");
+  form.set("subjectId", "people");
+  const res = await app.request("/api/files/uploads", {
+    method: "POST",
+    headers: { cookie: person.cookie },
+    body: form,
+  });
+  assertEquals(res.status, 201, await res.clone().text());
+  return (await json(res)).data.id;
+}
+
+dbTest("a session opens on a file the uploads paved road already stored", async () => {
+  ensureDefinitions();
+  const owner = await signIn();
+  try {
+    await withLocalStorage(async () => {
+      const uploadedFileId = await uploadThroughPavedRoad(owner, {
+        filename: "people-simple.csv",
+        contentType: "text/csv",
+        body: fixture("people-simple.csv"),
+      });
+
+      const res = await postJson(owner, "/api/imports/sessions", {
+        definition: "people",
+        uploadedFileId,
+      });
+      assertEquals(res.status, 201, await res.clone().text());
+      const body = await json(res);
+      assertEquals(body.data.session.rowCount, 2);
+      assertEquals(body.data.proposal.map((p: { fieldKey: string | null }) => p.fieldKey), [
+        "firstName",
+        "lastName",
+        "email",
+      ]);
+
+      const result = (await json(
+        await postJson(owner, `/api/imports/sessions/${body.data.session.id}/commit`),
+      )).data.result;
+      assertEquals(result.created, 2);
+    });
+  } finally {
+    await owner.cleanup();
+  }
+});
+
+dbTest("a stored file of the wrong type is refused by the definition's narrowing", async () => {
+  ensureDefinitions();
+  const owner = await signIn();
+  try {
+    await withLocalStorage(async () => {
+      // A PDF is a perfectly legitimate upload for this app, and it is
+      // still not a spreadsheet. The app-wide allowlist is wider than
+      // one import's, so the import re-checks.
+      const uploadedFileId = await uploadThroughPavedRoad(owner, {
+        filename: "scan.pdf",
+        contentType: "application/pdf",
+        body: new TextEncoder().encode("%PDF-1.7 sample"),
+      });
+
+      const res = await postJson(owner, "/api/imports/sessions", {
+        definition: "people",
+        uploadedFileId,
+      });
+      assertEquals(res.status, 400);
+      const body = await json(res);
+      assert(body.error.includes(".csv"), body.error);
+    });
+  } finally {
+    await owner.cleanup();
+  }
+});
+
+dbTest("another workspace's uploaded file cannot be imported", async () => {
+  ensureDefinitions();
+  const mine = await signIn();
+  const theirs = await signIn();
+  try {
+    await withLocalStorage(async () => {
+      const uploadedFileId = await uploadThroughPavedRoad(mine, {
+        filename: "people-simple.csv",
+        contentType: "text/csv",
+        body: fixture("people-simple.csv"),
+      });
+
+      const res = await postJson(theirs, "/api/imports/sessions", {
+        definition: "people",
+        uploadedFileId,
+      });
+      assertEquals(res.status, 404);
+    });
+  } finally {
+    await mine.cleanup();
+    await theirs.cleanup();
   }
 });
 

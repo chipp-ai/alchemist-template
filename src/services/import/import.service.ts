@@ -43,7 +43,8 @@ import {
   type ImportDefinition,
   type ImportRowValues,
 } from "./definitions.ts";
-import { parseSpreadsheet } from "./parse.ts";
+import { type ParsedSpreadsheet, parseSpreadsheet } from "./parse.ts";
+import { assertAllowedUpload } from "@/utils/upload-types.ts";
 import {
   buildIdentityIndex,
   type ColumnMappingEntry,
@@ -276,24 +277,46 @@ export async function createImportSession(
   });
 
   const proposal = proposeMapping(parsed.columns, definition);
+  const session = await insertSession({
+    organizationId: input.organizationId,
+    userId: input.userId,
+    definition,
+    uploadedFileId: file.id,
+    filename: file.filename,
+    parsed,
+    proposal,
+  });
 
+  return { session, proposal };
+}
+
+/** The session row. Shared by both ways of opening one. */
+async function insertSession(input: {
+  organizationId: string;
+  userId: string | null;
+  definition: ImportDefinition;
+  uploadedFileId: string;
+  filename: string;
+  parsed: ParsedSpreadsheet;
+  proposal: ColumnProposal[];
+}): Promise<ImportSession> {
   const row = await db
     .insertInto("import_sessions")
     .values({
       organizationId: input.organizationId,
       createdBy: input.userId,
-      definitionName: definition.name,
-      uploadedFileId: file.id,
-      filename: file.filename,
+      definitionName: input.definition.name,
+      uploadedFileId: input.uploadedFileId,
+      filename: input.filename,
       status: "parsed",
-      sheetName: parsed.sheetName || null,
-      headerRowIndex: parsed.headerRowIndex,
-      // Objects, never JSON.stringify: postgres.js serializes a jsonb
-      // parameter itself, so a pre-stringified value lands as a jsonb
-      // string scalar.
-      columns: parsed.columns,
-      mapping: proposalToMapping(proposal),
-      rowCount: parsed.rows.length,
+      sheetName: input.parsed.sheetName || null,
+      headerRowIndex: input.parsed.headerRowIndex,
+      // Plain objects. postgres.js serializes a jsonb parameter itself,
+      // so a value pre-encoded by the caller lands as a jsonb string
+      // scalar and every structural read of it later detonates.
+      columns: input.parsed.columns,
+      mapping: proposalToMapping(input.proposal),
+      rowCount: input.parsed.rows.length,
     })
     .returningAll()
     .executeTakeFirstOrThrow();
@@ -303,13 +326,71 @@ export async function createImportSession(
     feature: "create",
     sessionId: row.id,
     organizationId: input.organizationId,
-    definition: definition.name,
-    rows: parsed.rows.length,
-    columns: parsed.columns.length,
-    format: parsed.format,
+    definition: input.definition.name,
+    rows: input.parsed.rows.length,
+    columns: input.parsed.columns.length,
+    format: input.parsed.format,
   });
 
-  return { session: toImportSession(row), proposal };
+  return toImportSession(row);
+}
+
+/**
+ * Open a session on a file that is ALREADY on the uploads paved road.
+ *
+ * This is the path the wizard takes. `<UploadField>` posts the file to
+ * `/api/files/uploads` exactly as it does everywhere else in the app,
+ * and the wizard then hands the resulting id here. The alternative,
+ * a second upload endpoint with its own progress bar and its own
+ * allowlist, is the duplication the uploads paved road exists to
+ * prevent.
+ *
+ * The TYPE IS RE-CHECKED here. `/api/files/uploads` enforces the app's
+ * whole allowlist, which is wider than one import's `allow`, so a PDF
+ * can be a legitimate upload and still not be a spreadsheet. Refusing it
+ * here is what keeps a definition's narrowing real.
+ */
+export async function createImportSessionFromUpload(input: {
+  organizationId: string;
+  userId: string | null;
+  definitionName: string;
+  uploadedFileId: string;
+  sheetName?: string;
+  headerRowIndex?: number;
+}): Promise<{ session: ImportSession; proposal: ColumnProposal[] }> {
+  const definition = getImportDefinition(input.definitionName);
+
+  // Org-scoped read: another workspace's file id is a 404 (CWE-639).
+  const file = await getUploadedFile({
+    id: input.uploadedFileId,
+    organizationId: input.organizationId,
+  });
+
+  assertAllowedUpload(
+    { filename: file.filename, contentType: file.contentType, sizeBytes: file.sizeBytes },
+    { allow: definitionUploadTypes(definition) },
+  );
+
+  const object = await getObject(file.storageKey);
+  const parsed = parseSpreadsheet(object.body, {
+    filename: file.filename,
+    contentType: file.contentType,
+    sheetName: input.sheetName,
+    headerRowIndex: input.headerRowIndex,
+  });
+
+  const proposal = proposeMapping(parsed.columns, definition);
+  const session = await insertSession({
+    organizationId: input.organizationId,
+    userId: input.userId,
+    definition,
+    uploadedFileId: file.id,
+    filename: file.filename,
+    parsed,
+    proposal,
+  });
+
+  return { session, proposal };
 }
 
 /** The proposal as a mapping the client can send straight back. */

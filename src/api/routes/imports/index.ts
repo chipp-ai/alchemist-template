@@ -46,6 +46,7 @@ import {
 import {
   commitImportSession,
   createImportSession,
+  createImportSessionFromUpload,
   getImportSession,
   type ImportSession,
   listImportSessions,
@@ -165,12 +166,59 @@ importRoutes.post(
 
 // ── Sessions ───────────────────────────────────────────────────────────────
 
+const sessionFromUploadSchema = z.object({
+  definition: z.string().trim().min(1).max(120),
+  /** A file already stored by POST /api/files/uploads. */
+  uploadedFileId: z.string().uuid(),
+  sheetName: z.string().trim().max(200).nullish(),
+  headerRowIndex: z.number().int().min(0).max(999).nullish(),
+});
+
+/**
+ * Open a session.
+ *
+ * TWO WAYS IN, one flow after that.
+ *
+ *   JSON { definition, uploadedFileId }   the wizard's path. <UploadField>
+ *   has already posted the file to /api/files/uploads, with the progress
+ *   bar and the allowlist and the row that every other upload in this app
+ *   gets. A second upload endpoint here would be a second copy of all of
+ *   that.
+ *
+ *   multipart { file, definition }        one call for a script, a
+ *   migration, or a test: bytes in, session out.
+ */
 importRoutes.post("/sessions", limitUploadBody, async (c) => {
   const user = getUser(c);
 
   const contentType = c.req.header("content-type") ?? "";
+
+  if (contentType.startsWith("application/json")) {
+    const parsed = sessionFromUploadSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new BadRequestError(parsed.error.issues[0]?.message ?? "Invalid request body.");
+    }
+
+    const def = findImportDefinition(parsed.data.definition);
+    if (!def) throw new NotFoundError("Import definition", parsed.data.definition);
+    assertMayRun(def, user.role);
+
+    const { session, proposal } = await createImportSessionFromUpload({
+      organizationId: user.organizationId,
+      userId: user.id,
+      definitionName: def.name,
+      uploadedFileId: parsed.data.uploadedFileId,
+      sheetName: parsed.data.sheetName ?? undefined,
+      headerRowIndex: parsed.data.headerRowIndex ?? undefined,
+    });
+
+    return c.json({ data: { session: serializeSession(session), proposal } }, 201);
+  }
+
   if (!contentType.startsWith("multipart/form-data")) {
-    throw new BadRequestError("Send multipart/form-data with a `file` field.");
+    throw new BadRequestError(
+      "Send JSON with `definition` and `uploadedFileId`, or multipart/form-data with a `file`.",
+    );
   }
 
   const form = await c.req.formData();
