@@ -25,6 +25,37 @@ import { assertEquals, assertThrows } from "@std/assert";
 // shell. The env block must be set BEFORE the dynamic import.
 const TEST_PREFIX = "customer-test-project/";
 
+// This file's R2_* mutation is process-wide and (deliberately) never
+// restored -- see the module docstring's history. `deno test --parallel`
+// runs test FILES as separate isolates that share ONE OS process (and so
+// share `Deno.env`, see `src/db/client.ts`'s schema-isolation comment), so
+// setting these here at module load can race a concurrent `withLocalStorage`
+// call (`src/__tests__/helpers.ts`) in another file's isolate, stomping its
+// LOCAL_STORAGE_DIR mid-flight (ALCHEM7-5). Hold the SAME advisory lock
+// `withLocalStorage` uses, for this whole file's run, so the two can never
+// interleave. Skipped when there's no DB to lock against (e.g. running this
+// single file standalone without TEST_DATABASE_URL/DATABASE_URL set) --
+// with no DB there's also no `--parallel` fleet to race against.
+const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+let releaseStorageEnvLock: (() => Promise<void>) | null = null;
+if (HAS_DB) {
+  const [{ sql }, { STORAGE_ENV_LOCK_KEY }] = await Promise.all([
+    import("@/db/client.ts"),
+    import("./helpers.ts"),
+  ]);
+  const lock = await sql.reserve();
+  await lock`SELECT pg_advisory_lock(${STORAGE_ENV_LOCK_KEY})`;
+  releaseStorageEnvLock = async () => {
+    try {
+      await lock`SELECT pg_advisory_unlock(${STORAGE_ENV_LOCK_KEY})`;
+    } catch {
+      // best-effort -- releasing the connection below still frees the
+      // session-scoped lock even if the explicit unlock call fails.
+    }
+    lock.release();
+  };
+}
+
 Deno.env.set("R2_ENDPOINT", "https://test.r2.cloudflarestorage.com");
 Deno.env.set("R2_BUCKET", "alchemist-customer-storage-test");
 Deno.env.set("R2_ACCESS_KEY_ID", "test-access-key");
@@ -225,4 +256,12 @@ Deno.test("getSignedDownloadUrl: clamps non-positive TTL to 1s", () => {
   const url = storage.getSignedDownloadUrl("foo.jpg", -10);
   const parsed = new URL(url);
   assertEquals(parsed.searchParams.get("X-Amz-Expires"), "1");
+});
+
+// Must stay the LAST test in this file: releases the advisory lock taken
+// above so other isolates' `withLocalStorage` calls can proceed. Deno runs a
+// file's tests sequentially in declaration order (and runs every test
+// regardless of an earlier one's failure), so this always fires last.
+Deno.test("release the storage-env lock", async () => {
+  await releaseStorageEnvLock?.();
 });
