@@ -5,6 +5,7 @@ import Settings from "./routes/Settings.svelte";
 import Docs from "./routes/Docs.svelte";
 import InboundEmails from "./routes/InboundEmails.svelte";
 import InboundEmailDetail from "./routes/InboundEmailDetail.svelte";
+import ReviewQueue from "./routes/ReviewQueue.svelte";
 import InviteAccept from "./routes/InviteAccept.svelte";
 import PortalHome from "./routes/portal/PortalHome.svelte";
 import PortalClaim from "./routes/portal/PortalClaim.svelte";
@@ -29,6 +30,10 @@ const routes: Record<string, any> = {
   // /inbound-emails lists captured emails; /inbound-emails/:id shows one.
   "/inbound-emails": InboundEmails,
   "/inbound-emails/:id": InboundEmailDetail,
+  // File review queue. Authed and admin-gated (files.review): every
+  // upload lands pending until somebody decides. The page renders its
+  // own "ask an admin" state rather than 404ing a non-reviewer.
+  "/files/review": ReviewQueue,
   // Invite acceptance landing page. Token comes from the URL; the
   // page handles both logged-in and logged-out flows.
   "/invite/:token": InviteAccept,

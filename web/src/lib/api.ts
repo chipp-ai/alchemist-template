@@ -26,6 +26,17 @@ interface RequestOptions {
   silent401?: boolean;
 }
 
+/** Pull a human-readable message out of an error response body. */
+export function extractErrorMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const record = data as Record<string, unknown>;
+  for (const field of ["error", "message"]) {
+    const value = record[field];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return null;
+}
+
 async function request<T = unknown>(
   method: string,
   path: string,
@@ -63,10 +74,13 @@ async function request<T = unknown>(
   }
 
   if (!response.ok) {
-    const message =
-      (data && typeof data === "object" && "message" in data
-        ? (data as { message: string }).message
-        : null) ?? `Request failed with status ${response.status}`;
+    // The API's error envelope is `{ error, code }` (see the api-layer
+    // rule). Reading only `message` meant every server-authored message
+    // was thrown away and replaced with "Request failed with status
+    // 400", which is exactly the text a user cannot act on. `message`
+    // stays as a fallback for any hand-rolled response that uses it.
+    const message = extractErrorMessage(data) ??
+      `Request failed with status ${response.status}`;
     throw new ApiError(response.status, message, data);
   }
 

@@ -2,13 +2,19 @@
   import { link, location } from "svelte-spa-router";
   import { authStore } from "../stores/auth.svelte";
   import { orgStore } from "../stores/organization.svelte";
+  import { can } from "../lib/permissions";
   import ThemeToggle from "./ThemeToggle.svelte";
 
-  const navItems = [
+  // File review is admin-only. Hiding the link for everyone else is a UX
+  // choice, not the control: the API gate is what enforces it.
+  const navItems = $derived([
     { path: "/", label: "Dashboard", icon: "grid" },
     { path: "/inbound-emails", label: "Inbound Email", icon: "mail" },
+    ...(can(authStore.user?.role ?? "", "files.review")
+      ? [{ path: "/files/review", label: "File review", icon: "folder" }]
+      : []),
     { path: "/settings", label: "Settings", icon: "settings" },
-  ];
+  ]);
 
   function isActive(itemPath: string, currentPath: string): boolean {
     if (itemPath === "/") return currentPath === "/";
