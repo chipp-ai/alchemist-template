@@ -223,6 +223,43 @@ export async function listUploadedFiles(
 }
 
 /**
+ * The list ONE person is allowed to see.
+ *
+ * A reviewer sees everything in the workspace. Everyone else sees what
+ * has been approved, plus their own uploads whatever state those are in.
+ * The rule is applied in the WHERE clause rather than by filtering the
+ * result in the route, because a filter someone forgets to apply is how
+ * a pending file ends up on a page it should never have reached.
+ */
+export async function listVisibleUploadedFiles(
+  opts: ListUploadedFilesOptions & { viewer: UploadViewer },
+): Promise<UploadedFile[]> {
+  if (can(opts.viewer.role, REVIEW_CAPABILITY)) return await listUploadedFiles(opts);
+
+  let query = db
+    .selectFrom("uploaded_files")
+    .selectAll()
+    .where("organizationId", "=", opts.organizationId)
+    .where((eb) =>
+      eb.or([
+        eb("status", "=", "approved"),
+        eb("uploadedBy", "=", opts.viewer.id),
+      ])
+    );
+
+  if (opts.status) query = query.where("status", "=", opts.status);
+  if (opts.subjectType) query = query.where("subjectType", "=", opts.subjectType);
+  if (opts.subjectId) query = query.where("subjectId", "=", opts.subjectId);
+
+  const rows = await query
+    .orderBy("createdAt", "desc")
+    .limit(Math.min(Math.max(opts.limit ?? 100, 1), 500))
+    .execute();
+
+  return rows.map(toUploadedFile);
+}
+
+/**
  * The review queue: oldest first, because a queue is worked from the
  * front and the person who has waited longest should not wait longer.
  */
