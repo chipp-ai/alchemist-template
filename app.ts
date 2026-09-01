@@ -38,6 +38,7 @@ import { ingestEmailRoutes } from "@/api/routes/ingest-email/index.ts";
 import { inboundEmailRoutes } from "@/api/routes/inbound-emails/index.ts";
 import { emailRoutes } from "@/api/routes/email/index.ts";
 import { portalRoutes } from "@/api/routes/portal/index.ts";
+import { storageLocalRoutes } from "@/api/routes/storage-local/index.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 
 // ── App types ──
@@ -159,11 +160,18 @@ app.route("/api/billing", billingRoutes);
 // the boot-built index (src/services/docs/). See docs/in-app/.
 app.route("/api/docs", docsRoutes);
 
-// File storage (R2 — tenant-isolated via R2_KEY_PREFIX, see
+// File storage (tenant-isolated via R2_KEY_PREFIX, see
 // src/services/storage.service.ts). Auth-required. Provides
-// presigned upload + download URLs so the browser can talk to R2
-// directly without proxying file bytes through this server.
+// presigned upload + download URLs so the browser can talk to the
+// store directly without proxying file bytes through this server.
 app.route("/api/files", fileRoutes);
+
+// Local storage driver object routes. PUBLIC by design: these are the
+// local stand-in for a presigned R2 URL, and a presigned URL carries no
+// cookie -- the HMAC signature in the query string IS the credential.
+// The whole router 404s when R2 is configured, because nothing points
+// here then. See src/api/routes/storage-local/index.ts.
+app.route("/api/storage/local", storageLocalRoutes);
 
 // Invite acceptance (public preview + auth-required accept). NOT
 // nested under /api/org because invitees aren't bound to an org yet

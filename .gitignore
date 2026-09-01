@@ -15,6 +15,11 @@ web/dist/
 # Deno cache
 .deno/
 
+# Local storage driver (src/services/storage-local.ts). Holds uploaded
+# files when R2 is unconfigured: local dev, CI, the verification sandbox.
+# Safe to delete at any time.
+.data/
+
 # Scratch space (ephemeral work — gitkeep keeps the dir, contents are ignored)
 .scratch/*
 !.scratch/.gitkeep

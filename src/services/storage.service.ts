@@ -1,24 +1,31 @@
 /**
- * R2 storage service — tenant-isolated uploads + signed URLs.
+ * Storage service -- tenant-isolated uploads + signed URLs, on two drivers.
  *
- * Customer apps store user-uploaded files (images, fonts, PDFs, audio,
- * whatever) in a shared `alchemist-customer-storage` Cloudflare R2
- * bucket. Cross-tenant isolation is enforced at the path layer:
- * every key written by this service is auto-prefixed with the
- * project-specific `R2_KEY_PREFIX` env var (set by the rollout
- * controller as `customer-${projectId}/`). Application code passes
- * RELATIVE keys like `images/avatar.jpg` and the service prepends
- * the prefix; there is no way for app code to write under another
- * project's prefix using these helpers.
+ * Call these helpers and you do not think about which driver is running:
+ *
+ *   R2     when the platform has injected R2_ENDPOINT / R2_BUCKET /
+ *          R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY. The whole customer
+ *          fleet shares one bucket and isolation lives in the key prefix
+ *          (`R2_KEY_PREFIX`, `customer-${projectId}/`).
+ *   LOCAL  otherwise. A gitignored directory tree (`.data/storage`) with
+ *          the SAME key discipline and working signed-URL equivalents.
+ *          See storage-local.ts. This is what makes uploads work in local
+ *          dev, in CI, and in the agent-verification sandbox with no
+ *          configuration at all.
+ *
+ * Because both drivers honour `scopedKey()` / `assertOwnedKey()`, a
+ * feature verified locally behaves the same way in production, and
+ * nothing in application code branches on the driver. **Do not add an
+ * `if (isStorageConfigured())` guard to a new upload path.** Storage is
+ * always available now; that guard is what used to make uploads dead on
+ * arrival in every environment an agent could actually test in.
  *
  * What this provides:
- *   - putObject()              — server-side single-shot upload
- *   - getObject()              — server-side fetch (for processing)
- *   - getSignedDownloadUrl()   — time-limited GET URL the browser/end-user can hit
- *   - getSignedUploadUrl()     — time-limited PUT URL for browser direct upload
- *                                (use when files are large or you want to skip
- *                                a server-side proxy hop)
- *   - deleteObject()           — server-side delete
+ *   - putObject()              server-side single-shot upload
+ *   - getObject()              server-side fetch (for processing)
+ *   - getSignedDownloadUrl()   time-limited GET URL the browser can hit
+ *   - getSignedUploadUrl()     time-limited PUT URL for browser direct upload
+ *   - deleteObject()           server-side delete
  *
  * Why hand-roll SigV4 instead of @aws-sdk/client-s3:
  *   - Customer pods cold-start every restart. The S3 SDK is ~2MB of
@@ -37,82 +44,61 @@
 import { createHash, createHmac } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { log } from "@/lib/logger.ts";
-import { BadRequestError, ForbiddenError } from "@/utils/errors.ts";
+import { BadRequestError } from "@/utils/errors.ts";
+import { assertOwnedKey, keyPrefix, relativeKeyOf, scopedKey } from "@/services/storage-keys.ts";
+import {
+  buildLocalSignedUrl,
+  deleteLocalObject,
+  localObjectExists,
+  localStorageRoot,
+  readLocalObject,
+  writeLocalObject,
+} from "@/services/storage-local.ts";
 
-const R2_ENDPOINT = Deno.env.get("R2_ENDPOINT") ?? "";
-const R2_BUCKET = Deno.env.get("R2_BUCKET") ?? "";
-const R2_ACCESS_KEY_ID = Deno.env.get("R2_ACCESS_KEY_ID") ?? "";
-const R2_SECRET_ACCESS_KEY = Deno.env.get("R2_SECRET_ACCESS_KEY") ?? "";
+// Re-exported so `@/services/storage.service.ts` stays the one import
+// application code needs. The definitions live in storage-keys.ts because
+// both drivers depend on them.
+export { assertOwnedKey, keyPrefix, relativeKeyOf, scopedKey };
+
 /**
- * Per-customer key prefix (e.g. `customer-${projectId}/`). Set by the
- * rollout controller from the agent_jobs.project_id at deploy time.
- * Empty in local dev / running outside the platform — uploads still
- * work, just without isolation (single-tenant local mode).
+ * Env is read LAZILY on every call, never captured at module load.
+ * Tests set and clear these around a case, and a module-load capture
+ * would freeze whatever happened to be set when the first test file in a
+ * worker imported this module.
  */
-const R2_KEY_PREFIX = Deno.env.get("R2_KEY_PREFIX") ?? "";
+const env = (name: string): string => Deno.env.get(name) ?? "";
+
 const REGION = "auto";
 const SERVICE = "s3";
 
-// ── Cross-tenant safety ────────────────────────────────────────────────────
+export type StorageDriver = "r2" | "local";
 
-/**
- * Prepend the per-project prefix to a caller-supplied relative key,
- * after validating the relative key for traversal / shape issues.
- * THIS IS THE ONLY ENTRY POINT for keys written to R2 — every public
- * helper below routes through it. Caller-supplied keys are treated
- * as untrusted (they may originate from request bodies / URLs).
- *
- * Rejects:
- *   - empty / missing
- *   - leading slash (would defeat the prefix)
- *   - any `..` segment (path traversal)
- *   - keys longer than 900 chars (S3 hard limit is 1024; leave headroom for prefix)
- *
- * Returns the fully-qualified R2 object key.
- */
-export function scopedKey(relativeKey: string): string {
-  if (!relativeKey || typeof relativeKey !== "string") {
-    throw new BadRequestError("storage: missing key");
-  }
-  if (relativeKey.startsWith("/")) {
-    throw new BadRequestError("storage: key must not start with /");
-  }
-  if (relativeKey.length > 900) {
-    throw new BadRequestError("storage: key too long");
-  }
-  // Reject any segment that's exactly ".." OR contains a backslash (windows-y
-  // path injection on tooling that normalizes paths).
-  const parts = relativeKey.split("/");
-  for (const seg of parts) {
-    if (seg === ".." || seg === "." || seg === "") {
-      throw new BadRequestError("storage: key contains invalid segment");
-    }
-    if (seg.includes("\\")) {
-      throw new BadRequestError("storage: key contains backslash");
-    }
-  }
-  return `${R2_KEY_PREFIX}${relativeKey}`;
+/** True when all four R2 credentials are present. */
+export function isR2Configured(): boolean {
+  return !!(
+    env("R2_ENDPOINT") &&
+    env("R2_BUCKET") &&
+    env("R2_ACCESS_KEY_ID") &&
+    env("R2_SECRET_ACCESS_KEY")
+  );
+}
+
+/** Which driver a call made right now would use. */
+export function storageDriver(): StorageDriver {
+  return isR2Configured() ? "r2" : "local";
 }
 
 /**
- * Validate that an already-prefixed key (e.g. read from a DB row that
- * stored the full key) belongs to THIS project. Throws ForbiddenError
- * if the key doesn't start with the current R2_KEY_PREFIX. Use this
- * at API boundaries that accept a stored full key from the client —
- * never trust an externally-supplied full key without this check.
+ * Whether file storage works at all.
+ *
+ * Always true: the local driver is the floor. Kept as an exported name
+ * because customer apps and older template code call it, but a route
+ * should NOT gate on it. Use `isR2Configured()` when you genuinely need
+ * to know whether the durable, shared store is behind this app (for
+ * example, before telling an operator their files survive a redeploy).
  */
-export function assertOwnedKey(fullKey: string): string {
-  if (!fullKey || typeof fullKey !== "string") {
-    throw new BadRequestError("storage: missing key");
-  }
-  if (R2_KEY_PREFIX && !fullKey.startsWith(R2_KEY_PREFIX)) {
-    throw new ForbiddenError("Cross-tenant access forbidden");
-  }
-  return fullKey;
-}
-
 export function isStorageConfigured(): boolean {
-  return !!(R2_ENDPOINT && R2_BUCKET && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+  return true;
 }
 
 // ── SigV4 primitives ───────────────────────────────────────────────────────
@@ -161,12 +147,12 @@ interface SignedUrlInternal {
 }
 
 function newSignedUrl(fullKey: string): SignedUrlInternal {
-  if (!isStorageConfigured()) {
+  if (!isR2Configured()) {
     throw new Error(
       "storage: R2 is not configured (R2_ENDPOINT / R2_BUCKET / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY missing)",
     );
   }
-  const url = new URL(`${R2_ENDPOINT}/${R2_BUCKET}/${fullKey}`);
+  const url = new URL(`${env("R2_ENDPOINT")}/${env("R2_BUCKET")}/${fullKey}`);
   const now = new Date();
   const amzDate = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const dateStamp = amzDate.slice(0, 8);
@@ -174,7 +160,7 @@ function newSignedUrl(fullKey: string): SignedUrlInternal {
 }
 
 function deriveSigningKey(dateStamp: string): Buffer {
-  const kDate = hmac(`AWS4${R2_SECRET_ACCESS_KEY}`, dateStamp);
+  const kDate = hmac(`AWS4${env("R2_SECRET_ACCESS_KEY")}`, dateStamp);
   const kRegion = hmac(kDate, REGION);
   const kService = hmac(kRegion, SERVICE);
   return hmac(kService, "aws4_request");
@@ -183,14 +169,13 @@ function deriveSigningKey(dateStamp: string): Buffer {
 // ── PUT (server-side direct upload) ───────────────────────────────────────
 
 /**
- * Upload a buffer to R2 under the project's prefix. Returns the
- * relative key (NOT prefixed) and a `url` that's the canonical
- * `s3://bucket/full-key` form — store one of these in your DB row
- * to refer to the object later.
+ * Upload a buffer under the project's prefix. Returns the relative key
+ * (NOT prefixed) and a canonical `url`. Store the RELATIVE key in your
+ * DB row; it is portable across drivers and across a prefix change.
  *
  * The relative key shape is the caller's choice (e.g. `images/abc.jpg`
  * or `users/${userId}/avatar.png`). The service prepends the project
- * prefix — application code can never escape it.
+ * prefix, and application code can never escape it.
  */
 export async function putObject(opts: {
   key: string;
@@ -198,12 +183,23 @@ export async function putObject(opts: {
   contentType: string;
 }): Promise<{ key: string; fullKey: string; bucket: string; url: string }> {
   const fullKey = scopedKey(opts.key);
+  const contentType = opts.contentType || "application/octet-stream";
+
+  if (!isR2Configured()) {
+    await writeLocalObject(fullKey, opts.body, contentType);
+    return {
+      key: opts.key,
+      fullKey,
+      bucket: "local",
+      url: `file://${localStorageRoot()}/objects/${fullKey}`,
+    };
+  }
+
   const { url, amzDate, dateStamp, host } = newSignedUrl(fullKey);
 
   const payloadHash = sha256Hex(opts.body);
   const canonicalUri = canonicalUriFor(url.pathname);
-  const canonicalHeaders =
-    `content-type:${opts.contentType}\n` +
+  const canonicalHeaders = `content-type:${contentType}\n` +
     `host:${host}\n` +
     `x-amz-content-sha256:${payloadHash}\n` +
     `x-amz-date:${amzDate}\n`;
@@ -231,13 +227,13 @@ export async function putObject(opts: {
     .digest("hex");
 
   const authorization =
-    `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY_ID}/${credentialScope}, ` +
+    `AWS4-HMAC-SHA256 Credential=${env("R2_ACCESS_KEY_ID")}/${credentialScope}, ` +
     `SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
   const res = await fetch(url, {
     method: "PUT",
     headers: {
-      "Content-Type": opts.contentType,
+      "Content-Type": contentType,
       "Host": host,
       "X-Amz-Content-Sha256": payloadHash,
       "X-Amz-Date": amzDate,
@@ -259,8 +255,8 @@ export async function putObject(opts: {
   return {
     key: opts.key,
     fullKey,
-    bucket: R2_BUCKET,
-    url: `s3://${R2_BUCKET}/${fullKey}`,
+    bucket: env("R2_BUCKET"),
+    url: `s3://${env("R2_BUCKET")}/${fullKey}`,
   };
 }
 
@@ -270,7 +266,13 @@ export async function getObject(
   relativeKey: string,
 ): Promise<{ body: Uint8Array; contentType: string }> {
   const fullKey = scopedKey(relativeKey);
-  const url = await getSignedDownloadUrl(relativeKey, 60);
+
+  // The local driver reads the file directly rather than round-tripping
+  // through its own HTTP route: there is no server to fetch from during
+  // a background job or a test.
+  if (!isR2Configured()) return await readLocalObject(fullKey);
+
+  const url = getSignedDownloadUrl(relativeKey, 60);
   const res = await fetch(url);
   if (!res.ok) {
     const text = await res.text().catch(() => "<unreadable>");
@@ -281,17 +283,34 @@ export async function getObject(
   return { body, contentType };
 }
 
+/** Whether an object exists. A stat on local; a signed read on R2. */
+export async function objectExists(relativeKey: string): Promise<boolean> {
+  const fullKey = scopedKey(relativeKey);
+  if (!isR2Configured()) return await localObjectExists(fullKey);
+  try {
+    await getObject(relativeKey);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── DELETE ─────────────────────────────────────────────────────────────────
 
 export async function deleteObject(relativeKey: string): Promise<void> {
   const fullKey = scopedKey(relativeKey);
+
+  if (!isR2Configured()) {
+    await deleteLocalObject(fullKey);
+    return;
+  }
+
   const { url, amzDate, dateStamp, host } = newSignedUrl(fullKey);
 
   // DELETE has no body; payload hash is the SHA256 of the empty string.
   const emptyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
   const canonicalUri = canonicalUriFor(url.pathname);
-  const canonicalHeaders =
-    `host:${host}\n` +
+  const canonicalHeaders = `host:${host}\n` +
     `x-amz-content-sha256:${emptyHash}\n` +
     `x-amz-date:${amzDate}\n`;
   const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
@@ -318,7 +337,7 @@ export async function deleteObject(relativeKey: string): Promise<void> {
     .digest("hex");
 
   const authorization =
-    `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY_ID}/${credentialScope}, ` +
+    `AWS4-HMAC-SHA256 Credential=${env("R2_ACCESS_KEY_ID")}/${credentialScope}, ` +
     `SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
   const res = await fetch(url, {
@@ -341,12 +360,13 @@ export async function deleteObject(relativeKey: string): Promise<void> {
 // ── Presigned URLs (query-string based) ────────────────────────────────────
 //
 // Two flavors:
-//   - Download (GET): browser fetches the file directly from R2 with
-//     a time-limited URL. Use for serving user-uploaded images, files,
-//     fonts, etc. without proxying through your server.
-//   - Upload (PUT):   browser uploads directly to R2 with a time-
-//     limited URL. Use for large files where you don't want to
-//     double-spend bandwidth (browser → server → R2).
+//   - Download (GET): the browser fetches the file with a time-limited
+//     URL and no session cookie. The signature IS the credential.
+//   - Upload (PUT):   the browser uploads with a time-limited URL.
+//
+// On R2 these point at the bucket. On the local driver they point at
+// this app's own public `/api/storage/local/o` route. Same contract
+// either way, so calling code never branches.
 
 interface PresignOptions {
   /** TTL in seconds. Default 3600 (1h). R2/S3 max is 7 days = 604800. */
@@ -375,14 +395,14 @@ function presign(
   // Query params that go INTO the canonical request. Sorted at the end.
   const params: Record<string, string> = {
     "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
-    "X-Amz-Credential": `${R2_ACCESS_KEY_ID}/${credentialScope}`,
+    "X-Amz-Credential": `${env("R2_ACCESS_KEY_ID")}/${credentialScope}`,
     "X-Amz-Date": amzDate,
     "X-Amz-Expires": String(expiresInSeconds),
     "X-Amz-SignedHeaders": "host",
   };
 
   // For presigned GETs we want a content-disposition override on the
-  // response; this is signed via response-content-disposition query
+  // response; this is signed via the response-content-disposition query
   // param (S3 honors it; R2 also honors it).
   if (method === "GET" && options.responseDisposition) {
     params["response-content-disposition"] = options.responseDisposition;
@@ -390,12 +410,6 @@ function presign(
 
   // For presigned PUTs we sign a content-type so the browser can't
   // upload arbitrary types under our signature.
-  // Implementation detail: signing content-type via SignedHeaders=host
-  // alone means the browser doesn't have to match a content-type the
-  // server picked, BUT then anyone with the URL can upload anything.
-  // For safety, when a contentType is passed for a PUT, we add it as
-  // a signed query param too: the browser must include the header
-  // matching what was signed.
   if (method === "PUT" && options.contentType) {
     params["Content-Type"] = options.contentType;
   }
@@ -435,13 +449,16 @@ function presign(
 }
 
 /**
- * Issue a time-limited GET URL for the given relative key. Use this
- * to serve user-uploaded files (images, audio, fonts, attachments)
- * without proxying through your server.
+ * Issue a time-limited GET URL for the given relative key. Use this to
+ * serve user-uploaded files without proxying through your server.
+ *
+ * On R2 the URL is absolute and points at the bucket. On the local
+ * driver it is a same-origin, root-relative path served by
+ * `/api/storage/local/o`. Both are safe to hand a browser, and neither
+ * needs a session cookie.
  *
  * Cross-tenant safety: the relative key is auto-prefixed with this
- * project's R2_KEY_PREFIX. Application code cannot construct a URL
- * for another project's prefix using this helper.
+ * project's R2_KEY_PREFIX.
  */
 export function getSignedDownloadUrl(
   relativeKey: string,
@@ -449,22 +466,24 @@ export function getSignedDownloadUrl(
   options?: { responseDisposition?: string },
 ): string {
   const fullKey = scopedKey(relativeKey);
+  if (!isR2Configured()) {
+    return buildLocalSignedUrl("GET", fullKey, expiresInSeconds, {
+      responseDisposition: options?.responseDisposition,
+    });
+  }
   return presign("GET", fullKey, { expiresInSeconds, ...options });
 }
 
 /**
- * Issue a time-limited PUT URL for the given relative key. The
- * browser can use this to upload directly to R2 without bouncing the
- * file through your server.
+ * Issue a time-limited PUT URL for the given relative key. The browser
+ * can upload straight to it without the bytes crossing this server.
  *
- * Caller MUST specify `contentType` — the URL is signed with it, so
- * the browser must include a matching `Content-Type` header on its
- * PUT request. This prevents anyone with the URL from uploading
- * arbitrary content types.
+ * Caller MUST specify `contentType`. The URL is signed with it, so the
+ * browser must send a matching `Content-Type` header. This is what stops
+ * anyone holding the URL from storing an arbitrary type under it.
  *
- * Default expiry is 15 min — long enough for a user to drag-drop
- * and complete the upload, short enough that a leaked URL has limited
- * blast radius.
+ * Default expiry is 15 min: long enough for a person to drag, drop and
+ * finish; short enough that a leaked URL has limited blast radius.
  */
 export function getSignedUploadUrl(
   relativeKey: string,
@@ -475,30 +494,43 @@ export function getSignedUploadUrl(
     throw new BadRequestError("storage: contentType is required for upload URLs");
   }
   const fullKey = scopedKey(relativeKey);
+  if (!isR2Configured()) {
+    return buildLocalSignedUrl("PUT", fullKey, expiresInSeconds, { contentType });
+  }
   return presign("PUT", fullKey, { expiresInSeconds, contentType });
 }
 
 // ── Diagnostics ────────────────────────────────────────────────────────────
 
 export function describeStorageConfig(): {
+  driver: StorageDriver;
   configured: boolean;
+  durable: boolean;
   bucket: string;
   prefix: string;
   endpoint: string;
+  localRoot: string | null;
 } {
+  const driver = storageDriver();
   return {
-    configured: isStorageConfigured(),
-    bucket: R2_BUCKET,
-    prefix: R2_KEY_PREFIX,
-    endpoint: R2_ENDPOINT,
+    driver,
+    // Storage always works. Kept for callers that read this field.
+    configured: true,
+    // Whether files survive a pod restart. The honest signal for an
+    // operator-facing surface.
+    durable: driver === "r2",
+    bucket: driver === "r2" ? env("R2_BUCKET") : "local",
+    prefix: keyPrefix(),
+    endpoint: env("R2_ENDPOINT"),
+    localRoot: driver === "local" ? localStorageRoot() : null,
   };
 }
 
 // Log config status at import time so a misconfigured pod surfaces
 // immediately instead of failing on first upload.
-if (R2_KEY_PREFIX && !R2_KEY_PREFIX.endsWith("/")) {
+if (keyPrefix() && !keyPrefix().endsWith("/")) {
   log.warn(
-    "R2_KEY_PREFIX should end with '/' — auto-prefixed keys may collide with other projects",
-    { source: "storage", feature: "config", prefix: R2_KEY_PREFIX },
+    "R2_KEY_PREFIX should end with '/', or auto-prefixed keys may collide with other projects",
+    { source: "storage", feature: "config", prefix: keyPrefix() },
   );
 }
