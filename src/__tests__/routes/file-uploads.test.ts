@@ -298,7 +298,9 @@ dbTest("allowlist: the raw proxy-upload route enforces the same rules", async ()
         uploadForm("ok.pdf", "application/pdf", "%PDF", { key: "raw/ok.pdf" }),
       );
       assertEquals(good.status, 200);
-      assertEquals((await body(good)).key, "raw/ok.pdf");
+      // The key comes back bound to the caller's workspace: the raw
+      // layer records no row, so the key is what carries the tenant.
+      assertEquals((await body(good)).key, `org/${ctx.org.id}/raw/ok.pdf`);
     });
   } finally {
     await ctx.cleanup();
@@ -505,6 +507,192 @@ dbTest("isolation: a signed URL minted for A's file is refused under B's prefix"
       assertEquals(res.status, 403);
       await drain(res);
     }, { keyPrefix: "customer-a/" });
+  } finally {
+    await a.cleanup();
+  }
+});
+
+// ── The raw storage layer ──────────────────────────────────────────────────
+//
+// The raw routes record no row, so the KEY is the only thing carrying
+// the tenant. These cases pin that it actually does.
+//
+// The attack they close is not theoretical: the managed layer puts the
+// full storage key inside the signed URL it hands the browser, so any
+// member can read a real key off their own download, edit the workspace
+// id in it, and aim a raw route at somebody else's file.
+
+dbTest("raw storage: a caller's key is bound to their own workspace", async () => {
+  const a = await createIsolatedUser("owner");
+  try {
+    await withLocalStorage(async () => {
+      const personA = await signIn({ ...a.user, role: "owner" });
+
+      const res = await body(
+        await post(
+          personA,
+          "/api/files/upload",
+          uploadForm("r.pdf", "application/pdf", "RAW", { key: "invoices/2026/r.pdf" }),
+        ),
+      );
+      // The key comes back scoped, and that is the key the client stores.
+      assertEquals(res.key, `org/${a.org.id}/invoices/2026/r.pdf`);
+
+      // Scoping is idempotent, so sending the stored key back round-trips.
+      const again = await body(
+        await post(personA, "/api/files/download-url", undefined, { key: res.key }),
+      );
+      assertEquals(again.key, res.key);
+
+      const fetched = await app.request(again.downloadUrl);
+      assertEquals(fetched.status, 200);
+      assertEquals(await fetched.text(), "RAW");
+    });
+  } finally {
+    await a.cleanup();
+  }
+});
+
+dbTest("raw storage: workspace B cannot read, replace or delete A's raw object", async () => {
+  const a = await createIsolatedUser("owner");
+  const b = await createIsolatedUser("owner");
+  try {
+    await withLocalStorage(async () => {
+      const personA = await signIn({ ...a.user, role: "owner" });
+      const personB = await signIn({ ...b.user, role: "owner" });
+
+      const stored = await body(
+        await post(
+          personA,
+          "/api/files/upload",
+          uploadForm("a.pdf", "application/pdf", "A ONLY", { key: "secret.pdf" }),
+        ),
+      );
+      const aKey = stored.key;
+      assertEquals(aKey, `org/${a.org.id}/secret.pdf`);
+
+      // Read.
+      const read = await post(personB, "/api/files/download-url", undefined, { key: aKey });
+      assertEquals(read.status, 403);
+      await drain(read);
+
+      // Presigned write.
+      const mint = await post(personB, "/api/files/upload-url", undefined, {
+        key: aKey,
+        contentType: "application/pdf",
+      });
+      assertEquals(mint.status, 403);
+      await drain(mint);
+
+      // Replace in place.
+      const replace = await post(
+        personB,
+        "/api/files/upload",
+        uploadForm("a.pdf", "application/pdf", "REPLACED", { key: aKey }),
+      );
+      assertEquals(replace.status, 403);
+      await drain(replace);
+
+      // Destroy.
+      const removed = await app.request("/api/files", {
+        method: "DELETE",
+        headers: { cookie: personB.cookie, "content-type": "application/json" },
+        body: JSON.stringify({ key: aKey }),
+      });
+      assertEquals(removed.status, 403);
+      await drain(removed);
+
+      // A's bytes are exactly as they were.
+      const check = await body(
+        await post(personA, "/api/files/download-url", undefined, { key: aKey }),
+      );
+      assertEquals(await (await app.request(check.downloadUrl)).text(), "A ONLY");
+    });
+  } finally {
+    await a.cleanup();
+    await b.cleanup();
+  }
+});
+
+dbTest("raw storage: the managed namespace is refused outright", async () => {
+  const a = await createIsolatedUser("owner");
+  const b = await createIsolatedUser("owner");
+  try {
+    await withLocalStorage(async () => {
+      const personA = await signIn({ ...a.user, role: "owner" });
+      const personB = await signIn({ ...b.user, role: "owner" });
+
+      const created = (await body(
+        await post(
+          personA,
+          "/api/files/uploads",
+          uploadForm("managed.pdf", "application/pdf", "MANAGED"),
+        ),
+      )).data;
+
+      // Exactly what a member reads off their own signed download URL.
+      const { downloadUrl } = (await body(
+        await get(personA, `/api/files/uploads/${created.id}/download-url`),
+      )).data;
+      const leakedKey = new URL(downloadUrl, "http://x").searchParams.get("key")!;
+      assert(leakedKey.startsWith("uploads/"), `expected a managed key, got ${leakedKey}`);
+
+      // Neither the owner of the file nor anybody else may aim a raw
+      // route at it: that object's rules live on its row.
+      for (const person of [personA, personB]) {
+        const res = await post(person, "/api/files/download-url", undefined, { key: leakedKey });
+        assertEquals(res.status, 403);
+        await drain(res);
+
+        const gone = await app.request("/api/files", {
+          method: "DELETE",
+          headers: { cookie: person.cookie, "content-type": "application/json" },
+          body: JSON.stringify({ key: leakedKey }),
+        });
+        assertEquals(gone.status, 403);
+        await drain(gone);
+      }
+
+      // The managed file is still readable through its own route.
+      const still = await get(personA, `/api/files/uploads/${created.id}/download-url`);
+      assertEquals(still.status, 200);
+      await drain(still);
+    });
+  } finally {
+    await a.cleanup();
+    await b.cleanup();
+  }
+});
+
+dbTest("raw storage: a viewer cannot write or delete", async () => {
+  const a = await createIsolatedUser("owner");
+  try {
+    await withLocalStorage(async () => {
+      const viewer = await addTeammate(a.org.id, "viewer");
+
+      const mint = await post(viewer, "/api/files/upload-url", undefined, {
+        key: "x.pdf",
+        contentType: "application/pdf",
+      });
+      assertEquals(mint.status, 403);
+      await drain(mint);
+
+      const written = await post(
+        viewer,
+        "/api/files/upload",
+        uploadForm("x.pdf", "application/pdf", "V", { key: "x.pdf" }),
+      );
+      assertEquals(written.status, 403);
+      await drain(written);
+
+      const removed = await app.request("/api/files", {
+        method: "DELETE",
+        headers: { cookie: viewer.cookie, "content-type": "application/json" },
+        body: JSON.stringify({ key: "x.pdf" }),
+      });
+      assertEquals(removed.status, 403);
+      await drain(removed);
+    });
   } finally {
     await a.cleanup();
   }

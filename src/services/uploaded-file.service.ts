@@ -34,6 +34,7 @@ import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "@
 import { log } from "@/lib/logger.ts";
 import { can } from "@/lib/roles.ts";
 import { deleteObject, getSignedDownloadUrl, putObject } from "@/services/storage.service.ts";
+import { managedUploadKey } from "@/services/storage-keys.ts";
 import { assertAllowedUpload, type UploadTypeId } from "@/utils/upload-types.ts";
 
 const LOG_SOURCE = "uploaded-files";
@@ -156,9 +157,13 @@ export async function storeUploadedFile(
 /**
  * The key shape. Unguessable, unique, org-partitioned, and carrying the
  * real extension so a downstream tool that sniffs by suffix still works.
+ *
+ * The shape itself lives in storage-keys.ts, because the raw storage
+ * routes have to REFUSE this namespace and a second copy of the prefix
+ * is a second copy that can drift from the first.
  */
 function buildStorageKey(organizationId: string, extension: string): string {
-  return `uploads/${organizationId}/${crypto.randomUUID()}${extension}`;
+  return managedUploadKey(organizationId, extension);
 }
 
 /**

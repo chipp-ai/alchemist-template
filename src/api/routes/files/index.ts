@@ -19,6 +19,17 @@
  *   uploaded this way is invisible to the review queue: reach for it
  *   deliberately, not by default.
  *
+ *   Because it records no row, the KEY is the only thing that can carry
+ *   the tenant, so every key on these routes goes through
+ *   `orgScopedRawKey()` and comes back bound to the caller's workspace.
+ *   Skipping that is not a small omission: the managed layer publishes
+ *   the full storage key inside the signed URL it hands the browser, so
+ *   an unscoped raw route lets any member lift a key off their own
+ *   download, edit the org id, and read, replace or destroy another
+ *   workspace's file (CWE-639). The managed namespace is refused here
+ *   outright, because those objects have per-file rules these routes
+ *   cannot see.
+ *
  * All routes require auth. The one public file surface is the signed
  * object route of the local storage driver (`/api/storage/local/o`),
  * where the signature is the credential, exactly as it is for a
@@ -43,6 +54,7 @@ import {
   getSignedUploadUrl,
   putObject,
 } from "@/services/storage.service.ts";
+import { orgScopedRawKey } from "@/services/storage-keys.ts";
 import {
   assertAllowedUpload,
   describeUploadPolicy,
@@ -318,26 +330,33 @@ const uploadUrlSchema = z.object({
 
 fileRoutes.post(
   "/upload-url",
+  requireCapability("app.write"),
   zValidator("json", uploadUrlSchema, validationHook),
   (c) => {
+    const user = getUser(c);
     const { key, contentType, expiresInSeconds } = c.req.valid("json");
+    // Scope BEFORE minting. A presigned URL cannot be recalled, so the
+    // tenant has to be decided while there is still something to refuse.
+    const scoped = orgScopedRawKey(key, user.organizationId);
     // The same allowlist as the managed path. A presigned URL is a
     // capability to write, so the type is decided BEFORE it is minted:
     // once the URL exists, nothing here can inspect what goes through it.
-    assertAllowedUpload({ filename: key, contentType });
+    assertAllowedUpload({ filename: scoped, contentType });
 
     const ttl = expiresInSeconds ?? 900;
-    const url = getSignedUploadUrl(key, contentType, ttl);
+    const url = getSignedUploadUrl(scoped, contentType, ttl);
     log.info("Issued upload URL", {
       source: "files",
       feature: "upload-url",
-      key,
+      key: scoped,
       contentType,
       ttl,
     });
     return c.json({
       uploadUrl: url,
-      key, // relative key; the client stores this
+      // The SCOPED key: the client stores this and sends it back, and
+      // the scoping is idempotent so the round trip is stable.
+      key: scoped,
       expiresInSeconds: ttl,
       expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
       // Echo what the browser MUST send, so a frontend that copies this
@@ -358,22 +377,25 @@ fileRoutes.post(
   "/download-url",
   zValidator("json", downloadUrlSchema, validationHook),
   (c) => {
+    const user = getUser(c);
     const { key, expiresInSeconds, downloadFilename } = c.req.valid("json");
+    const scoped = orgScopedRawKey(key, user.organizationId);
     const ttl = expiresInSeconds ?? 3600;
     const responseDisposition = downloadFilename
       ? `attachment; filename="${downloadFilename.replace(/"/g, "")}"`
       : undefined;
-    const url = getSignedDownloadUrl(key, ttl, { responseDisposition });
+    const url = getSignedDownloadUrl(scoped, ttl, { responseDisposition });
     return c.json({
       downloadUrl: url,
-      key,
+      key: scoped,
       expiresInSeconds: ttl,
       expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
     });
   },
 );
 
-fileRoutes.post("/upload", limitUploadBody, async (c) => {
+fileRoutes.post("/upload", requireCapability("app.write"), limitUploadBody, async (c) => {
+  const user = getUser(c);
   const ct = c.req.header("content-type") ?? "";
   if (!ct.startsWith("multipart/form-data")) {
     throw new BadRequestError("Use multipart/form-data: { file, key }");
@@ -395,17 +417,19 @@ fileRoutes.post("/upload", limitUploadBody, async (c) => {
     throw new BadRequestError(`key: ${parsed.error.issues[0]?.message ?? "invalid"}`);
   }
 
+  const scoped = orgScopedRawKey(parsed.data, user.organizationId);
+
   // Judge the FILE, not the key: this path has real bytes, a real name
   // and a real size, so all three are checked.
   const accepted = assertAllowedUpload({
-    filename: file.name || parsed.data,
+    filename: file.name || scoped,
     contentType: file.type,
     sizeBytes: file.size,
   });
 
   const buffer = new Uint8Array(await file.arrayBuffer());
   const result = await putObject({
-    key: parsed.data,
+    key: scoped,
     body: buffer,
     contentType: accepted.contentType,
   });
@@ -430,16 +454,19 @@ const deleteSchema = z.object({ key: relativeKeySchema });
 
 fileRoutes.delete(
   "/",
+  requireCapability("app.write"),
   zValidator("json", deleteSchema, validationHook),
   async (c) => {
+    const user = getUser(c);
     const { key } = c.req.valid("json");
-    await deleteObject(key);
+    const scoped = orgScopedRawKey(key, user.organizationId);
+    await deleteObject(scoped);
     log.info("File deleted", {
       source: "files",
       feature: "delete",
-      key,
+      key: scoped,
     });
-    return c.json({ ok: true, key });
+    return c.json({ ok: true, key: scoped });
   },
 );
 

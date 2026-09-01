@@ -875,6 +875,40 @@ helpers. **Do NOT store the full prefixed key in your DB** — store
 the relative key. That way if the prefix scheme ever changes (it
 won't, but defensively), your data is portable.
 
+### Per-organization isolation on the raw routes
+
+`R2_KEY_PREFIX` separates one PROJECT from another. It says nothing about
+the workspaces INSIDE a project, and a customer app is multi-tenant, so
+there is a second partition below it. Two namespaces exist and every
+object belongs to exactly one:
+
+| Namespace | Owner | Who decides access |
+|---|---|---|
+| `uploads/<orgId>/<uuid><ext>` | managed layer | the `uploaded_files` row (status, uploader, `files.review`) |
+| `org/<orgId>/<your key>` | raw routes | the key itself |
+
+The raw routes record no row, so **the key is the only thing that can
+carry the tenant**, and `orgScopedRawKey()` in
+`src/services/storage-keys.ts` binds it on the way in:
+
+- a key you were handed back (`org/<yourOrg>/...`) passes through
+  unchanged, so the round trip is stable
+- a key naming another workspace is a **403**, never a silent rewrite
+- a key under `uploads/` is a **403** pointing at
+  `/api/files/uploads/:id`, because that object's rules live on its row
+  and these routes cannot see them
+- anything else is scoped: `org/<yourOrg>/` is prepended, and the SCOPED
+  key is what comes back for you to store
+
+This is not defence in depth, it is the only control on that layer. The
+managed layer puts the full storage key inside the signed URL it hands
+the browser, so without this any member could read a real key off their
+own download, edit the workspace id in it, and read, replace or destroy
+another workspace's file (CWE-639). **A new raw storage route MUST call
+`orgScopedRawKey()`.** The writing routes (`/upload-url`, `/upload`,
+`DELETE /api/files`) also require `app.write`, so a viewer cannot mutate
+the store.
+
 ### Reading an externally-supplied stored full key
 
 If your DB stores the FULL prefixed key (legacy), validate it with
@@ -891,13 +925,19 @@ returns `{ uploadUrl, key, expiresAt, requiredHeaders }`. Auth required.
 returns `{ downloadUrl, key, expiresAt }`. Auth required. Set
 `downloadFilename` to force `Content-Disposition: attachment`.
 
-`POST /api/files/upload` — multipart server-side proxy upload (8 MB cap).
-Use this for small files when you don't want browser PUT. Body fields:
-`file` (the bytes) + `key` (the relative key string).
+`POST /api/files/upload` — multipart server-side proxy upload, capped at
+`MAX_UPLOAD_BYTES` (20 MB) like every other upload route. Use this for
+small files when you don't want browser PUT. Body fields: `file` (the
+bytes) + `key` (the relative key string). Needs `app.write`.
 
-`DELETE /api/files` — body `{ key }`. Auth required. Idempotent.
+`DELETE /api/files` — body `{ key }`. Needs `app.write`. Idempotent.
 
-`GET /api/files/info` — diagnostic; returns `{ configured, bucket, prefix }`.
+`GET /api/files/info` — diagnostic; returns `{ driver, durable, bucket,
+prefix, localRoot, note }`.
+
+Every `key` on these four routes is bound to the caller's workspace and
+comes back scoped. Store the key the route RETURNS, and send that one
+back. See "Per-organization isolation on the raw routes" above.
 
 ### CORS
 
@@ -998,7 +1038,11 @@ Invariants (each one is a defect someone already shipped):
   back, so who may hold one is decided before it exists.
 - **The raw storage routes enforce the same allowlist** but record no row,
   so a file uploaded that way is invisible to the review queue. Reach for
-  them deliberately, not by default.
+  them deliberately, not by default. They cannot touch a managed upload:
+  a key under `uploads/` is a 403 there, because the review status and the
+  uploader's permissions live on the row and the raw layer cannot see
+  them. Their own keys are bound to the caller's workspace
+  (`orgScopedRawKey()`), and their writes need `app.write`.
 - **`files.review` is admin and above**, declared in `src/lib/roles.ts`
   and mirrored in `web/src/lib/permissions.ts`. The client check decides
   which buttons render; the API check is the control.

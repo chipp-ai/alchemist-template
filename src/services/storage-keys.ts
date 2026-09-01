@@ -90,3 +90,82 @@ export function assertOwnedKey(fullKey: string): string {
 export function relativeKeyOf(fullKey: string): string {
   return assertOwnedKey(fullKey).slice(keyPrefix().length);
 }
+
+// ── Per-organization scoping ───────────────────────────────────────────────
+//
+// `R2_KEY_PREFIX` separates one PROJECT from another. It says nothing
+// about the workspaces INSIDE a project, and a customer app is
+// multi-tenant, so a second partition is needed under it.
+//
+// Two namespaces live below the project prefix, and every object in the
+// app belongs to exactly one of them:
+//
+//   uploads/<orgId>/<uuid><ext>   the managed layer. Every object has a
+//                                 row, and that row's own rules decide
+//                                 who may read, replace or remove it.
+//   org/<orgId>/<caller key>      the raw layer. No row, so the KEY is
+//                                 the only thing that can carry the
+//                                 tenant, and it does.
+//
+// Nothing else is writable. A key that names neither is refused.
+
+/** Namespace the managed uploaded-files layer owns. */
+export const MANAGED_UPLOAD_PREFIX = "uploads/";
+
+/** Namespace the raw storage routes own. */
+export const RAW_ORG_PREFIX = "org/";
+
+/** The managed layer's key for one object. The only place this shape is built. */
+export function managedUploadKey(organizationId: string, extension: string): string {
+  return `${MANAGED_UPLOAD_PREFIX}${organizationId}/${crypto.randomUUID()}${extension}`;
+}
+
+/**
+ * Bind a caller-supplied RAW key to one organization.
+ *
+ * The raw storage routes take a key straight from a request body. That
+ * key is the only identifier they have, so without this it names any
+ * object in the whole project: another workspace's invoice, or (worse) a
+ * managed upload, whose per-file authorization the raw routes never
+ * consult. Both were reachable, because the managed layer hands the
+ * browser a signed URL with the full key in it, so any member could read
+ * a key off their own download URL and edit the org id in it.
+ *
+ * The rule, applied to every raw key on the way in:
+ *
+ *   - a key already under `org/<thisOrg>/` passes through unchanged, so
+ *     a client can store the key it was given and send it back
+ *   - a key under `org/<someone else>/` is FORBIDDEN, not silently
+ *     rewritten: the caller asked for a specific object and must be told
+ *     no, or they will believe they still have it
+ *   - a key under `uploads/` is refused with a pointer at the managed
+ *     routes, which is where that object's rules live
+ *   - anything else is scoped: `org/<thisOrg>/` is prepended
+ *
+ * Returns the scoped relative key. Hand THAT to storage.service.ts, and
+ * echo it back to the caller so the round trip is stable.
+ */
+export function orgScopedRawKey(relativeKey: string, organizationId: string): string {
+  if (!organizationId) {
+    // No tenant means no safe answer. Never fall back to an unscoped key.
+    throw new ForbiddenError("Cross-tenant access forbidden");
+  }
+  // Traversal, backslashes and empty segments are rejected here, BEFORE
+  // any prefix reasoning: `org/<thisOrg>/../<otherOrg>/x` must never be
+  // read as belonging to this org.
+  scopedKey(relativeKey);
+
+  if (relativeKey.startsWith(MANAGED_UPLOAD_PREFIX)) {
+    throw new ForbiddenError(
+      "That file is a managed upload. Use /api/files/uploads/:id, which applies its review " +
+        "status and its owner's permissions.",
+    );
+  }
+
+  const mine = `${RAW_ORG_PREFIX}${organizationId}/`;
+  if (relativeKey.startsWith(mine)) return relativeKey;
+  if (relativeKey.startsWith(RAW_ORG_PREFIX)) {
+    throw new ForbiddenError("Cross-tenant access forbidden");
+  }
+  return `${mine}${relativeKey}`;
+}
