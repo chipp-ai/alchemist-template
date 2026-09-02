@@ -173,6 +173,33 @@ const STORAGE_ENV_VARS = [
 ] as const;
 
 /**
+ * Fixed advisory-lock key that SERIALIZES the `withLocalStorage` critical
+ * section across every parallel test worker, mirroring `PROVISION_LOCK_KEY`
+ * in `src/db/client.ts`.
+ *
+ * `deno test --parallel` runs test FILES as separate V8 isolates inside ONE
+ * OS process (see the schema-isolation comment in `db/client.ts`). `Deno.env`
+ * is a binding onto the real process environment, so it is genuinely shared
+ * across those isolates -- but each isolate gets its OWN module registry, so
+ * an in-JS mutex (a module-scoped `Promise` chain / lock variable) only
+ * serializes calls *within one isolate* and does nothing for two different
+ * test files racing from two different isolates. A Postgres advisory lock is
+ * scoped to a DATABASE SESSION, not a JS realm, so it is the one mutex primitive
+ * that actually reaches across isolate boundaries: whichever isolate's
+ * `withLocalStorage` call grabs it first mutates `Deno.env`, runs `fn`, and
+ * restores the env before the NEXT call (in any isolate) is allowed to start
+ * its own mutation window. Without this, two concurrent calls would
+ * interleave their env-var writes/restores and readers would hit "file not
+ * found" against a directory another call already tore down (ALCHEM7-5).
+ *
+ * `storage.test.ts` also holds this SAME lock (imported from here) for its
+ * whole run, because it mutates the identical R2_* env vars at module load
+ * and never restores them -- see that file for why.
+ */
+export const STORAGE_ENV_LOCK_KEY = 495495;
+const LOCAL_STORAGE_LOCK_KEY = STORAGE_ENV_LOCK_KEY;
+
+/**
  * Run a test with the LOCAL storage driver active, against a throwaway
  * directory, and put every storage env var back afterwards.
  *
@@ -185,33 +212,53 @@ const STORAGE_ENV_VARS = [
  *
  * `setKeyPrefix` switches tenant mid-test, for isolation cases that need
  * project A to write and project B to try to read.
+ *
+ * The whole body runs inside an advisory-lock critical section (see
+ * `LOCAL_STORAGE_LOCK_KEY`) so concurrent callers -- including ones in a
+ * different test file / isolate under `deno test --parallel` -- never
+ * observe each other's env-var mutations mid-flight.
  */
 export async function withLocalStorage<T>(
   fn: (ctx: { root: string; setKeyPrefix: (prefix: string) => void }) => Promise<T> | T,
   opts: { keyPrefix?: string } = {},
 ): Promise<T> {
-  const saved = new Map<string, string | undefined>();
-  for (const name of STORAGE_ENV_VARS) saved.set(name, Deno.env.get(name));
-
-  const root = await Deno.makeTempDir({ prefix: "alchemist-storage-" });
+  const lock = await sql.reserve();
   try {
-    for (const name of ["R2_ENDPOINT", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]) {
-      Deno.env.delete(name);
-    }
-    Deno.env.set("R2_KEY_PREFIX", opts.keyPrefix ?? "");
-    Deno.env.set("LOCAL_STORAGE_DIR", root);
-    Deno.env.set("LOCAL_STORAGE_SIGNING_SECRET", "test-signing-secret");
+    await lock`SELECT pg_advisory_lock(${LOCAL_STORAGE_LOCK_KEY})`;
 
-    return await fn({
-      root,
-      setKeyPrefix: (prefix: string) => Deno.env.set("R2_KEY_PREFIX", prefix),
-    });
-  } finally {
-    for (const [name, value] of saved) {
-      if (value === undefined) Deno.env.delete(name);
-      else Deno.env.set(name, value);
+    const saved = new Map<string, string | undefined>();
+    for (const name of STORAGE_ENV_VARS) saved.set(name, Deno.env.get(name));
+
+    const root = await Deno.makeTempDir({ prefix: "alchemist-storage-" });
+    try {
+      for (
+        const name of ["R2_ENDPOINT", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
+      ) {
+        Deno.env.delete(name);
+      }
+      Deno.env.set("R2_KEY_PREFIX", opts.keyPrefix ?? "");
+      Deno.env.set("LOCAL_STORAGE_DIR", root);
+      Deno.env.set("LOCAL_STORAGE_SIGNING_SECRET", "test-signing-secret");
+
+      return await fn({
+        root,
+        setKeyPrefix: (prefix: string) => Deno.env.set("R2_KEY_PREFIX", prefix),
+      });
+    } finally {
+      for (const [name, value] of saved) {
+        if (value === undefined) Deno.env.delete(name);
+        else Deno.env.set(name, value);
+      }
+      await Deno.remove(root, { recursive: true }).catch(() => {});
     }
-    await Deno.remove(root, { recursive: true }).catch(() => {});
+  } finally {
+    try {
+      await lock`SELECT pg_advisory_unlock(${LOCAL_STORAGE_LOCK_KEY})`;
+    } catch {
+      // best-effort -- releasing the connection below still frees the
+      // session-scoped lock even if the explicit unlock call fails.
+    }
+    lock.release();
   }
 }
 
