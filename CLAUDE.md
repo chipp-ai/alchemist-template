@@ -118,6 +118,7 @@ These guide all code review and implementation decisions:
 - **NEVER use `--no-verify` or `--no-gpg-sign`** on any git command. If hooks fail, fix the underlying issue.
 - **Every interactive element gets `data-testid`** following `{area}-{component}-{element}` convention (e.g., `data-testid="settings-form-input-name"`).
 - **ALWAYS use `./scripts/dev.sh --api-port __API_PORT__ --port __VITE_PORT__`** -- ports are required (no defaults), logs go to `.scratch/logs/`.
+- **Third-party integrations (Google Calendar, Drive, Notion, Slack, ...): check the Chipp hosted-integration broker FIRST -- never build a bespoke OAuth connector or ask for `GOOGLE_CLIENT_ID`-style provider secrets for a provider the platform already hosts.** Use `src/lib/chipp-integrations.ts` (`listHostedIntegrations` / `createIntegrationConnectLink` / `invokeHostedIntegration`): the platform holds the OAuth clients and tokens, the pod holds only an env-injected credential, and connecting a provider is a link the account owner clicks. Only build in-repo OAuth when the provider is genuinely absent from the platform catalog.
 
 ## Convention spokes — `.claude/rules/`
 
