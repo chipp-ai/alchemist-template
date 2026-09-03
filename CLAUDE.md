@@ -114,6 +114,7 @@ These guide all code review and implementation decisions:
 - Use `.scratch/` for ephemeral files (test scripts, debug logs, scratch data)
 - **ALWAYS capture test output:** `deno task test 2>&1 | tee .scratch/test-output.txt`. Grep the file instead of re-running tests.
 - **Use `deno task test:fast`** for quick iteration (~1min). To run a specific test file: `deno test --env --no-check --allow-all <file>`.
+- **Run `deno task check:tests` after touching ANY test file.** Local test runs use `--no-check`, but CI's test job type-checks `src/__tests__/` -- a type error in a test file passes green locally and reds CI on every later push until someone notices (31 accumulated on one project before anyone did). The task takes seconds; make it part of finishing a test change.
 - **Tests that create DB resources must use `createIsolatedUser()`** -- never the shared test user. Parallel tests can delete each other's data.
 - **NEVER use `--no-verify` or `--no-gpg-sign`** on any git command. If hooks fail, fix the underlying issue.
 - **Every interactive element gets `data-testid`** following `{area}-{component}-{element}` convention (e.g., `data-testid="settings-form-input-name"`).
