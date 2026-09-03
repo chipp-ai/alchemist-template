@@ -69,7 +69,7 @@ function uniqueTestId(): string {
  * @param role - The org-level role for the created user. Default: "owner"
  */
 export async function createIsolatedUser(
-  role: "owner" | "admin" | "member" | "viewer" = "owner",
+  role: "owner" | "admin" | "editor" | "viewer" = "owner",
 ): Promise<IsolatedTestContext> {
   // Defensive: ensure this worker's schema exists even if a test file used
   // createIsolatedUser without importing at module top (cached → cheap).
