@@ -63,7 +63,7 @@ jobs:
           #    whatever we have rather than failing the bridge red.
           LOG_EXCERPT=""
           if [ -n "$FAILED_JOB_ID" ]; then
-            RAW_LOG="$(gh api "repos/${REPO}/actions/jobs/${FAILED_JOB_ID}/logs" 2>/dev/null || true)"
+            RAW_LOG="$(gh api --allow-escape-sequences "repos/${REPO}/actions/jobs/${FAILED_JOB_ID}/logs" 2>/dev/null || true)"
             LOG_EXCERPT="$(printf '%s' "$RAW_LOG" | tail -n 200)"
           fi
 
