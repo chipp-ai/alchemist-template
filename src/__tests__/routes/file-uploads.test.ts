@@ -92,23 +92,34 @@ async function addTeammate(organizationId: string, role: string): Promise<Person
 
 // ── Request helpers ────────────────────────────────────────────────────────
 
-function get(person: Person, path: string): Promise<Response> {
-  return app.request(path, { headers: { cookie: person.cookie } });
+async function get(person: Person, path: string): Promise<Response> {
+  return await app.request(path, { headers: { cookie: person.cookie } });
 }
 
-function post(person: Person, path: string, body?: BodyInit, json?: unknown): Promise<Response> {
-  return app.request(path, {
+async function post(
+  person: Person,
+  path: string,
+  body?: FormData,
+  json?: unknown,
+): Promise<Response> {
+  // `FormData` here is Deno's own ambient type, which is structurally distinct
+  // from the `undici-types`-derived `BodyInit` that Hono's npm type
+  // declarations resolve to in this program (two co-existing `undici-types`
+  // versions in the dependency graph — see deno.lock). The values are
+  // runtime-compatible; this cast bridges the purely nominal TS mismatch.
+  const init = {
     method: "POST",
     headers: {
       cookie: person.cookie,
       ...(json !== undefined ? { "content-type": "application/json" } : {}),
     },
     body: json !== undefined ? JSON.stringify(json) : body,
-  });
+  } as unknown as Parameters<typeof app.request>[1];
+  return await app.request(path, init);
 }
 
-function del(person: Person, path: string): Promise<Response> {
-  return app.request(path, { method: "DELETE", headers: { cookie: person.cookie } });
+async function del(person: Person, path: string): Promise<Response> {
+  return await app.request(path, { method: "DELETE", headers: { cookie: person.cookie } });
 }
 
 function uploadForm(
@@ -369,7 +380,7 @@ dbTest("policy: the browser reads the same allowlist the server enforces", async
 // ── Visibility of a pending file ───────────────────────────────────────────
 
 dbTest("visibility: a pending file is hidden from the rest of the workspace", async () => {
-  const ctx = await createIsolatedUser("member");
+  const ctx = await createIsolatedUser("editor");
   try {
     await withLocalStorage(async () => {
       const uploader = await signIn({ ...ctx.user, role: ctx.user.role });
@@ -701,7 +712,7 @@ dbTest("raw storage: a viewer cannot write or delete", async () => {
 // ── The review queue ───────────────────────────────────────────────────────
 
 dbTest("review: the queue is admin-gated", async () => {
-  const ctx = await createIsolatedUser("member");
+  const ctx = await createIsolatedUser("editor");
   try {
     await withLocalStorage(async () => {
       const editor = await signIn({ ...ctx.user, role: ctx.user.role });
@@ -805,7 +816,7 @@ dbTest("review: a rejection with no reason is refused", async () => {
 // ── Deleting ───────────────────────────────────────────────────────────────
 
 dbTest("delete: the uploader may remove their own file, a colleague may not", async () => {
-  const ctx = await createIsolatedUser("member");
+  const ctx = await createIsolatedUser("editor");
   try {
     await withLocalStorage(async () => {
       const uploader = await signIn({ ...ctx.user, role: ctx.user.role });

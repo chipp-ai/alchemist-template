@@ -130,12 +130,12 @@ async function signIn(role: "owner" | "admin" | "editor" | "viewer" = "owner"): 
 
 // ── Request helpers ────────────────────────────────────────────────────────
 
-function get(person: Person, path: string): Promise<Response> {
-  return app.request(path, { headers: { cookie: person.cookie } });
+async function get(person: Person, path: string): Promise<Response> {
+  return await app.request(path, { headers: { cookie: person.cookie } });
 }
 
-function postJson(person: Person, path: string, body?: unknown): Promise<Response> {
-  return app.request(path, {
+async function postJson(person: Person, path: string, body?: unknown): Promise<Response> {
+  return await app.request(path, {
     method: "POST",
     headers: {
       cookie: person.cookie,
@@ -145,26 +145,32 @@ function postJson(person: Person, path: string, body?: unknown): Promise<Respons
   });
 }
 
-function patchJson(person: Person, path: string, body: unknown): Promise<Response> {
-  return app.request(path, {
+async function patchJson(person: Person, path: string, body: unknown): Promise<Response> {
+  return await app.request(path, {
     method: "PATCH",
     headers: { cookie: person.cookie, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
 }
 
-function uploadFile(
+// `FormData` here is Deno's own ambient type, which is structurally distinct
+// from the `undici-types`-derived `BodyInit` that Hono's npm type
+// declarations resolve to in this program (two co-existing `undici-types`
+// versions in the dependency graph — see deno.lock). The values are
+// runtime-compatible; this cast bridges the purely nominal TS mismatch.
+async function uploadFile(
   person: Person,
   opts: { definition: string; filename: string; contentType: string; body: Uint8Array },
 ): Promise<Response> {
   const form = new FormData();
   form.set("file", new File([opts.body], opts.filename, { type: opts.contentType }));
   form.set("definition", opts.definition);
-  return app.request("/api/imports/sessions", {
+  const init = {
     method: "POST",
     headers: { cookie: person.cookie },
     body: form,
-  });
+  } as unknown as Parameters<typeof app.request>[1];
+  return await app.request("/api/imports/sessions", init);
 }
 
 // deno-lint-ignore no-explicit-any
@@ -534,11 +540,12 @@ async function uploadThroughPavedRoad(
   form.set("file", new File([opts.body], opts.filename, { type: opts.contentType }));
   form.set("subjectType", "import");
   form.set("subjectId", "people");
-  const res = await app.request("/api/files/uploads", {
+  const init = {
     method: "POST",
     headers: { cookie: person.cookie },
     body: form,
-  });
+  } as unknown as Parameters<typeof app.request>[1];
+  const res = await app.request("/api/files/uploads", init);
   assertEquals(res.status, 201, await res.clone().text());
   return (await json(res)).data.id;
 }
