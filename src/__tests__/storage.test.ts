@@ -204,6 +204,20 @@ Deno.test("getSignedDownloadUrl: URL contains prefix + SigV4 params", () => {
   assertEquals(parsed.searchParams.get("X-Amz-SignedHeaders"), "host");
 });
 
+Deno.test("getSignedDownloadUrl: a space in the key encodes ONCE (%20, never %2520)", () => {
+  // Regression: signing built the URL from the raw key (URL parser -> %20) and
+  // then re-encoded url.pathname for the canonical URI (%20 -> %2520), so the
+  // signature covered a path the request never sent -> R2 403
+  // SignatureDoesNotMatch on any key containing a space.
+  const url = storage.getSignedDownloadUrl("uploads/Jane Doe/BLS card.pdf", 300);
+  const parsed = new URL(url);
+  assertEquals(parsed.pathname.includes("%2520"), false, `double-encoded space in ${parsed.pathname}`);
+  assertEquals(parsed.pathname.includes("Jane%20Doe"), true, parsed.pathname);
+  // The signer must sign the same bytes it sends: re-parsing the URL is a fixed
+  // point (no further encoding drift).
+  assertEquals(new URL(parsed.toString()).pathname, parsed.pathname);
+});
+
 Deno.test("getSignedDownloadUrl: rejects cross-tenant escape in raw key", () => {
   // The `..` segment must be rejected even though the URL itself
   // would otherwise be valid SigV4.

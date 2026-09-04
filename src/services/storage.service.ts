@@ -152,7 +152,17 @@ function newSignedUrl(fullKey: string): SignedUrlInternal {
       "storage: R2 is not configured (R2_ENDPOINT / R2_BUCKET / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY missing)",
     );
   }
-  const url = new URL(`${env("R2_ENDPOINT")}/${env("R2_BUCKET")}/${fullKey}`);
+  // Encode the key to its SigV4-canonical form ONCE, here, and sign
+  // url.pathname verbatim at every call site (`canonicalUri = url.pathname`).
+  // `new URL` leaves already-percent-encoded bytes untouched, so the signed
+  // path and the sent path stay byte-identical -- the invariant a valid SigV4
+  // signature requires. Building the URL from the RAW key instead let `new
+  // URL` encode a space to %20 and the callers then re-encoded url.pathname
+  // (%20 -> %2520), so the signature covered a path the request never sent and
+  // R2 returned 403 SignatureDoesNotMatch on any key with a space. It also
+  // encodes `#`/`?` (-> %23/%3F) so a filename like "Card #2.pdf" is never
+  // truncated into a URL fragment/query.
+  const url = new URL(`${env("R2_ENDPOINT")}/${env("R2_BUCKET")}/${canonicalUriFor(fullKey)}`);
   const now = new Date();
   const amzDate = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const dateStamp = amzDate.slice(0, 8);
@@ -198,7 +208,11 @@ export async function putObject(opts: {
   const { url, amzDate, dateStamp, host } = newSignedUrl(fullKey);
 
   const payloadHash = sha256Hex(opts.body);
-  const canonicalUri = canonicalUriFor(url.pathname);
+  // Already SigV4-canonical (newSignedUrl encoded the key once; `new URL`
+  // leaves valid %XX untouched). Signing url.pathname keeps the signed path
+  // byte-identical to the sent path -- re-encoding here double-encoded spaces
+  // (%20 -> %2520) and 403'd with SignatureDoesNotMatch.
+  const canonicalUri = url.pathname;
   const canonicalHeaders = `content-type:${contentType}\n` +
     `host:${host}\n` +
     `x-amz-content-sha256:${payloadHash}\n` +
@@ -309,7 +323,11 @@ export async function deleteObject(relativeKey: string): Promise<void> {
 
   // DELETE has no body; payload hash is the SHA256 of the empty string.
   const emptyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-  const canonicalUri = canonicalUriFor(url.pathname);
+  // Already SigV4-canonical (newSignedUrl encoded the key once; `new URL`
+  // leaves valid %XX untouched). Signing url.pathname keeps the signed path
+  // byte-identical to the sent path -- re-encoding here double-encoded spaces
+  // (%20 -> %2520) and 403'd with SignatureDoesNotMatch.
+  const canonicalUri = url.pathname;
   const canonicalHeaders = `host:${host}\n` +
     `x-amz-content-sha256:${emptyHash}\n` +
     `x-amz-date:${amzDate}\n`;
@@ -414,7 +432,11 @@ function presign(
     params["Content-Type"] = options.contentType;
   }
 
-  const canonicalUri = canonicalUriFor(url.pathname);
+  // Already SigV4-canonical (newSignedUrl encoded the key once; `new URL`
+  // leaves valid %XX untouched). Signing url.pathname keeps the signed path
+  // byte-identical to the sent path -- re-encoding here double-encoded spaces
+  // (%20 -> %2520) and 403'd with SignatureDoesNotMatch.
+  const canonicalUri = url.pathname;
   const canonicalQuery = canonicalQueryString(params);
   // SignedHeaders = host. For presigned URLs, the only signed header is
   // host (everything else moves into the query string).
