@@ -65,6 +65,7 @@ export const CAPABILITIES = [
   "team.remove", // remove (disconnect) another member
   // Organization
   "org.update", // edit org name, slug, etc.
+  "org.transfer_ownership", // hand the owner role to another member (owner only)
   // Billing / monetization
   "billing.manage", // manage the product catalog, open the billing portal config
   // Uploaded files
@@ -85,6 +86,10 @@ const CAPABILITY_MIN_ROLE: Record<Capability, Role> = {
   "team.update_role": "admin",
   "team.remove": "admin",
   "org.update": "admin",
+  // The ONLY owner-gated capability: handing off the owner role is the
+  // one action an admin must never be able to take (an admin who could
+  // transfer ownership could steal the org).
+  "org.transfer_ownership": "owner",
   "billing.manage": "admin",
   // Deciding whether another person's file is fit to be served is the
   // same class of call as adding a member, so it sits with the admin

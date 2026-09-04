@@ -116,9 +116,24 @@ deno("capabilities: reviewing uploaded files is an admin call", () => {
 });
 
 deno("capabilities: admin has team + org but is gated from owner-only ops", () => {
+  const OWNER_ONLY: Capability[] = ["org.transfer_ownership"];
   for (const cap of CAPABILITIES) {
+    if (OWNER_ONLY.includes(cap)) continue;
     assertEquals(can("admin", cap), true, `admin should have ${cap}`);
   }
+  for (const cap of OWNER_ONLY) {
+    assertEquals(can("admin", cap), false, `admin must NOT have ${cap}`);
+  }
+});
+
+deno("capabilities: transferring ownership is owner-only", () => {
+  // An admin who could transfer ownership could steal the org: assign
+  // ownership to themselves (or an accomplice) and demote the real
+  // owner. This must stay the one capability admins never get.
+  assertEquals(can("owner", "org.transfer_ownership"), true);
+  assertEquals(can("admin", "org.transfer_ownership"), false);
+  assertEquals(can("editor", "org.transfer_ownership"), false);
+  assertEquals(can("viewer", "org.transfer_ownership"), false);
 });
 
 deno("capabilities: owner has every capability", () => {
@@ -245,6 +260,7 @@ deno("source: org routes guard team.* with requireCapability", async () => {
       "team.update_role",
       "team.remove",
       "org.update",
+      "org.transfer_ownership",
     ]
   ) {
     assertStringIncludes(
@@ -253,6 +269,58 @@ deno("source: org routes guard team.* with requireCapability", async () => {
       `org routes must guard with requireCapability("${cap}") — without ` +
         `it, role-checking happens inline and drifts from the central ` +
         `hierarchy.`,
+    );
+  }
+});
+
+deno("source: transfer-ownership demotes the caller predicated on role='owner'", async () => {
+  const src = await Deno.readTextFile(
+    new URL("../api/routes/org/index.ts", import.meta.url),
+  );
+  assertStringIncludes(
+    src,
+    `"/transfer-ownership"`,
+    "org routes must expose POST /transfer-ownership: without it the " +
+      "owner role is a dead end (can't be removed, can't leave, can't " +
+      "hand off the org).",
+  );
+  assertStringIncludes(
+    src,
+    `.where("role", "=", "owner")`,
+    "the caller's demotion UPDATE must be predicated on role = 'owner' " +
+      "so a concurrent transfer can't mint a second owner",
+  );
+});
+
+deno("source: email changes go through the verify-first flow, not PATCH /me", async () => {
+  const src = await Deno.readTextFile(
+    new URL("../api/routes/auth/index.ts", import.meta.url),
+  );
+  assertStringIncludes(
+    src,
+    `"/me/email-change"`,
+    "auth routes must expose POST /me/email-change (send a code to the " +
+      "new address)",
+  );
+  assertStringIncludes(
+    src,
+    `"/me/email-change/confirm"`,
+    "auth routes must expose POST /me/email-change/confirm (verify the " +
+      "code, then swap the address)",
+  );
+  // PATCH /me accepting a raw `email` field is the unverified-swap
+  // shape this flow replaced: a typo'd address on an OTP-login app
+  // locks the user out (the next login code goes somewhere they can't
+  // read). The schema must not grow it back.
+  const updateMeBlock = src.slice(
+    src.indexOf("const updateMeSchema"),
+    src.indexOf("authRoutes.patch"),
+  );
+  if (/\bemail:/.test(updateMeBlock)) {
+    throw new Error(
+      "updateMeSchema accepts an `email` field again. Email must only " +
+        "change via /me/email-change + /confirm (verify-first), never " +
+        "an unverified PATCH /me swap.",
     );
   }
 });

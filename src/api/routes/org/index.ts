@@ -11,6 +11,7 @@
  *   DELETE /invites/:id            - Revoke pending invite         (admin+)
  *   PATCH  /members/:userId/role   - Change member's role          (admin+)
  *   DELETE /members/:userId        - Remove member from org        (admin+)
+ *   POST   /transfer-ownership     - Hand owner role to a member   (owner only)
  *   POST   /leave                  - Self-removal from org         (any auth, non-owner)
  *
  * Permissions go through `requireCapability` from the auth middleware,
@@ -33,7 +34,7 @@ import { deleteCookie } from "hono/cookie";
 import { db } from "@/db/client.ts";
 import { getUser, requireAuth, requireCapability } from "@/api/middleware/auth.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
-import { BadRequestError, ForbiddenError, NotFoundError } from "@/utils/errors.ts";
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "@/utils/errors.ts";
 import { ASSIGNABLE_ROLES, canManage } from "@/lib/roles.ts";
 import { createInvite, listPendingInvites, revokeInvite } from "@/services/invite.service.ts";
 import { log } from "@/lib/logger.ts";
@@ -64,6 +65,10 @@ const inviteSchema = z.object({
 
 const updateRoleSchema = z.object({
   role: z.enum(ASSIGNABLE_ROLES),
+});
+
+const transferOwnershipSchema = z.object({
+  userId: z.string().uuid(),
 });
 
 // ── GET / ─────────────────────────────────────────────────────────────────
@@ -328,12 +333,93 @@ orgRoutes.delete(
   },
 );
 
+// ── POST /transfer-ownership ──────────────────────────────────────────────
+// The one deliberate way the owner role moves between accounts. The
+// current owner names a successor (any existing member); in ONE
+// transaction the successor becomes 'owner' and the caller drops to
+// 'admin'. Auth middleware re-reads the role from the DB on every
+// request, so both sides see their new powers immediately with no
+// token re-issue.
+//
+// This is the escape hatch for every "owner is a dead end" case:
+//   - remove an owner:        transfer first, then DELETE /members/:userId
+//   - owner leaving the org:  transfer first, then POST /leave
+//   - owner changing emails:  invite the new address, transfer to it
+//
+// Guards:
+//   - owner only (org.transfer_ownership is the sole owner-gated capability)
+//   - target must be an active member of the SAME org
+//   - self-transfer is a no-op request shape, rejected as 400
+//   - the caller's demotion UPDATE is predicated on role = 'owner' so a
+//     concurrent transfer can't demote an already-demoted account (409)
+
+orgRoutes.post(
+  "/transfer-ownership",
+  requireCapability("org.transfer_ownership"),
+  zValidator("json", transferOwnershipSchema, validationHook),
+  async (c) => {
+    const user = getUser(c);
+    const { userId: targetUserId } = c.req.valid("json");
+
+    if (targetUserId === user.id) {
+      throw new BadRequestError("You are already the owner.");
+    }
+
+    const target = await db
+      .selectFrom("users")
+      .select(["id", "email", "role"])
+      .where("id", "=", targetUserId)
+      .where("organizationId", "=", user.organizationId)
+      .executeTakeFirst();
+    if (!target) {
+      throw new NotFoundError("User", targetUserId);
+    }
+
+    await db.transaction().execute(async (trx) => {
+      // Demote the caller FIRST, predicated on still being the owner.
+      // If a concurrent transfer already demoted them, zero rows match
+      // and the whole transaction rolls back instead of minting a
+      // second owner.
+      const demoted = await trx
+        .updateTable("users")
+        .set({ role: "admin", updatedAt: new Date() })
+        .where("id", "=", user.id)
+        .where("role", "=", "owner")
+        .returning(["id"])
+        .executeTakeFirst();
+      if (!demoted) {
+        throw new ConflictError(
+          "Ownership changed while this request was in flight. Reload and try again.",
+        );
+      }
+
+      await trx
+        .updateTable("users")
+        .set({ role: "owner", updatedAt: new Date() })
+        .where("id", "=", targetUserId)
+        .where("organizationId", "=", user.organizationId)
+        .execute();
+    });
+
+    log.info("Org ownership transferred", {
+      source: "org",
+      feature: "transfer-ownership",
+      orgId: user.organizationId,
+      fromUserId: user.id,
+      toUserId: targetUserId,
+      targetPreviousRole: target.role,
+    });
+
+    return c.json({
+      data: { newOwnerId: targetUserId, previousOwnerId: user.id },
+    });
+  },
+);
+
 // ── POST /leave ───────────────────────────────────────────────────────────
-// Self-removal. Owner is blocked because there's no in-template
-// ownership-transfer flow yet — letting an owner leave would orphan
-// the org. They can either (a) promote another admin manually via
-// SQL and demote themselves, or (b) delete the org once that
-// endpoint exists. Non-owners get the same soft-disconnect as
+// Self-removal. Owner is blocked: they must hand off the org first via
+// POST /transfer-ownership (above), then leave as a regular admin.
+// Non-owners get the same soft-disconnect as
 // DELETE /members/:userId, plus the session cookie is cleared so
 // the SPA flips to the login screen on the next /me call.
 

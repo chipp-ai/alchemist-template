@@ -16,6 +16,7 @@
  *   revokeInvite       - Revoke a pending invite (admin+)
  *   updateMemberRole   - Change a member's role (admin+)
  *   removeMember       - Soft-disconnect a member (admin+)
+ *   transferOwnership  - Hand the owner role to another member (owner only)
  *   reset              - Clear store on logout
  */
 
@@ -191,6 +192,28 @@ async function removeMember(userId: string): Promise<void> {
   }
 }
 
+/**
+ * Transfer the owner role to `userId`. The server demotes the caller
+ * to admin in the same transaction. The member list is patched
+ * locally; the caller should also refresh the auth store so its own
+ * role flips to admin (`authStore.checkAuth()`).
+ */
+async function transferOwnership(userId: string): Promise<void> {
+  state.error = null;
+  try {
+    const res = await api.post<{
+      data: { newOwnerId: string; previousOwnerId: string };
+    }>("/org/transfer-ownership", { userId });
+    state.members = state.members.map((m) => {
+      if (m.id === res.data.newOwnerId) return { ...m, role: "owner" };
+      if (m.id === res.data.previousOwnerId) return { ...m, role: "admin" };
+      return m;
+    });
+  } catch (err) {
+    setError(err, "Failed to transfer ownership.");
+  }
+}
+
 function reset(): void {
   state.currentOrg = null;
   state.members = [];
@@ -215,5 +238,6 @@ export const orgStore = {
   revokeInvite,
   updateMemberRole,
   removeMember,
+  transferOwnership,
   reset,
 };

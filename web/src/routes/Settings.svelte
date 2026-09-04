@@ -25,7 +25,6 @@
   // ---------- Profile state ----------
 
   let profileName = $state(authStore.user?.name ?? "");
-  let profileEmail = $state(authStore.user?.email ?? "");
   let profileSaving = $state(false);
   let profileMessage = $state<string | null>(null);
 
@@ -36,7 +35,6 @@
     try {
       await api.patch("/auth/me", {
         name: profileName.trim(),
-        email: profileEmail.toLowerCase().trim(),
       });
       profileMessage = "Profile updated.";
     } catch (err) {
@@ -44,6 +42,67 @@
         err instanceof Error ? err.message : "Failed to save profile.";
     } finally {
       profileSaving = false;
+    }
+  }
+
+  // ---------- Email change (verify-first) ----------
+  // Email is not part of the profile form: the server only changes it
+  // through POST /auth/me/email-change + /confirm, after a code sent
+  // to the NEW address proves the user can receive mail there.
+
+  let emailChangeOpen = $state(false);
+  let newEmail = $state("");
+  let emailOtp = $state("");
+  let emailCodeSent = $state(false);
+  let emailChangeBusy = $state(false);
+  let emailChangeMessage = $state<string | null>(null);
+  let emailChangeError = $state<string | null>(null);
+
+  function resetEmailChange() {
+    emailChangeOpen = false;
+    newEmail = "";
+    emailOtp = "";
+    emailCodeSent = false;
+    emailChangeMessage = null;
+    emailChangeError = null;
+  }
+
+  async function requestEmailChange(e: Event) {
+    e.preventDefault();
+    emailChangeBusy = true;
+    emailChangeError = null;
+    try {
+      await api.post("/auth/me/email-change", {
+        email: newEmail.toLowerCase().trim(),
+      });
+      emailCodeSent = true;
+      emailChangeMessage = `We sent a 6-digit code to ${newEmail.trim()}.`;
+    } catch (err) {
+      emailChangeError =
+        err instanceof ApiError ? err.message : "Failed to send the code.";
+    } finally {
+      emailChangeBusy = false;
+    }
+  }
+
+  async function confirmEmailChange(e: Event) {
+    e.preventDefault();
+    emailChangeBusy = true;
+    emailChangeError = null;
+    try {
+      await api.post("/auth/me/email-change/confirm", {
+        email: newEmail.toLowerCase().trim(),
+        otpCode: emailOtp.trim(),
+      });
+      resetEmailChange();
+      profileMessage = "Email updated.";
+      // Refresh the auth store so the whole SPA sees the new address.
+      await authStore.checkAuth();
+    } catch (err) {
+      emailChangeError =
+        err instanceof ApiError ? err.message : "Failed to verify the code.";
+    } finally {
+      emailChangeBusy = false;
     }
   }
 
@@ -60,6 +119,9 @@
   const canInvite = $derived(can(authStore.user?.role ?? "", "team.invite"));
   const canChangeRoles = $derived(can(authStore.user?.role ?? "", "team.update_role"));
   const canRemove = $derived(can(authStore.user?.role ?? "", "team.remove"));
+  const canTransferOwnership = $derived(
+    can(authStore.user?.role ?? "", "org.transfer_ownership"),
+  );
 
   // One-shot data fetch on mount. Use onMount, NOT $effect — see
   // CLAUDE.md → "Stores: $effect on mount is a trap; use onMount".
@@ -100,6 +162,21 @@
   async function handleRemove(userId: string, memberName: string) {
     if (!confirm(`Remove ${memberName} from this organization?`)) return;
     await orgStore.removeMember(userId);
+  }
+
+  async function handleTransferOwnership(userId: string, memberName: string) {
+    if (
+      !confirm(
+        `Make ${memberName} the organization owner? You will become an Admin ` +
+          `and only they will be able to transfer ownership back.`,
+      )
+    ) {
+      return;
+    }
+    await orgStore.transferOwnership(userId);
+    // The caller's own role changed server-side (owner -> admin);
+    // refresh the auth store so capability-derived UI updates.
+    await authStore.checkAuth();
   }
 
   function formatRelativeExpiry(expiresAt: string): string {
@@ -288,18 +365,6 @@
           />
         </div>
 
-        <div class="form-field">
-          <label class="label" for="settings-email">Email</label>
-          <input
-            id="settings-email"
-            class="input"
-            type="email"
-            bind:value={profileEmail}
-            required
-            data-testid="settings-profile-input-email"
-          />
-        </div>
-
         <button
           type="submit"
           class="btn btn-primary"
@@ -309,6 +374,111 @@
           {profileSaving ? "Saving..." : "Save Changes"}
         </button>
       </form>
+
+      <h3 class="subsection-title">Email</h3>
+      <div class="form-field">
+        <span class="label">Current email</span>
+        <div class="email-current" data-testid="settings-profile-current-email">
+          {authStore.user?.email}
+        </div>
+      </div>
+
+      {#if !emailChangeOpen}
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick={() => (emailChangeOpen = true)}
+          data-testid="settings-profile-btn-change-email"
+        >
+          Change email
+        </button>
+      {:else}
+        {#if emailChangeMessage}
+          <div class="alert alert-success" data-testid="settings-email-alert-info">
+            {emailChangeMessage}
+          </div>
+        {/if}
+        {#if emailChangeError}
+          <div class="alert alert-error" data-testid="settings-email-alert-error">
+            {emailChangeError}
+          </div>
+        {/if}
+
+        {#if !emailCodeSent}
+          <form onsubmit={requestEmailChange} class="settings-form">
+            <div class="form-field">
+              <label class="label" for="settings-new-email">New email</label>
+              <input
+                id="settings-new-email"
+                class="input"
+                type="email"
+                bind:value={newEmail}
+                required
+                placeholder="new@example.com"
+                data-testid="settings-profile-input-new-email"
+              />
+              <p class="text-muted field-hint">
+                We'll send a 6-digit code to the new address to confirm you
+                can receive mail there. Your email only changes after you
+                enter that code.
+              </p>
+            </div>
+            <div class="button-row">
+              <button
+                type="submit"
+                class="btn btn-primary"
+                disabled={emailChangeBusy}
+                data-testid="settings-profile-btn-send-email-code"
+              >
+                {emailChangeBusy ? "Sending..." : "Send code"}
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost"
+                onclick={resetEmailChange}
+                data-testid="settings-profile-btn-cancel-email"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        {:else}
+          <form onsubmit={confirmEmailChange} class="settings-form">
+            <div class="form-field">
+              <label class="label" for="settings-email-otp">Verification code</label>
+              <input
+                id="settings-email-otp"
+                class="input"
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
+                bind:value={emailOtp}
+                required
+                placeholder="123456"
+                data-testid="settings-profile-input-email-otp"
+              />
+            </div>
+            <div class="button-row">
+              <button
+                type="submit"
+                class="btn btn-primary"
+                disabled={emailChangeBusy || emailOtp.trim().length !== 6}
+                data-testid="settings-profile-btn-confirm-email"
+              >
+                {emailChangeBusy ? "Verifying..." : "Confirm new email"}
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost"
+                onclick={resetEmailChange}
+                data-testid="settings-profile-btn-cancel-email"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        {/if}
+      {/if}
     </section>
   {/if}
 
@@ -418,6 +588,17 @@
               </select>
             {:else}
               <span class="badge">{roleLabel(member.role)}</span>
+            {/if}
+            {#if canTransferOwnership && !isSelf && member.role !== "owner"}
+              <button
+                type="button"
+                class="btn btn-ghost"
+                onclick={() =>
+                  handleTransferOwnership(member.id, member.name ?? member.email)}
+                data-testid="settings-team-btn-transfer-{member.id}"
+              >
+                Make owner
+              </button>
             {/if}
             {#if canRemove && canManageThis}
               <button
@@ -824,6 +1005,17 @@
     font-size: var(--text-xs);
     color: var(--color-muted);
     margin-top: 4px;
+  }
+
+  .email-current {
+    font-size: var(--text-sm);
+    padding: var(--space-sm) 0;
+  }
+
+  .button-row {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
   }
 
   .billing-row {

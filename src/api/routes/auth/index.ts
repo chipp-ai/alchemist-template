@@ -383,17 +383,21 @@ authRoutes.post("/touch", requireAuth, async (c) => {
 
 /**
  * PATCH /me
- * Update the current authenticated user's profile (name, email, picture).
- * Email change resets emailVerified — the user has to re-verify via OTP
- * before we trust the new address.
+ * Update the current authenticated user's profile (name, picture).
+ *
+ * Email is deliberately NOT accepted here. An unverified email swap on
+ * an OTP-login app is a lockout trap (typo the new address and the
+ * next login code goes somewhere you can't read) and makes a stolen
+ * session cookie durable (attacker rebinds the account to their own
+ * address). Email moves ONLY through the verify-first flow below:
+ * POST /me/email-change then POST /me/email-change/confirm.
  */
 const updateMeSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
-    email: z.string().email().trim().toLowerCase().optional(),
     picture: z.string().url().nullable().optional(),
   })
-  .refine((v) => v.name !== undefined || v.email !== undefined || v.picture !== undefined, {
+  .refine((v) => v.name !== undefined || v.picture !== undefined, {
     message: "At least one field is required",
   });
 
@@ -405,37 +409,12 @@ authRoutes.patch(
     const user = getUser(c);
     const body = c.req.valid("json");
 
-    // Email collision: 409. Tenants don't share users, but globally a
-    // user row is keyed on email — same address can only belong to one
-    // account. Fail fast so the SPA can show "that address is in use"
-    // rather than letting the UPDATE crash with a unique-constraint 500.
-    if (body.email && body.email !== user.email) {
-      const conflict = await db
-        .selectFrom("users")
-        .select("id")
-        .where("email", "=", body.email)
-        .where("id", "!=", user.id)
-        .executeTakeFirst();
-      if (conflict) {
-        return c.json(
-          { error: "Email is already in use", code: "EMAIL_IN_USE" },
-          409,
-        );
-      }
-    }
-
     const updates: Partial<{
       name: string;
-      email: string;
       picture: string | null;
-      emailVerified: boolean;
     }> = {};
     if (body.name !== undefined) updates.name = body.name;
     if (body.picture !== undefined) updates.picture = body.picture;
-    if (body.email !== undefined && body.email !== user.email) {
-      updates.email = body.email;
-      updates.emailVerified = false;
-    }
 
     await db
       .updateTable("users")
@@ -472,6 +451,170 @@ authRoutes.patch(
         emailVerified: updated.emailVerified,
       },
       organization: org ?? null,
+    });
+  },
+);
+
+// ── Email change (verify-first) ────────────────────────────────────────────
+// Two-step flow: request a code to the NEW address, then confirm with
+// that code. The address only changes after the code proves the user
+// can actually receive mail there, which is what makes the next OTP
+// login possible. Reuses the `otps` table (keyed on the new email), so
+// no schema change: an OTP is "a code that proves control of an
+// address at this moment", regardless of which flow minted it.
+//
+// OAuth caveat: a user who signs in via an OAuth provider is keyed to
+// the provider account's email. After changing the app-side email they
+// must log in via OTP to the new address; an OAuth login on the OLD
+// address would mint a fresh account. That's inherent to email-keyed
+// identity, and the SPA copy should steer changed users to OTP login.
+
+const emailChangeRequestSchema = z.object({
+  email: z.string().email().trim().toLowerCase(),
+});
+
+const emailChangeConfirmSchema = z.object({
+  email: z.string().email().trim().toLowerCase(),
+  otpCode: z.string().length(6),
+});
+
+/** 409 when another account already holds `email`. Checked at request
+ *  AND confirm time: someone can sign up with the address between the
+ *  two steps, and the unique index on users.email would otherwise turn
+ *  the confirm UPDATE into a 500. */
+async function findEmailCollision(
+  email: string,
+  selfId: string,
+): Promise<boolean> {
+  const conflict = await db
+    .selectFrom("users")
+    .select("id")
+    .where("email", "=", email)
+    .where("id", "!=", selfId)
+    .executeTakeFirst();
+  return conflict !== undefined;
+}
+
+authRoutes.post(
+  "/me/email-change",
+  requireAuth,
+  zValidator("json", emailChangeRequestSchema, validationHook),
+  async (c) => {
+    const user = getUser(c);
+    const { email } = c.req.valid("json");
+
+    if (email === user.email) {
+      throw new BadRequestError("That is already your email address.");
+    }
+    if (await findEmailCollision(email, user.id)) {
+      return c.json(
+        { error: "Email is already in use", code: "EMAIL_IN_USE" },
+        409,
+      );
+    }
+
+    // Same replace-any-existing-code semantics as POST /send-otp.
+    await db.deleteFrom("otps").where("email", "=", email).execute();
+
+    const otpCode = generateOtp();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    await db.insertInto("otps").values({ email, otpCode, expiresAt }).execute();
+
+    sendOtpEmail(email, otpCode).catch((err) => {
+      log.error(
+        "Failed to send email-change OTP",
+        { source: "auth", feature: "email-change", email },
+        err as Error,
+      );
+    });
+
+    log.info("Email change requested", {
+      source: "auth",
+      feature: "email-change",
+      userId: user.id,
+      newEmail: email,
+    });
+
+    return c.json({ ok: true, message: "Verification code sent to the new address" });
+  },
+);
+
+authRoutes.post(
+  "/me/email-change/confirm",
+  requireAuth,
+  zValidator("json", emailChangeConfirmSchema, validationHook),
+  async (c) => {
+    const user = getUser(c);
+    const { email, otpCode } = c.req.valid("json");
+
+    if (email === user.email) {
+      throw new BadRequestError("That is already your email address.");
+    }
+
+    // Same verification semantics as POST /verify-otp: expiry window,
+    // 5-attempt cap, delete on success.
+    const otp = await db
+      .selectFrom("otps")
+      .selectAll()
+      .where("email", "=", email)
+      .where("expiresAt", ">", new Date())
+      .executeTakeFirst();
+    if (!otp) {
+      throw new UnauthorizedError("Invalid or expired code");
+    }
+    if (otp.attempts >= 5) {
+      await db.deleteFrom("otps").where("id", "=", otp.id).execute();
+      throw new UnauthorizedError("Too many attempts. Request a new code.");
+    }
+    if (otp.otpCode !== otpCode) {
+      await db
+        .updateTable("otps")
+        .set({ attempts: otp.attempts + 1 })
+        .where("id", "=", otp.id)
+        .execute();
+      throw new UnauthorizedError("Invalid code");
+    }
+    await db.deleteFrom("otps").where("id", "=", otp.id).execute();
+
+    // Re-check the collision: the address may have been claimed since
+    // the request step.
+    if (await findEmailCollision(email, user.id)) {
+      return c.json(
+        { error: "Email is already in use", code: "EMAIL_IN_USE" },
+        409,
+      );
+    }
+
+    const previousEmail = user.email;
+    await db
+      .updateTable("users")
+      .set({ email, emailVerified: true })
+      .where("id", "=", user.id)
+      .execute();
+
+    // Re-issue the session cookie so the JWT's email claim matches the
+    // DB (the middleware reads the DB copy either way; this just keeps
+    // the token self-consistent).
+    const token = await createSessionToken({
+      id: user.id,
+      email,
+      name: user.name,
+      organizationId: user.organizationId,
+      role: user.role,
+    });
+    setSessionCookie(c, token);
+
+    log.info("Email changed", {
+      source: "auth",
+      feature: "email-change",
+      userId: user.id,
+      previousEmail,
+      newEmail: email,
+    });
+
+    return c.json({
+      user: { id: user.id, email, name: user.name, role: user.role },
     });
   },
 );

@@ -57,6 +57,7 @@ same rank, same capabilities. Migration 003 backfills `member` → `editor`.
 | `team.update_role` | admin |
 | `team.remove` | admin |
 | `org.update` | admin |
+| `org.transfer_ownership` | owner |
 | `app.write` | editor |
 | `app.read` | viewer |
 
@@ -67,12 +68,29 @@ schema drift.
 
 **Manage-vs-target rules** — the `canManage(actor, target)` helper enforces:
 
-- Owner is untouchable. Only the explicit ownership-transfer flow (deferred) can change owner.
+- Owner is untouchable to other members. Only `POST /api/org/transfer-ownership` (owner-only) moves the owner role: the named member becomes `owner` and the caller drops to `admin` in one transaction, with the caller's demotion predicated on `role = 'owner'` so a concurrent transfer can never mint a second owner.
 - Admins cannot manage other admins — only the owner can. Prevents lateral demotion wars.
 - Viewers and editors can never manage anyone.
 
 The Settings → Team UI uses `canManage` to gate role-edit dropdowns and
 remove buttons per-row.
+
+**Owner lifecycle.** Transfer-then-act is the answer to every "owner is a
+dead end" request: remove an owner (transfer, then `DELETE /members/:userId`),
+owner leaving (transfer, then `POST /leave`), owner switching to a new
+email (change email via the verify-first flow below, or invite the new
+address and transfer to it).
+
+## Email change is verify-first
+
+`PATCH /auth/me` does NOT accept `email`. The address changes only via
+`POST /auth/me/email-change` (sends a 6-digit code to the NEW address)
+followed by `POST /auth/me/email-change/confirm` (verifies the code, swaps
+the address, re-issues the session cookie). Rationale: on an OTP-login app
+an unverified swap to a typo'd address locks the user out, and lets a
+stolen session cookie durably rebind the account. A regression test in
+`src/__tests__/team.test.ts` forbids `email:` from growing back into
+`updateMeSchema`.
 
 ## Invite flow
 
