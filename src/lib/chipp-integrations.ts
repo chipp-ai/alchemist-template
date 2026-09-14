@@ -41,7 +41,19 @@ export interface ChippIntegrationEnvelope {
   diagnostic: string;
   provider?: string | null;
   toolName?: string;
+  /**
+   * Text for a person or a model. Hosted tools return chat-formatted text,
+   * capped at 4,000 chars by the broker: never parse data out of it.
+   */
   summary?: string;
+  /**
+   * Structured JSON result, present only for a broker DATA tool (listed with
+   * `returnsData: true` by `listHostedIntegrations({ provider })`, for example
+   * `onedrive_excel_get_used_range_data`). Returned whole, never truncated; an
+   * oversized result fails with diagnostic `payload_too_large` instead. Read
+   * spreadsheet values, metadata, and eTags from here.
+   */
+  data?: unknown;
   [key: string]: unknown;
 }
 
