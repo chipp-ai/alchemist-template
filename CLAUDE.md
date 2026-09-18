@@ -624,6 +624,34 @@ Rules:
 - Client-ONLY state (UI flags, wizard steps, drafts) stays on plain
   `defineStore` — don't wrap non-server state in a query.
 
+**Invalidate by ENTITY, not by hand-picked key list.** The same server fact
+usually renders from more than one key (a detail page and a list page, a
+table and a dashboard tile). A mutation that lists prefixes by hand forgets
+one of them, and that screen stays stale until `staleTime` lapses or the
+user hard-refreshes. That bug class shipped four times in one week on one
+customer app (project assignments on the person page, a verification result
+in the compliance table, a new incoming employee on the roster, a sweep
+resolution on the person card). So:
+
+- `web/src/lib/invalidation-map.ts` is the ONE place that lists, per
+  entity, every key prefix that renders it (`ENTITY_DEPENDENTS`). A
+  mutation calls `invalidateEntity("upload")` from
+  `web/src/lib/invalidation.ts` and says WHAT changed. When a new query
+  starts reading an entity from a new prefix, add the prefix to the map,
+  never to the call sites.
+- The moment one entity renders from two different prefixes, add a row to
+  `REQUIRED_PREFIXES_BY_WRITE_PATH` in the same file (API path pattern,
+  required prefixes, and why). The lint
+  `src/__tests__/routes/store-mutation-invalidation-lint.test.ts` then
+  fails any store function that writes to that path without invalidating
+  every required prefix. It also fails any store write that invalidates
+  nothing at all, unless the path is in `NON_CACHED_WRITE_PATHS` with a
+  reason (auth endpoints, presign steps).
+- Do not "fix" a stale screen by adding one more `invalidateQueries` to one
+  handler. Add the prefix to the entity in the map so every mutation of
+  that entity gets it, and add the `REQUIRED_PREFIXES_BY_WRITE_PATH` row so
+  the next handler cannot forget it.
+
 **Why this matters: the agent's L1 verification check.** Before
 driving the browser to verify a change, the verification subagent
 runs `curl http://localhost:$PORT/api/dev/app-state` to read the

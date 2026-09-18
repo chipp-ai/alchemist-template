@@ -12,6 +12,7 @@
  */
 
 import { createQuery, invalidateQueries, type Query } from "../lib/query.svelte";
+import { invalidateEntity } from "../lib/invalidation";
 import { api } from "../lib/api";
 
 // -- Types (mirror the API payloads) --
@@ -211,6 +212,9 @@ export const importsStore = {
       `/imports/sessions/${encodeURIComponent(sessionId)}/mapping`,
       { mapping },
     );
+    // The session summary (column count, status) renders from imports:*
+    // keys on the sessions list too, not only in the wizard's local copy.
+    invalidateEntity("importSession");
     return res.data;
   },
 

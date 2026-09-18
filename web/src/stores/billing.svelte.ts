@@ -16,6 +16,7 @@
  */
 
 import { createQuery, invalidateQueries } from "../lib/query.svelte";
+import { invalidateEntity } from "../lib/invalidation";
 import { api } from "../lib/api";
 
 // ── Types (mirror the API payloads) ──
@@ -117,7 +118,7 @@ export const billingStore = {
 
   async createProduct(input: NewProductInput): Promise<void> {
     await api.post("/billing/products", input);
-    invalidateQueries("billing:");
+    invalidateEntity("billingProduct");
   },
 
   async updateProduct(
@@ -125,7 +126,7 @@ export const billingStore = {
     patch: Partial<Pick<Product, "name" | "description" | "active" | "priceCents">>,
   ): Promise<void> {
     await api.patch(`/billing/products/${id}`, patch);
-    invalidateQueries("billing:");
+    invalidateEntity("billingProduct");
   },
 
   /**

@@ -13,6 +13,7 @@
  */
 
 import { createQuery, invalidateQueries, type Query } from "../lib/query.svelte";
+import { invalidateEntity } from "../lib/invalidation";
 import { api, ApiError, extractErrorMessage } from "../lib/api";
 import {
   acceptAttribute,
@@ -212,7 +213,7 @@ export const uploadsStore = {
     const res = await api.post<{ data: UploadedFileSummary }>(
       `/files/uploads/${encodeURIComponent(id)}/approve`,
     );
-    invalidateQueries("uploads:");
+    invalidateEntity("upload");
     return res.data;
   },
 
@@ -221,13 +222,13 @@ export const uploadsStore = {
       `/files/uploads/${encodeURIComponent(id)}/reject`,
       { reason },
     );
-    invalidateQueries("uploads:");
+    invalidateEntity("upload");
     return res.data;
   },
 
   async remove(id: string): Promise<void> {
     await api.delete(`/files/uploads/${encodeURIComponent(id)}`);
-    invalidateQueries("uploads:");
+    invalidateEntity("upload");
   },
 
   /** A fresh signed URL. They expire, so fetch one per click. */
