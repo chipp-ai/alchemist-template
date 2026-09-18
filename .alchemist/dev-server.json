@@ -1,0 +1,7 @@
+{
+  "start": "bash .alchemist/dev-preview.sh",
+  "healthUrl": "http://localhost:8000/health",
+  "apiUrl": "http://localhost:8000",
+  "spaUrl": "http://localhost:5173",
+  "readyTimeoutMs": 300000
+}

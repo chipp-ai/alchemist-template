@@ -32,7 +32,7 @@
  *                `DEMO_MODE=1`; dormant loop is a no-op otherwise).
  */
 
-import { db, isDatabaseConfigured } from "@/db/client.ts";
+import { db, isDatabaseConfigured, closeDatabase } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
 import { getStripe } from "@/lib/stripe.ts";
 import { createProduct, type NewProductInput } from "@/services/product.service.ts";
@@ -188,4 +188,10 @@ export async function seedDemo(): Promise<SeedDemoResult> {
 if (import.meta.main) {
   const result = await seedDemo();
   console.log(JSON.stringify(result, null, 2));
+  // Close the pool. Without this the process does its work, prints, and then
+  // sits forever on the open Postgres connection -- Deno keeps the event loop
+  // alive for it. Any one-shot caller hangs: CI, a manual run, and the Builder
+  // preview boot in .alchemist/dev-preview.sh, which waited at the seed and
+  // never started the API. Found 2026-09-18.
+  await closeDatabase();
 }
