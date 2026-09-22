@@ -49,7 +49,7 @@ const app = withTestServer((a) => {
   a.route("/api/storage/local", storageLocalRoutes);
 });
 
-function bytes(text: string): Uint8Array {
+function bytes(text: string): Uint8Array<ArrayBuffer> {
   return new TextEncoder().encode(text);
 }
 

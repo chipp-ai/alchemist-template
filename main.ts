@@ -10,6 +10,8 @@ import { reindexDocs } from "@/services/docs/reindex.ts";
 import { startInboundEmailReaper, stopInboundEmailReaper } from "@/jobs/inbound-email-reaper.ts";
 import { startDemoReseedLoop, stopDemoReseedLoop } from "@/jobs/demo-reseed-loop.ts";
 import { startExpirationDigestJob, stopExpirationDigestJob } from "@/jobs/expiration-digest.ts";
+import { startEventConsumer, stopEventConsumer } from "@/jobs/event-consumer.ts";
+import { registerEventHandlers } from "@/events/handlers.ts";
 import { log } from "@/lib/logger.ts";
 import { assertNoLiveStripeKeyInDemoMode } from "@/lib/stripe.ts";
 import { isDemoMode } from "@/config/demo-mode.ts";
@@ -47,6 +49,13 @@ if (isDemoMode()) {
 // EXAMPLE (src/services/import/examples/people.ts) -- copy that file for
 // your own import, then delete it and this call.
 registerPeopleImport();
+
+// ── Event handlers ──
+// Every "when X happens, do Y" handler registers here, before the
+// consumer starts, because the consumer syncs event_subscriptions from
+// the registry on its first tick. Pure bookkeeping, nothing can fail.
+// See src/events/handlers.ts.
+registerEventHandlers();
 
 // ── Database connection ──
 
@@ -127,6 +136,20 @@ if (runsBackgroundWork) {
   }
 }
 
+// ── Event consumer ──
+// Fire-and-forget loop that claims event_deliveries and runs handlers
+// and outbound webhooks. Syncs the subscription registry first, then
+// polls and listens for Redis nudges. Dormant without a database; never
+// throws at boot. Stopped (and awaited) in shutdown() BEFORE
+// closeDatabase() so an in-flight batch can still write its outcomes.
+if (runsBackgroundWork) {
+  try {
+    startEventConsumer();
+  } catch (err) {
+    log.warn("event consumer failed to start (non-fatal)", { source: "startup" }, err);
+  }
+}
+
 // ── Start server ──
 
 log.info("Server starting", {
@@ -177,6 +200,15 @@ async function shutdown(signal: string): Promise<void> {
     stopExpirationDigestJob();
   } catch (err) {
     log.warn("Error stopping expiration digest job", { source: "shutdown" }, err);
+  }
+
+  // Awaited: the tick in flight must write its outcomes before the pool
+  // is torn down, or its rows stay `running` and are re-run as
+  // duplicates by the stale reaper ten minutes later.
+  try {
+    await stopEventConsumer();
+  } catch (err) {
+    log.warn("Error stopping event consumer", { source: "shutdown" }, err);
   }
 
   try {

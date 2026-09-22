@@ -181,14 +181,65 @@ export async function cacheDelete(...keys: string[]): Promise<boolean> {
 }
 
 /**
- * Best-effort distributed lock (SET NX EX). FAIL-OPEN: returns true
- * when Redis is unavailable -- treat the lock as a de-duplication
- * optimization, never as a correctness guarantee. For claiming rows of
- * work use Postgres `FOR UPDATE SKIP LOCKED` in one transaction. Do NOT
- * reach for a Postgres advisory lock for a cross-pod scheduler: behind
- * pgbouncer's transaction pooling a dead holder's session lock is never
- * released (see the hub CLAUDE.md, "Shared Redis"). This lock's TTL is
- * what makes a dead holder harmless.
+ * Locks this process holds: name -> the owner token stored as the key's
+ * value. Per-process state is right here (the holder IS this process);
+ * it is not a cache. `releaseLock` and `refreshLock` read it so a caller
+ * never has to carry the token around.
+ */
+const heldLocks = new Map<string, string>();
+
+/** Value stored under `lock:<name>` while this process holds the lock. */
+export function _heldLockTokenForTest(name: string): string | undefined {
+  return heldLocks.get(name);
+}
+
+/**
+ * Compare-and-run: WATCH the lock key, read it, and only when it still
+ * holds `token` run `mutate` inside MULTI/EXEC. EXEC returns nil when the
+ * key changed under us, so a peer's fresh lock is never touched. The ACL
+ * grants @transaction but not @scripting, which is why this is WATCH
+ * and not a Lua script. Returns true when the mutation was applied.
+ */
+async function guardedLockOp(
+  feature: string,
+  key: string,
+  token: string,
+  mutate: (tx: ReturnType<Redis["tx"]>) => void,
+): Promise<boolean> {
+  const applied = await run(feature, async (c) => {
+    await c.watch(key);
+    const current = await c.get(key);
+    if (current !== token) {
+      await c.unwatch();
+      return false;
+    }
+    const tx = c.tx();
+    mutate(tx);
+    // The batch replies are MULTI, one QUEUED per command, then EXEC. An
+    // aborted EXEC (the key changed after WATCH) is a nil reply.
+    const replies = await tx.flush();
+    const exec = replies[replies.length - 1];
+    return Array.isArray(exec) && exec.length > 0;
+  });
+  return applied === true;
+}
+
+/**
+ * Best-effort distributed lock (SET NX EX) with an owner token. FAIL-OPEN:
+ * returns true when Redis is unavailable -- treat the lock as a
+ * de-duplication optimization, never as a correctness guarantee. For
+ * claiming rows of work use Postgres `FOR UPDATE SKIP LOCKED` in one
+ * transaction. Do NOT reach for a Postgres advisory lock for a cross-pod
+ * scheduler: behind pgbouncer's transaction pooling a dead holder's
+ * session lock is never released (see the hub CLAUDE.md, "Shared
+ * Redis"). This lock's TTL is what makes a dead holder harmless, so keep
+ * the TTL SHORT (a minute) and call `refreshLock` from a timer while the
+ * work runs; a long TTL turns every crash, OOM kill or missed release
+ * into a stall of that whole length for every pod.
+ *
+ * The value is a random token owned by this acquisition. `releaseLock`
+ * deletes the key only while it still holds that token, so a late
+ * release after the TTL lapsed cannot delete a peer's lock.
  */
 export async function acquireLock(
   name: string,
@@ -196,20 +247,73 @@ export async function acquireLock(
 ): Promise<boolean> {
   const client = await getClient();
   if (!client) return true; // fail-open
+  const token = crypto.randomUUID();
   const reply = await run("acquire-lock", (c) =>
-    c.set(k(`lock:${name}`), "1", {
+    c.set(k(`lock:${name}`), token, {
       ex: Math.max(1, ttlSeconds),
       mode: "NX",
     }));
   // null here means EITHER "lock held" (nil reply) or "Redis error".
   // x/redis returns undefined-ish nil for a lost NX race and "OK" for
   // a win; an op-level failure already logged and we fail-open.
-  return reply === "OK";
+  if (reply === "OK") {
+    heldLocks.set(name, token);
+    return true;
+  }
+  // Lost the race (or Redis erred). A token this process may still hold
+  // for the same name stays: release and refresh compare it against the
+  // key, so a stale entry is a no-op, never a wrong delete.
+  return false;
 }
 
-/** Release a lock taken with acquireLock. Best-effort. */
+/**
+ * Extend a lock this process holds by `ttlSeconds` from now. Call it
+ * from a timer while a long tick runs so the TTL can stay short. Returns
+ * false when the lock is no longer ours (expired and re-taken by a peer,
+ * or never held) or Redis is unavailable; the caller keeps working
+ * either way, because correctness never rests on the lock.
+ */
+export async function refreshLock(name: string, ttlSeconds: number): Promise<boolean> {
+  const token = heldLocks.get(name);
+  if (token === undefined) return false;
+  return await guardedLockOp(
+    "refresh-lock",
+    k(`lock:${name}`),
+    token,
+    (tx) => tx.expire(k(`lock:${name}`), Math.max(1, ttlSeconds)),
+  );
+}
+
+/**
+ * Release a lock taken with acquireLock. Best-effort and owner-checked:
+ * the key is deleted only while it still holds our token. When the
+ * shared client is in its connect cooldown (a slow op a moment ago
+ * dropped it) the delete is retried once after the cooldown, so one
+ * 500 ms Redis hiccup cannot leave a lock held for its whole TTL.
+ */
 export async function releaseLock(name: string): Promise<void> {
-  await run("release-lock", (c) => c.del(k(`lock:${name}`)));
+  const token = heldLocks.get(name);
+  heldLocks.delete(name);
+  if (token === undefined) return;
+  const key = k(`lock:${name}`);
+  const attempt = () => guardedLockOp("release-lock", key, token, (tx) => tx.del(key));
+  if (await attempt()) return;
+  if (!isRedisConfigured()) return;
+  const inCooldown = connPromise === null &&
+    Date.now() - lastConnectFailAt < CONNECT_RETRY_COOLDOWN_MS;
+  if (!inCooldown) return; // the key is gone, expired, or a peer's
+  const wait = CONNECT_RETRY_COOLDOWN_MS - (Date.now() - lastConnectFailAt) + 50;
+  const timer = setTimeout(() => {
+    attempt().catch((err) => {
+      log.warn(
+        "redis: deferred lock release failed (fail-open; the TTL will clear it)",
+        { source: SOURCE, feature: "release-lock", name },
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    });
+  }, wait);
+  // Never keep the process alive for a best-effort delete.
+  Deno.unrefTimer(timer);
 }
 
 /**
@@ -244,6 +348,107 @@ export async function redisPublish(
   payload: unknown,
 ): Promise<number | null> {
   return await run("publish", (c) => c.publish(k(channel), JSON.stringify(payload)));
+}
+
+/** A live subscription. `close()` ends it; the callback never fires again after that. */
+export interface RedisSubscriptionHandle {
+  close(): void;
+}
+
+/**
+ * Subscribe to a tenant-scoped pub/sub channel on a DEDICATED connection
+ * (a subscribed Redis connection can run no other command, so the shared
+ * client is never used here). `onMessage` gets the raw message string.
+ *
+ * FAIL-OPEN like everything else in this module: with REDIS_URL unset
+ * the handle is a no-op and nothing ever arrives; a dropped connection
+ * is re-dialed after the connect cooldown until `close()` is called.
+ * Callers must therefore treat a message as a hint, never as the only
+ * way work gets noticed (the event consumer polls regardless).
+ *
+ * A throwing `onMessage` is logged and does not end the subscription.
+ */
+export function redisSubscribe(
+  channel: string,
+  onMessage: (message: string) => void,
+): RedisSubscriptionHandle {
+  const url = Deno.env.get("REDIS_URL");
+  if (!url) return { close() {} };
+
+  let closed = false;
+  let current: { close(): void } | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const scheduleRetry = () => {
+    if (closed) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      void loop();
+    }, CONNECT_RETRY_COOLDOWN_MS);
+  };
+
+  const loop = async () => {
+    if (closed) return;
+    const client = await doConnect(url);
+    if (!client) {
+      scheduleRetry();
+      return;
+    }
+    if (closed) {
+      client.close();
+      return;
+    }
+    try {
+      const sub = await withTimeout(client.subscribe(k(channel)), OP_TIMEOUT_MS);
+      current = { close: () => sub.close() };
+      log.info("redis: subscribed", { source: SOURCE, feature: "subscribe", channel });
+      for await (const { message } of sub.receive()) {
+        if (closed) break;
+        try {
+          onMessage(message);
+        } catch (err) {
+          log.error(
+            "redis: subscription message handler threw",
+            { source: SOURCE, feature: "subscribe", channel },
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
+      }
+    } catch (err) {
+      if (!closed) {
+        log.warn(
+          "redis: subscription dropped (fail-open; will re-dial after cooldown)",
+          { source: SOURCE, feature: "subscribe", channel },
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
+    } finally {
+      current = null;
+      try {
+        client.close();
+      } catch {
+        // already closed
+      }
+    }
+    scheduleRetry();
+  };
+
+  void loop();
+
+  return {
+    close() {
+      closed = true;
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      try {
+        current?.close();
+      } catch {
+        // already closed
+      }
+    },
+  };
 }
 
 /** Test seam: reset connection state (e.g. after env var changes). */

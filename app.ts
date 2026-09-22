@@ -40,6 +40,7 @@ import { inboundEmailRoutes } from "@/api/routes/inbound-emails/index.ts";
 import { emailRoutes } from "@/api/routes/email/index.ts";
 import { portalRoutes } from "@/api/routes/portal/index.ts";
 import { storageLocalRoutes } from "@/api/routes/storage-local/index.ts";
+import { eventsRoutes } from "@/api/routes/events/index.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 
 // ── App types ──
@@ -190,6 +191,12 @@ app.route("/api/invite", inviteRoutes);
 // is Postmark. Dormant until the token is configured. See
 // src/api/routes/ingest-email/index.ts.
 app.route("/api/ingest/email", ingestEmailRoutes);
+
+// Event inbox (platform and external relays -> the durable event log).
+// HMAC-gated (EVENTS_INBOX_SECRET, fail-closed), NOT session auth: the
+// caller is the platform or a relay. Dormant until the secret is
+// configured. See src/api/routes/events/index.ts.
+app.route("/api/events", eventsRoutes);
 
 // Inbound-email dashboard reads (auth-required, org-scoped). See
 // src/api/routes/inbound-emails/index.ts.

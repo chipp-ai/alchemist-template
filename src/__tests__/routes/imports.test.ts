@@ -50,7 +50,7 @@ const FIXTURES = new URL("../fixtures/import/", import.meta.url);
 
 const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-function fixture(name: string): Uint8Array {
+function fixture(name: string): Uint8Array<ArrayBuffer> {
   return Deno.readFileSync(new URL(name, FIXTURES));
 }
 
@@ -160,7 +160,7 @@ async function patchJson(person: Person, path: string, body: unknown): Promise<R
 // runtime-compatible; this cast bridges the purely nominal TS mismatch.
 async function uploadFile(
   person: Person,
-  opts: { definition: string; filename: string; contentType: string; body: Uint8Array },
+  opts: { definition: string; filename: string; contentType: string; body: Uint8Array<ArrayBuffer> },
 ): Promise<Response> {
   const form = new FormData();
   form.set("file", new File([opts.body], opts.filename, { type: opts.contentType }));
@@ -181,7 +181,7 @@ async function json(res: Response): Promise<any> {
 /** Upload, accept the proposed mapping, and hand back the session id. */
 async function startSession(
   person: Person,
-  opts: { definition: string; filename: string; contentType: string; body: Uint8Array },
+  opts: { definition: string; filename: string; contentType: string; body: Uint8Array<ArrayBuffer> },
 ): Promise<{ id: string; proposal: Array<{ columnIndex: number; fieldKey: string | null }> }> {
   const res = await uploadFile(person, opts);
   assertEquals(res.status, 201, await res.clone().text());
@@ -534,7 +534,7 @@ dbTest("a column can be kept as custom data and reaches the handler as an extra"
 /** Post a file the way <UploadField> does, and return its id. */
 async function uploadThroughPavedRoad(
   person: Person,
-  opts: { filename: string; contentType: string; body: Uint8Array },
+  opts: { filename: string; contentType: string; body: Uint8Array<ArrayBuffer> },
 ): Promise<string> {
   const form = new FormData();
   form.set("file", new File([opts.body], opts.filename, { type: opts.contentType }));

@@ -367,6 +367,99 @@ export interface JobHistoryTable {
 export type JobHistory = Selectable<JobHistoryTable>;
 export type NewJobHistory = Insertable<JobHistoryTable>;
 
+// ── events (durable outbox + delivery ledger) ──
+//
+// See db/migrations/20260922172721_events.sql and src/lib/events.ts.
+
+export type EventSource = "app" | "platform" | "external";
+export type EventSubscriptionKind = "handler" | "webhook";
+export type EventDeliveryStatus = "pending" | "running" | "done" | "failed" | "dead";
+
+/**
+ * The outbox. Append-only; a row is inserted inside the transaction that
+ * makes the business change it describes. `id` is a UUIDv7 minted by the
+ * publisher (time-ordered); the DB default is only a fallback.
+ */
+export interface EventsTable {
+  id: Generated<string>;
+  /** NULL for a platform or external event that belongs to no org. */
+  organizationId: string | null;
+  topic: string;
+  /** The business key the event is about (an order id, a file key). */
+  key: string | null;
+  /** JSONB. Pass an object; never a pre-stringified value. */
+  payload: Generated<unknown>;
+  source: Generated<EventSource>;
+  createdAt: CreatedAt;
+}
+
+export type EventRow = Selectable<EventsTable>;
+export type NewEvent = Insertable<EventsTable>;
+
+/**
+ * Who hears a topic. Code-declared handlers have organizationId NULL and
+ * are synced at boot; webhooks are org-scoped and created in the app.
+ */
+export interface EventSubscriptionsTable {
+  id: Generated<string>;
+  organizationId: string | null;
+  topic: string;
+  /** The registered handler's name, or a label for a webhook. */
+  handler: string;
+  kind: Generated<EventSubscriptionKind>;
+  /** Total attempts before a delivery goes dead (first attempt included). */
+  maxAttempts: Generated<number>;
+  url: string | null;
+  /** The NAME of the env var holding the webhook signing secret. */
+  secretRef: string | null;
+  active: Generated<boolean>;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type EventSubscriptionRow = Selectable<EventSubscriptionsTable>;
+export type NewEventSubscription = Insertable<EventSubscriptionsTable>;
+export type EventSubscriptionUpdate = Updateable<EventSubscriptionsTable>;
+
+/** One row per (event, subscription): the unit of work the consumer claims. */
+export interface EventDeliveriesTable {
+  id: Generated<string>;
+  eventId: string;
+  subscriptionId: string;
+  status: Generated<EventDeliveryStatus>;
+  /** Incremented on claim, so a crash mid-handler still counts. */
+  attempts: Generated<number>;
+  nextAttemptAt: ColumnType<Date, Date | undefined, Date | undefined>;
+  lastError: string | null;
+  claimedBy: string | null;
+  claimedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  doneAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type EventDeliveryRow = Selectable<EventDeliveriesTable>;
+export type NewEventDelivery = Insertable<EventDeliveriesTable>;
+export type EventDeliveryUpdate = Updateable<EventDeliveriesTable>;
+
+/**
+ * (subscription, idempotency key) pairs. Reserved (completedAt NULL)
+ * before the handler runs, completed (completedAt set) after. A
+ * redelivery whose key is completed is marked done without running.
+ * The stored key is org-scoped (`scopedIdempotencyKey`).
+ */
+export interface EventHandlerReceiptsTable {
+  subscriptionId: string;
+  /** `${organizationId ?? "global"}:${key}`. */
+  idempotencyKey: string;
+  eventId: string;
+  deliveryId: string | null;
+  completedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+}
+
+export type EventHandlerReceiptRow = Selectable<EventHandlerReceiptsTable>;
+export type NewEventHandlerReceipt = Insertable<EventHandlerReceiptsTable>;
+
 // ── Database interface ──
 // Register your domain tables here.
 //
@@ -492,4 +585,8 @@ export interface Database {
   inbound_email_attachment: InboundEmailAttachmentTable;
   products: ProductsTable;
   purchases: PurchasesTable;
+  events: EventsTable;
+  event_subscriptions: EventSubscriptionsTable;
+  event_deliveries: EventDeliveriesTable;
+  event_handler_receipts: EventHandlerReceiptsTable;
 }

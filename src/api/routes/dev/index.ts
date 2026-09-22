@@ -403,6 +403,10 @@ const resetSchema = z.object({
 });
 
 const DEFAULT_TRUNCATE_TABLES = [
+  "event_handler_receipts",
+  "event_deliveries",
+  "event_subscriptions",
+  "events",
   "token_usage",
   "job_history",
   "api_credentials",

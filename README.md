@@ -29,6 +29,7 @@ It is also the seed repo every customer project on the [Alchemist AI](https://ad
 - **Auth** -- Email OTP login, session cookies, JWT for API tokens, OAuth providers via Arctic 2. Includes a documented dev-login escape hatch so local + agent testing works without an SMTP inbox.
 - **Billing** -- Stripe 17. Plan-tier subscriptions, customer portal, AND a built-in product catalog: sell one-time purchases or monthly/yearly subscriptions with automatic Stripe product/price creation, webhook fulfillment, and org-level entitlements (`requireEntitlement`).
 - **Email** -- SMTP via nodemailer with environment-driven configuration.
+- **Events** -- Durable pub/sub in Postgres: `publishEvent` inside the transaction that made the change, handlers declared in `src/events/handlers.ts`, a consumer with `FOR UPDATE SKIP LOCKED` claims, exponential backoff, dead letters and replay, a Redis nudge for latency, a signed `POST /api/events/inbox`, and signed outbound webhooks per organization.
 - **RBAC + teams** -- Organizations, members, roles, invites. Wired through the auth middleware and routes.
 - **Logging** -- Structured logger (pretty in dev, NDJSON in production), ready for Loki / Datadog / any aggregator.
 - **Tests** -- Routes + services split (`test:fast` runs just those). No DB mocks -- tests hit a real Postgres instance.

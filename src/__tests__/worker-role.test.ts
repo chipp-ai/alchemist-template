@@ -77,7 +77,15 @@ Deno.test("main.ts gates every background starter on the role", async () => {
   // worker. Each of these must sit inside an `if (runsBackgroundWork)`.
   const src = await Deno.readTextFile(new URL("../../main.ts", import.meta.url));
 
-  for (const starter of ["reindexDocs()", "startInboundEmailReaper()", "startDemoReseedLoop()"]) {
+  for (
+    const starter of [
+      "reindexDocs()",
+      "startInboundEmailReaper()",
+      "startDemoReseedLoop()",
+      "startExpirationDigestJob()",
+      "startEventConsumer()",
+    ]
+  ) {
     const idx = src.indexOf(starter);
     assertEquals(idx > -1, true, `${starter} should still exist in main.ts`);
     const preceding = src.slice(0, idx);

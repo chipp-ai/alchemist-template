@@ -45,7 +45,7 @@ const DEMO_RESEED_LOCK_ID = 838291740022;
 /** Re-seed cadence default -- once a day. */
 const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
 
-let timerId: number | null = null;
+let timerId: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let shuttingDown = false;
 

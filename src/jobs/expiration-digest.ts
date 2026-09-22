@@ -49,7 +49,7 @@ const DIGEST_LOCK_ID = 749217530012;
 
 const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-let timerId: number | null = null;
+let timerId: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let shuttingDown = false;
 
