@@ -24,11 +24,19 @@
  * Loop shape (when configured):
  *   `tick()` runs via `setTimeout` (NOT `setInterval`) so ticks NEVER
  *   overlap -- a slow LLM extraction can't fan out parallel drains. Each
- *   tick takes a `pg_try_advisory_lock` on ONE dedicated connection (held
- *   + released on that same connection -- pooling safe) so that across
- *   multiple pods only ONE drains per tick. The lock is a BUDGET
+ *   tick takes a Redis lock (`acquireLock`, SET NX EX with a TTL) so that
+ *   across multiple pods only ONE drains per tick. The lock is a BUDGET
  *   optimization, not correctness: applyData is idempotent per the
  *   profile contract, so a duplicate claim only wastes LLM spend.
+ *
+ *   Why Redis and NOT `pg_try_advisory_lock`: DATABASE_URL goes through
+ *   pgbouncer in transaction-pool mode. A session advisory lock held by a
+ *   pod that dies mid-tick stays held on the orphaned server connection
+ *   until an operator terminates the backend, and the reaper then never
+ *   runs again on any replica. That jammed a production scheduler for
+ *   hours (2026-08-01). A Redis lock from a dead holder expires on its own
+ *   (`INBOUND_EMAIL_LOCK_TTL_S`). With REDIS_URL unset, `acquireLock`
+ *   returns true, so a single-pod dev box just runs the tick.
  *
  * Error handling: a thrown tick (DB, lock, drain) logs `warn` and
  * reschedules. The loop NEVER dies. The drain catches per-row internally,
@@ -39,11 +47,13 @@
  *   INBOUND_EMAIL_POLL_INTERVAL_MS  (default 60000, clamp 1s..1h)
  *   INBOUND_EMAIL_BATCH_SIZE        (default 5, clamp 1..50)
  *   INBOUND_EMAIL_RETRY_AFTER_MS    (default 1800000 = 30 min, clamp 0..24h)
+ *   INBOUND_EMAIL_LOCK_TTL_S        (default 900 = 15 min, clamp 60s..1h;
+ *                                    must exceed the worst-case tick)
  */
 
-import { sql } from "kysely";
-import { db, isDatabaseConfigured } from "@/db/client.ts";
+import { isDatabaseConfigured } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
+import { acquireLock, releaseLock } from "@/lib/redis.ts";
 import { LLM_CONFIG } from "@/config/llm.ts";
 import {
   DEFAULT_BATCH_SIZE,
@@ -53,17 +63,16 @@ import {
 
 const LOG_SOURCE = "inbound-email-reaper";
 
-/**
- * Stable advisory-lock id for the inbound-email reaper. Distinct from the
- * docs reindex lock (472026011) and the test-schema provisioning lock
- * (494494). Fits in a Postgres bigint.
- */
-const REAPER_LOCK_ID = 749217530011;
+/** Redis lock name for the reaper tick (`acquireLock` prefixes it per project). */
+const REAPER_LOCK_NAME = "inbound-email-reaper";
+
+/** Lock TTL default. Must exceed the worst-case tick (batch of LLM extractions). */
+const DEFAULT_LOCK_TTL_S = 900; // 15 min
 
 /** Poll cadence default -- how often the reaper drains the queue. */
 const DEFAULT_POLL_INTERVAL_MS = 60_000; // 60s
 
-let timerId: number | null = null;
+let timerId: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let shuttingDown = false;
 
@@ -98,6 +107,9 @@ function batchSize(): number {
 function retryAfterMs(): number {
   // min 0 (allow "retry immediately"); max 24h.
   return envInt("INBOUND_EMAIL_RETRY_AFTER_MS", DEFAULT_RETRY_AFTER_MS, 0, 24 * 60 * 60 * 1000);
+}
+function lockTtlSeconds(): number {
+  return envInt("INBOUND_EMAIL_LOCK_TTL_S", DEFAULT_LOCK_TTL_S, 60, 60 * 60);
 }
 
 /**
@@ -155,35 +167,29 @@ async function tick(): Promise<void> {
   timerId = null;
 
   try {
-    // ONE dedicated connection for lock + drain + unlock (pooling safe --
-    // session advisory locks are per-connection; see docs/reindex.ts).
-    await db.connection().execute(async (conn) => {
-      const lockRes = await sql<{ locked: boolean }>`
-        select pg_try_advisory_lock(${REAPER_LOCK_ID}) as locked
-      `.execute(conn);
-      if (!lockRes.rows[0]?.locked) {
-        log.debug("inbound-email reaper tick skipped (lock held by peer)", {
+    // Cross-pod lock in Redis, never a Postgres advisory lock (see header).
+    if (!(await acquireLock(REAPER_LOCK_NAME, lockTtlSeconds()))) {
+      log.debug("inbound-email reaper tick skipped (lock held by peer)", {
+        source: LOG_SOURCE,
+      });
+      return;
+    }
+    try {
+      const result = await processInboundEmailBatch(
+        {},
+        { batchSize: batchSize(), retryAfterMs: retryAfterMs() },
+      );
+      if (result.claimed > 0) {
+        log.info("inbound-email reaper drained batch", {
           source: LOG_SOURCE,
+          feature: "tick",
+          claimed: result.claimed,
+          processed: result.processed,
         });
-        return;
       }
-      try {
-        const result = await processInboundEmailBatch(
-          {},
-          { batchSize: batchSize(), retryAfterMs: retryAfterMs() },
-        );
-        if (result.claimed > 0) {
-          log.info("inbound-email reaper drained batch", {
-            source: LOG_SOURCE,
-            feature: "tick",
-            claimed: result.claimed,
-            processed: result.processed,
-          });
-        }
-      } finally {
-        await sql`select pg_advisory_unlock(${REAPER_LOCK_ID})`.execute(conn);
-      }
-    });
+    } finally {
+      await releaseLock(REAPER_LOCK_NAME);
+    }
   } catch (err) {
     // DB / lock / drain threw -- log + reschedule. NEVER kill the loop.
     log.warn("inbound-email reaper tick failed", { source: LOG_SOURCE, feature: "tick" }, err);

@@ -226,6 +226,35 @@ if (await acquireLock("nightly-report", 300)) {
 }
 ```
 
+### When Redis is the answer, and when it is not
+
+Reach for Redis when the ticket or message involves any of these:
+
+- **A scheduled tick, poller, reaper or sweep** (`setInterval`, cron, "every
+  N minutes", "sync", "poll", "reconcile"). It runs on every replica and on
+  both pods during a rolling deploy, so it double-runs unless one
+  `acquireLock` guards the tick. Name the lock key and a TTL longer than the
+  worst-case tick in the plan.
+- **A public endpoint someone could hammer** (signup, login, contact form,
+  webhook receiver, search): `rateLimit`.
+- **A webhook or inbound message that a provider may deliver twice**: dedup
+  on the provider's message id with a short TTL, then process.
+- **An expensive read that many requests repeat** (a report, an external API
+  lookup, a rendered fragment): `cacheGet` / `cacheSet` with a TTL. Cache
+  the result, never the decision.
+- **A short-lived secret** (one-time code, magic link nonce, upload session):
+  `cacheSet` with the TTL as the expiry.
+
+Do not reach for Redis when:
+
+- **Losing it would be a bug.** No persistence, LRU eviction. Orders, ledger
+  rows, audit trails, anything a person will ask about later: Postgres.
+- **It is a queue of work.** Rows in Postgres plus a poller that claims with
+  `FOR UPDATE SKIP LOCKED`. Redis lists lose items on eviction.
+- **It is per-request memoization.** A local variable inside the handler is
+  fine and needs no Redis.
+- **You want to know what keys exist.** `SCAN` is denied; track them yourself.
+
 The rules:
 
 - **Redis is a CACHE, never a source of truth.** It runs with LRU eviction and
@@ -239,8 +268,22 @@ The rules:
   past one replica. If it is worth caching across requests, use `cacheGet` /
   `cacheSet`. (Per-request memoization inside one handler call is fine.)
 - **Locks and rate limits are damping, not guarantees.** `acquireLock` and
-  `rateLimit` fail open when Redis is unavailable. For real mutual exclusion
-  use a Postgres advisory lock or row-level locking.
+  `rateLimit` fail open when Redis is unavailable, so a Redis outage means a
+  tick may double-run once, never that the app stops. That is the intended
+  trade. For claiming individual rows (a queue of work), use Postgres
+  `SELECT ... FOR UPDATE SKIP LOCKED` inside one transaction; that is safe
+  under transaction pooling because the lock and the work share a
+  transaction.
+- **Never take a Postgres advisory lock (`pg_try_advisory_lock`,
+  `pg_advisory_lock`) for a cross-pod scheduler, poller or reaper.** Your
+  `DATABASE_URL` goes through pgbouncer in transaction-pool mode. An advisory
+  lock is session-scoped, so when the pod holding it dies mid-tick the lock
+  stays held on an orphaned backend connection until someone finds it in
+  `pg_locks` and terminates the backend. The scheduler then silently never
+  runs again on any replica. This happened in production (a carrier-sync
+  scheduler jammed for hours, 2026-08-01) and the same bug existed in 22
+  other schedulers in that project. `acquireLock` (Redis `SET NX EX` with a
+  TTL) is the cross-pod lock. A dead holder's lock expires on its own.
 - **`SCAN`/`KEYS` are denied by the ACL** (they would leak other tenants' key
   names). If you need to enumerate your own keys, track them explicitly in a
   Redis SET or in Postgres.

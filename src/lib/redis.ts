@@ -183,8 +183,12 @@ export async function cacheDelete(...keys: string[]): Promise<boolean> {
 /**
  * Best-effort distributed lock (SET NX EX). FAIL-OPEN: returns true
  * when Redis is unavailable -- treat the lock as a de-duplication
- * optimization, never as a correctness guarantee. For real mutual
- * exclusion use a Postgres advisory lock or a row-level lock.
+ * optimization, never as a correctness guarantee. For claiming rows of
+ * work use Postgres `FOR UPDATE SKIP LOCKED` in one transaction. Do NOT
+ * reach for a Postgres advisory lock for a cross-pod scheduler: behind
+ * pgbouncer's transaction pooling a dead holder's session lock is never
+ * released (see the hub CLAUDE.md, "Shared Redis"). This lock's TTL is
+ * what makes a dead holder harmless.
  */
 export async function acquireLock(
   name: string,
