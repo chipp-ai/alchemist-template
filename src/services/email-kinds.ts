@@ -36,7 +36,7 @@
 
 import { BRAND } from "@/config/brand.ts";
 import { NotFoundError } from "@/utils/errors.ts";
-import { sendEmail } from "@/services/email-transport.ts";
+import { appUrl, sendEmail } from "@/services/email-transport.ts";
 
 // ── Registry types ─────────────────────────────────────────────────────────
 
@@ -586,14 +586,9 @@ export async function sendOtpEmail(to: string, otpCode: string): Promise<void> {
   await sendEmailKind<OtpEmailData>({ kind: "otp", to, data: { otpCode } });
 }
 
-// ── Internals ──────────────────────────────────────────────────────────────
-
-function appUrl(): string {
-  try {
-    return Deno.env.get("APP_URL") ?? "http://localhost:8000";
-  } catch {
-    return "http://localhost:8000";
-  }
-}
+// ── Re-exports ─────────────────────────────────────────────────────────────
+// `appUrl` lives in email-transport.ts (one APP_URL read; the transport
+// needs it for the List-Unsubscribe header). The email_* aliases keep the
+// historic import surface stable.
 
 export { appUrl as emailAppUrl, ctaButton as emailCtaButton, linkFallback as emailLinkFallback };

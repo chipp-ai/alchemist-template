@@ -10,6 +10,9 @@
  *     client snapshot has been pushed (the agent's L1 layer must
  *     work from request 0, not after the SPA has had a chance to
  *     populate the store)
+ *   - GET /api/dev/app-state: server.design summarizes the live
+ *     design.json (preset, mode, fonts, colors) so the agent's L1
+ *     check can confirm the look without opening a browser
  *   - POST /api/dev/app-state: stores the client snapshot for
  *     subsequent GETs
  *   - Production gate: dev routes self-404 unless ALCHEMIST_DEV_ROUTES is enabled
@@ -375,6 +378,41 @@ deno("e2e: GET /api/dev/app-state returns server context even with no client pus
   assertStringIncludes(body.markdown as string, "No client snapshot received yet");
 
   // Restore env.
+  if (prevDevRoutes === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
+  else Deno.env.set("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
+});
+
+deno("e2e: GET /api/dev/app-state includes a design summary read from design.json", async () => {
+  __resetDevActivityForTests();
+  const prevDevRoutes = Deno.env.get("ALCHEMIST_DEV_ROUTES");
+  Deno.env.set("ALCHEMIST_DEV_ROUTES", "1");
+
+  const { devRoutes } = await import("@/api/routes/dev/index.ts");
+  const { readDesign } = await import("@/services/design.service.ts");
+  const live = await readDesign();
+
+  const res = await devRoutes.fetch(
+    new Request("http://localhost/app-state"),
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json() as Record<string, unknown>;
+  const server = body.server as Record<string, unknown>;
+  const design = server.design as Record<string, unknown>;
+
+  // Reads the actual on-disk design.json — mirrors it, doesn't invent it.
+  assertEquals(design.preset, live.preset);
+  assertEquals(design.mode, live.mode);
+  assertEquals(design.fonts, {
+    heading: live.fonts.heading,
+    body: live.fonts.body,
+    mono: live.fonts.mono,
+  });
+  assertEquals(design.colors, { primary: live.colors.primary, accent: live.colors.accent });
+
+  // The markdown view names preset/mode/fonts too, for the format=markdown reader.
+  assertStringIncludes(body.markdown as string, "**Design:**");
+  assertStringIncludes(body.markdown as string, live.fonts.heading);
+
   if (prevDevRoutes === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
   else Deno.env.set("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
 });

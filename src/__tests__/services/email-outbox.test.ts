@@ -6,7 +6,7 @@
  * cleanup() cascades it away.
  */
 
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { createIsolatedUser, getTestDb } from "../helpers.ts";
 import {
   _internalsForTest,
@@ -24,6 +24,13 @@ import { BadRequestError } from "@/utils/errors.ts";
 
 const db = getTestDb();
 
+const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+
+/** DB tests here touch the shared pool; sanitizer noise fails them otherwise. */
+function dbTest(name: string, fn: () => void | Promise<void>) {
+  Deno.test({ name, ignore: !HAS_DB, sanitizeResources: false, sanitizeOps: false, fn });
+}
+
 /** Swap the sender for the duration of `fn`; restores even on throw. */
 async function withSender<T>(
   impl: (opts: SendEmailOptions) => Promise<void>,
@@ -38,7 +45,7 @@ async function withSender<T>(
   }
 }
 
-Deno.test("outbox: enqueue then deliver marks the row sent and calls the sender once", async () => {
+dbTest("outbox: enqueue then deliver marks the row sent and calls the sender once", async () => {
   const { org, user, cleanup } = await createIsolatedUser("owner");
   const sent: SendEmailOptions[] = [];
   try {
@@ -78,7 +85,7 @@ Deno.test("outbox: enqueue then deliver marks the row sent and calls the sender 
   }
 });
 
-Deno.test("outbox: idempotencyKey makes a second enqueue a no-op", async () => {
+dbTest("outbox: idempotencyKey makes a second enqueue a no-op", async () => {
   const { org, user, cleanup } = await createIsolatedUser("owner");
   try {
     const key = `test.once:${org.id}`;
@@ -108,7 +115,7 @@ Deno.test("outbox: idempotencyKey makes a second enqueue a no-op", async () => {
   }
 });
 
-Deno.test("outbox: a future sendAt is not claimed until the clock reaches it", async () => {
+dbTest("outbox: a future sendAt is not claimed until the clock reaches it", async () => {
   const { org, user, cleanup } = await createIsolatedUser("owner");
   try {
     const now = new Date();
@@ -133,7 +140,7 @@ Deno.test("outbox: a future sendAt is not claimed until the clock reaches it", a
   }
 });
 
-Deno.test("outbox: a failed send is retried with backoff, then fails permanently", async () => {
+dbTest("outbox: a failed send is retried with backoff, then fails permanently", async () => {
   const { org, user, cleanup } = await createIsolatedUser("owner");
   try {
     const now = new Date();
@@ -174,7 +181,32 @@ Deno.test("outbox: a failed send is retried with backoff, then fails permanently
   }
 });
 
-Deno.test("outbox: backoff table is 1m, 5m, 30m, 2h, 12h and clamps", () => {
+dbTest("outbox: a sender-domain rejection fails the row on the first attempt", async () => {
+  const { org, user, cleanup } = await createIsolatedUser("owner");
+  try {
+    const { row } = await enqueueEmail({
+      to: user.email,
+      subject: "Branded",
+      text: "x",
+      organizationId: org.id,
+      maxAttempts: 5,
+    });
+    const boom = async () => {
+      throw new Error("550-From header sender domain not verified (acme.test)");
+    };
+    const result = await withSender(boom, () => deliverDueEmails({ now: new Date() }));
+    assertEquals(result, { claimed: 1, sent: 0, retried: 0, failed: 1 });
+    const after = (await getOutboxEmail(row.id))!;
+    assertEquals(after.status, "failed");
+    assertEquals(after.attempts, 1);
+    assertStringIncludes(after.lastError ?? "", "cannot succeed");
+    assertStringIncludes(after.lastError ?? "", "acme.test");
+  } finally {
+    await cleanup();
+  }
+});
+
+dbTest("outbox: backoff table is 1m, 5m, 30m, 2h, 12h and clamps", () => {
   assertEquals(backoffSecondsForAttempt(1), 60);
   assertEquals(backoffSecondsForAttempt(2), 300);
   assertEquals(backoffSecondsForAttempt(3), 1800);
@@ -184,7 +216,7 @@ Deno.test("outbox: backoff table is 1m, 5m, 30m, 2h, 12h and clamps", () => {
   assertEquals(backoffSecondsForAttempt(0), 60);
 });
 
-Deno.test("outbox: a row stuck in 'sending' past the stale window is reclaimed", async () => {
+dbTest("outbox: a row stuck in 'sending' past the stale window is reclaimed", async () => {
   const { org, user, cleanup } = await createIsolatedUser("owner");
   try {
     const now = new Date();
@@ -215,7 +247,7 @@ Deno.test("outbox: a row stuck in 'sending' past the stale window is reclaimed",
   }
 });
 
-Deno.test("outbox: a freshly locked 'sending' row is NOT reclaimed", async () => {
+dbTest("outbox: a freshly locked 'sending' row is NOT reclaimed", async () => {
   const { org, user, cleanup } = await createIsolatedUser("owner");
   try {
     const now = new Date();
@@ -237,7 +269,7 @@ Deno.test("outbox: a freshly locked 'sending' row is NOT reclaimed", async () =>
   }
 });
 
-Deno.test("outbox: cancel works only while pending", async () => {
+dbTest("outbox: cancel works only while pending", async () => {
   const { org, user, cleanup } = await createIsolatedUser("owner");
   try {
     const { row } = await enqueueEmail({
@@ -261,7 +293,7 @@ Deno.test("outbox: cancel works only while pending", async () => {
   }
 });
 
-Deno.test("outbox: enqueue inside a rolled-back transaction leaves no row", async () => {
+dbTest("outbox: enqueue inside a rolled-back transaction leaves no row", async () => {
   const { org, user, cleanup } = await createIsolatedUser("owner");
   try {
     await assertRejects(() =>
@@ -281,7 +313,7 @@ Deno.test("outbox: enqueue inside a rolled-back transaction leaves no row", asyn
   }
 });
 
-Deno.test("outbox: rejects a malformed recipient and empty subject", async () => {
+dbTest("outbox: rejects a malformed recipient and empty subject", async () => {
   const { org, cleanup } = await createIsolatedUser("owner");
   try {
     await assertRejects(

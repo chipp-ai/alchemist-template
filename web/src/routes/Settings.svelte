@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { querystring } from "svelte-spa-router";
   import { authStore } from "../stores/auth.svelte";
   import { orgStore, type AssignableRole } from "../stores/organization.svelte";
   import {
@@ -18,9 +19,18 @@
 
   // ---------- Tabs ----------
 
-  type Tab = "profile" | "team" | "billing";
+  type Tab = "profile" | "team" | "billing" | "notifications";
 
-  let activeTab = $state<Tab>("profile");
+  const TABS: Tab[] = ["profile", "team", "billing", "notifications"];
+
+  // A List-Unsubscribe link (or a bookmark) can deep-link straight to a
+  // tab: /#/settings?tab=notifications.
+  function initialTab(): Tab {
+    const t = new URLSearchParams($querystring).get("tab");
+    return TABS.includes(t as Tab) ? (t as Tab) : "profile";
+  }
+
+  let activeTab = $state<Tab>(initialTab());
 
   // ---------- Profile state ----------
 
@@ -106,6 +116,69 @@
     }
   }
 
+  // ---------- Notifications ----------
+  // Ordinary email can be silenced at two levels: the workspace master
+  // switch (admins) and the personal switch (every user). The per-user
+  // switch is where the List-Unsubscribe header on ordinary mail lands.
+
+  let notifLoading = $state(true);
+  let notifLoaded = $state(false);
+  let notifError = $state<string | null>(null);
+  let orgCommunicationsEnabled = $state(true);
+  let userCommunicationsEnabled = $state(true);
+  let canManageOrgSetting = $state(false);
+
+  async function fetchNotificationSettings() {
+    notifLoading = true;
+    notifError = null;
+    try {
+      const data = await api.get<{
+        orgCommunicationsEnabled: boolean;
+        userCommunicationsEnabled: boolean;
+        canManageOrgSetting: boolean;
+      }>("/email/settings");
+      orgCommunicationsEnabled = data.orgCommunicationsEnabled;
+      userCommunicationsEnabled = data.userCommunicationsEnabled;
+      canManageOrgSetting = data.canManageOrgSetting;
+      notifLoaded = true;
+    } catch (err) {
+      notifError =
+        err instanceof ApiError ? err.message : "Failed to load notification settings.";
+    } finally {
+      notifLoading = false;
+    }
+  }
+
+  async function togglePersonalCommunications(e: Event) {
+    const next = (e.currentTarget as HTMLInputElement).checked;
+    try {
+      const data = await api.patch<{ userCommunicationsEnabled: boolean }>(
+        "/email/settings/me",
+        { communicationsEnabled: next },
+      );
+      userCommunicationsEnabled = data.userCommunicationsEnabled;
+    } catch (err) {
+      userCommunicationsEnabled = !next; // snap the checkbox back
+      notifError =
+        err instanceof ApiError ? err.message : "Failed to update your notification setting.";
+    }
+  }
+
+  async function toggleOrgCommunications(e: Event) {
+    const next = (e.currentTarget as HTMLInputElement).checked;
+    try {
+      const data = await api.patch<{ orgCommunicationsEnabled: boolean }>(
+        "/email/settings/org",
+        { communicationsEnabled: next },
+      );
+      orgCommunicationsEnabled = data.orgCommunicationsEnabled;
+    } catch (err) {
+      orgCommunicationsEnabled = !next;
+      notifError =
+        err instanceof ApiError ? err.message : "Failed to update the workspace setting.";
+    }
+  }
+
   // ---------- Team state ----------
 
   let inviteEmail = $state("");
@@ -132,6 +205,7 @@
     orgStore.fetchOrg();
     orgStore.fetchMembers();
     orgStore.fetchInvites();
+    fetchNotificationSettings();
   });
 
   async function handleInvite(e: Event) {
@@ -330,6 +404,14 @@
       data-testid="settings-tab-team"
     >
       Team
+    </button>
+    <button
+      class="tab"
+      class:active={activeTab === "notifications"}
+      onclick={() => (activeTab = "notifications")}
+      data-testid="settings-tab-notifications"
+    >
+      Notifications
     </button>
     <button
       class="tab"
@@ -618,6 +700,54 @@
     </section>
   {/if}
 
+  <!-- Notifications Tab -->
+  {#if activeTab === "notifications"}
+    <section class="card settings-section" data-testid="settings-section-notifications">
+      <h2 class="section-title">Notifications</h2>
+
+      {#if notifError}
+        <div class="alert alert-error" data-testid="settings-notifications-alert-error">
+          {notifError}
+        </div>
+      {/if}
+
+      {#if notifLoading}
+        <p class="text-muted" data-testid="settings-notifications-loading">
+          Loading notification settings...
+        </p>
+      {:else if notifLoaded}
+        <p class="text-muted">
+          Ordinary email (digests, alerts, event notifications) can be turned
+          off here. Sign-in codes, invites and portal links always arrive.
+        </p>
+
+        <label class="checkbox notif-toggle" data-testid="settings-notifications-toggle-personal">
+          <input
+            type="checkbox"
+            checked={userCommunicationsEnabled}
+            onchange={togglePersonalCommunications}
+          />
+          Email me updates
+        </label>
+
+        {#if canManageOrgSetting}
+          <label class="checkbox notif-toggle" data-testid="settings-notifications-toggle-org">
+            <input
+              type="checkbox"
+              checked={orgCommunicationsEnabled}
+              onchange={toggleOrgCommunications}
+            />
+            Allow email for everyone in this workspace
+          </label>
+          <p class="help-text">
+            Both switches must be on for ordinary email to arrive. Admins
+            control the workspace switch; each person controls their own.
+          </p>
+        {/if}
+      {/if}
+    </section>
+  {/if}
+
   <!-- Billing Tab -->
   {#if activeTab === "billing"}
     <section class="card settings-section" data-testid="settings-section-billing">
@@ -893,6 +1023,12 @@
 
   .invite-message {
     margin-bottom: var(--space-md);
+  }
+
+  /* Notifications */
+  .notif-toggle {
+    display: flex;
+    margin: var(--space-sm) 0;
   }
 
   /* Billing */

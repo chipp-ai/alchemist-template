@@ -35,6 +35,8 @@ export interface CapturedEmail {
   subject: string;
   text: string;
   html: string | null;
+  /** MIME headers the send carried, e.g. List-Unsubscribe. Null when none. */
+  headers?: Record<string, string> | null;
   sentAt: string;
 }
 

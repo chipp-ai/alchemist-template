@@ -1557,12 +1557,33 @@ curl -sS http://localhost:__API_PORT__/api/dev/outbox | jq '.data[] | {toEmail, 
 Without SMTP the delivery step logs the email to the console and marks
 the row `sent`, so the flow is verifiable end-to-end in dev.
 
-### Sender identity
+### Sender identity — the two env vars and the fallback
 
-The `From:` header is `APP_NAME <EMAIL_FROM>` from `BRAND`. Whitelabel
-sending (the customer's own domain) is a platform concern: the platform
-injects `EMAIL_FROM` + SMTP creds, and a project can override all of them
-in its env. Nothing in this repo composes a From address by hand.
+Mail composes as `${BRAND.fromName} <${BRAND.fromEmail}>`. The address comes
+from env the platform injects; nothing in this repo composes a From header
+by hand.
+
+- `EMAIL_FROM` — the sender every send uses. The platform sets it to the
+  project's verified own domain when one is configured (the pod env carries
+  the bare address; BRAND composes the display name). With no verified
+  domain the key is omitted and the shared platform sender stands. A
+  per-project credential may also set it; that wins over the platform's
+  branded value, because a self-supplied SMTP provider verifies its own
+  domain, not ours.
+- `PLATFORM_EMAIL_FROM` — the provider-verified platform sender. It is on
+  the platform-owned env var list, so no project credential can shadow it.
+  Empty in local dev, which disables the fallback below.
+
+The transport carries `AUTH_CRITICAL_VERIFIED_SENDER_FALLBACK`: when SMTP
+rejects the configured sender as unverified (`sender domain not verified`),
+auth-critical mail (OTP, invite, portal link) retries once from
+`PLATFORM_EMAIL_FROM`, keeping the brand as the display name and setting
+Reply-To to the branded address. Ordinary mail never rewrites its sender:
+the outbox marks the row `failed` immediately, with the fix in `last_error`.
+
+In dev, `GET /api/dev/info` returns an `email` block with the effective
+From and whether `PLATFORM_EMAIL_FROM` is set; `GET /api/dev/outbox` returns
+the same snapshot next to the rows.
 
 ## Verification Checklist
 

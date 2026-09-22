@@ -48,6 +48,7 @@ import { validationHook } from "@/utils/zod-validation-hook.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 import {
   clearCapturedEmails,
+  describeEmailSender,
   isSmtpConfigured,
   listCapturedEmails,
   mailboxCaptureEnabled,
@@ -504,7 +505,9 @@ devRoutes.get(
   async (c) => {
     const { status, limit } = c.req.valid("query");
     const rows = await listOutbox({ status, limit });
-    return c.json({ data: rows });
+    // The sender snapshot rides along so the same read answers both
+    // "did these go out?" and "as which address?".
+    return c.json({ data: rows, email: describeEmailSender() });
   },
 );
 
@@ -838,6 +841,10 @@ devRoutes.get("/info", (c) => {
   return c.json({
     enabled: devRoutesEnabled(),
     nodeEnv: Deno.env.get("NODE_ENV") ?? "development",
+    // The effective sender identity: which From address this deploy
+    // composes mail with, and what the auth-critical fallback has to
+    // work with.
+    email: describeEmailSender(),
     endpoints: {
       "POST /api/dev/login": {
         body: { email: "string", name: "string?" },
@@ -865,7 +872,7 @@ devRoutes.get("/info", (c) => {
       },
       "GET /api/dev/outbox": {
         purpose: "Recent email_outbox rows (newest first). ?status= and ?limit= filters.",
-        returns: "{ data: EmailOutboxRow[] }",
+        returns: "{ data: EmailOutboxRow[], email: SenderInfo }",
       },
       "GET /api/dev/design": {
         purpose:
@@ -987,6 +994,13 @@ devRoutes.post(
   },
 );
 
+interface DesignSummary {
+  preset: string | null;
+  mode: "light" | "dark";
+  fonts: { heading: string; body: string; mono: string };
+  colors: { primary: string; accent: string };
+}
+
 interface ServerSnapshot {
   timestamp: string;
   env: {
@@ -996,9 +1010,30 @@ interface ServerSnapshot {
   };
   recentRequests: DevRequestRecord[];
   recentErrors: DevErrorRecord[];
+  design: DesignSummary | { error: string };
 }
 
-function collectServerSnapshot(): ServerSnapshot {
+// Read fresh on every /app-state call rather than cached: the point of
+// this endpoint is "what does the running app believe RIGHT NOW," and a
+// PUT /api/dev/design or `deno task design apply` between two polls
+// must show up on the next one, not the one after a restart.
+async function collectDesignSummary(): Promise<DesignSummary | { error: string }> {
+  try {
+    const design = await readDesign();
+    return {
+      preset: design.preset,
+      mode: design.mode,
+      fonts: { heading: design.fonts.heading, body: design.fonts.body, mono: design.fonts.mono },
+      colors: { primary: design.colors.primary, accent: design.colors.accent },
+    };
+  } catch (err) {
+    // design.json missing/corrupt shouldn't take down the whole
+    // app-state read — the agent's L1 check still gets requests/errors.
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function collectServerSnapshot(): Promise<ServerSnapshot> {
   return {
     timestamp: new Date().toISOString(),
     env: {
@@ -1008,15 +1043,21 @@ function collectServerSnapshot(): ServerSnapshot {
     },
     recentRequests: getRecentRequests(),
     recentErrors: getRecentErrors(),
+    design: await collectDesignSummary(),
   };
 }
 
 function formatServerMarkdown(server: ServerSnapshot): string {
+  const designLine = "error" in server.design
+    ? `**Design:** unreadable (${server.design.error})`
+    : `**Design:** ${server.design.preset ?? "custom"} · ${server.design.mode} · ` +
+      `${server.design.fonts.heading} / ${server.design.fonts.body} / ${server.design.fonts.mono}`;
   const lines: string[] = [
     "## Server Context",
     "",
     `**Timestamp:** ${server.timestamp}`,
     `**Env:** NODE_ENV=${server.env.nodeEnv} · Deno ${server.env.denoVersion} · ${server.env.hostname}`,
+    designLine,
     "",
     `### Recent requests (${server.recentRequests.length})`,
     "",
@@ -1049,8 +1090,8 @@ function formatServerMarkdown(server: ServerSnapshot): string {
   return lines.join("\n");
 }
 
-devRoutes.get("/app-state", (c) => {
-  const server = collectServerSnapshot();
+devRoutes.get("/app-state", async (c) => {
+  const server = await collectServerSnapshot();
   const wantsMarkdown = c.req.query("format") === "markdown" ||
     c.req.header("accept")?.includes("text/markdown");
 

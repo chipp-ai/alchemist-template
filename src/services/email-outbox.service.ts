@@ -7,6 +7,8 @@
  *     delivered by the job runner afterwards.
  *   - SMTP failures retry with backoff instead of surfacing as a 500 to a
  *     user who only wanted to save a form.
+ *   - A sender-domain rejection fails the row immediately: retrying the
+ *     same From cannot succeed (the fix is verifying the domain, not time).
  *   - `idempotencyKey` makes "once per user per event" a one-liner, which
  *     is what every scheduled digest needs.
  *   - An agent can verify "was the email sent?" by reading the row
@@ -38,7 +40,7 @@
 import { type Kysely, sql } from "kysely";
 import { db } from "@/db/client.ts";
 import type { Database, EmailOutboxRow, EmailOutboxStatus } from "@/db/schema.ts";
-import { sendEmail } from "@/services/email.ts";
+import { isUnverifiedSenderRejection, sendEmail } from "@/services/email.ts";
 import { log } from "@/lib/logger.ts";
 import { BadRequestError } from "@/utils/errors.ts";
 
@@ -273,6 +275,27 @@ export async function deliverDueEmails(opts: DeliverDueOptions = {}): Promise<De
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      // A sender-domain rejection is permanent: the From header stays wrong
+      // until someone verifies the domain, so no retry can ever succeed.
+      // Fail the row now with the fix in the error text instead of burning
+      // five attempts (1m..12h backoff) on the same doomed send.
+      if (isUnverifiedSenderRejection(err)) {
+        const lastError =
+          `${message} -- retrying the same From cannot succeed. Verify the sending domain (or restore the platform sender), then re-enqueue.`;
+        await db
+          .updateTable("email_outbox")
+          .set({ status: "failed", lockedAt: null, lastError })
+          .where("id", "=", row.id)
+          .execute();
+        result.failed++;
+        log.error("Outbox email failed: sender domain not verified", {
+          source: "email-outbox",
+          id: row.id,
+          to: row.toEmail,
+          origin: row.source,
+        }, err);
+        continue;
+      }
       const exhausted = row.attempts >= row.maxAttempts;
       if (exhausted) {
         await db

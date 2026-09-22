@@ -70,6 +70,11 @@ function safeEnv(key: string): string | undefined {
   }
 }
 
+/** The app's own base URL, for links this module puts in headers. */
+export function appUrl(): string {
+  return (safeEnv("APP_URL") ?? "http://localhost:8000").replace(/\/+$/, "");
+}
+
 // ── Transport ───────────────────────────────────────────────────────────────
 
 let transport: nodemailer.Transporter | null = null;
@@ -117,9 +122,51 @@ const PLATFORM_EMAIL_FROM = Deno.env.get("PLATFORM_EMAIL_FROM") ?? "";
  */
 const UNVERIFIED_SENDER_RE = /sender domain not verified|sender.{0,40}not verified/i;
 
-function isUnverifiedSenderRejection(err: unknown): boolean {
+export function isUnverifiedSenderRejection(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err ?? "");
   return UNVERIFIED_SENDER_RE.test(message);
+}
+
+/**
+ * The final header set for one send. Ordinary (non-auth-critical) mail
+ * carries a List-Unsubscribe pointer at the app's notification settings --
+ * the one page where a recipient can turn these messages off, and the page
+ * the digest footer names. Auth-critical mail never advertises an
+ * unsubscribe: nobody opts out of their sign-in code. A caller-supplied
+ * header of the same name wins, so a kind with a real one-click endpoint
+ * can override without touching this module.
+ */
+export function effectiveSendHeaders(
+  opts: Pick<SendEmailOptions, "authCritical" | "headers">,
+): Record<string, string> | undefined {
+  const merged: Record<string, string> = { ...(opts.headers ?? {}) };
+  if (!opts.authCritical && !merged["List-Unsubscribe"]) {
+    merged["List-Unsubscribe"] = `<${appUrl()}/#/settings?tab=notifications>`;
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+/**
+ * What this deployment would actually send as: the branded From, whether
+ * SMTP is configured, and the provider-verified platform sender the
+ * auth-critical fallback would use (null when there is none, e.g. local
+ * dev). GET /api/dev/info and GET /api/dev/outbox surface this so an
+ * agent can see the sender identity without reading env or code.
+ */
+export function describeEmailSender(): {
+  from: string;
+  fromName: string;
+  fromEmail: string;
+  smtpConfigured: boolean;
+  platformEmailFrom: string | null;
+} {
+  return {
+    from: EMAIL_FROM,
+    fromName: BRAND.fromName,
+    fromEmail: BRAND.fromEmail,
+    smtpConfigured,
+    platformEmailFrom: PLATFORM_EMAIL_FROM || null,
+  };
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -154,6 +201,12 @@ export interface SendEmailOptions {
   organizationId?: string | null;
   /** Reply-To header, e.g. a support inbox that differs from the sender. */
   replyTo?: string;
+  /**
+   * Extra MIME headers, e.g. `List-Unsubscribe`. Ordinary (non-auth-critical)
+   * mail already gets a List-Unsubscribe pointer at the app's notification
+   * settings; a caller-supplied header of the same name wins.
+   */
+  headers?: Record<string, string>;
   /**
    * Skip the communications gate for a message that is not auth-critical.
    * The ONLY intended caller is `sendTestEmail()`: an admin proving
@@ -204,6 +257,8 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
     }
   }
 
+  const headers = effectiveSendHeaders(opts);
+
   // Capture BEFORE delivery, and only after every suppression check, so
   // the mailbox is exactly "what this app decided to send". A suppressed
   // message is absent from it, which is what a gate test asserts on.
@@ -215,6 +270,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
       subject: opts.subject,
       text: opts.text,
       html: opts.html ?? null,
+      headers: headers ?? null,
     });
   }
 
@@ -235,6 +291,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
       subject: opts.subject,
       text: opts.text,
       html: opts.html,
+      ...(headers ? { headers } : {}),
       ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
     });
     log.info("Email sent", { source: "email", to: opts.to, subject: opts.subject });

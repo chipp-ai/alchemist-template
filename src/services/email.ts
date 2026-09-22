@@ -26,7 +26,10 @@
  */
 
 export {
+  describeEmailSender,
+  effectiveSendHeaders,
   isSmtpConfigured,
+  isUnverifiedSenderRejection,
   mailboxCaptureEnabled,
   sendEmail,
   type SendEmailOptions,
