@@ -45,6 +45,7 @@ import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 import { headlessApiRouter } from "@/services/headless-api/router.ts";
 import { mcpProtocolRouter } from "@/services/mcp-protocol/router.ts";
 import { mcpWellKnownRouter } from "@/services/mcp-protocol/well-known-router.ts";
+import { commandCenterDashboardRouter } from "@/services/dashboard/command-center-router.ts";
 
 // ── App types ──
 
@@ -252,6 +253,17 @@ app.route("/api", headlessApiRouter);
 app.route("/api/mcp", mcpProtocolRouter);
 app.route("/api/mcp/", mcpProtocolRouter);
 app.route("/.well-known", mcpWellKnownRouter);
+
+// command-center-dashboard-data (CHIPPD-1623) previously touched THIS
+// FILE directly, so every command-center project's real entrypoint was
+// replaced wholesale by that pack's two-line route registration -- no
+// auth, no billing, no docs routes, no static SPA serving. Fixed the same
+// way as the headless stubs above: a dedicated stub the pack's overlay
+// touches instead. Needs no env-var gate (unlike the headless stubs) --
+// this path is unique to command-center, so an empty router here is
+// inert for every other recipe. See
+// src/services/dashboard/command-center-router.ts.
+app.route("/api/dashboard/command-center", commandCenterDashboardRouter);
 
 // ── Static SPA ──
 // Serves the Svelte frontend built in the Dockerfile's web-builder stage
