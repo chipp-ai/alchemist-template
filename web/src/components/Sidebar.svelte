@@ -39,7 +39,7 @@
     {#each navItems as item}
       <a
         href="#{item.path}"
-        class="sidebar-link"
+        class="nav-link"
         class:active={isActive(item.path, $location)}
         data-testid="sidebar-nav-{item.icon}"
       >
@@ -116,30 +116,8 @@
     gap: 2px;
   }
 
-  .sidebar-link {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: var(--space-sm) var(--space-md);
-    border-radius: var(--radius-md);
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-    text-decoration: none;
-    transition: background-color 0.15s, color 0.15s;
-  }
-
-  .sidebar-link:hover {
-    background: var(--color-bg);
-    color: var(--color-text);
-    text-decoration: none;
-  }
-
-  .sidebar-link.active {
-    background: var(--color-bg);
-    color: var(--color-text);
-    font-weight: 500;
-  }
-
+  /* Link styling is the global .nav-link primitive in app.css — hoisted
+     so /#/design (and any future nav surface) renders the same thing. */
   .sidebar-icon {
     display: flex;
     align-items: center;

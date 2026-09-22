@@ -1123,3 +1123,331 @@ h1, h2, h3, h4, h5, h6 {
   gap: var(--space-sm);
   flex-wrap: wrap;
 }
+
+/* ── Navigation links ─────────────────────────────────────────
+   Generic nav link, hoisted from Sidebar so every navigation
+   surface (sidebar, /#/design, future menus) shares one look.
+   Sidebar.svelte consumes .nav-link and keeps only its layout in
+   scoped styles. */
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.nav-link:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.nav-link.active {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+/* ── Dropdown menu ────────────────────────────────────────────
+   .dropdown wraps a trigger button and an absolutely-positioned
+   .dropdown-menu (shown while .dropdown.open). Items are real
+   <button>/<a> elements so keyboard focus works out of the box.
+   z-index sits under the <Modal> backdrop (1000) so an open menu
+   never covers a modal. */
+
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  left: 0;
+  z-index: 100;
+  min-width: 180px;
+  padding: var(--space-xs);
+  background: var(--color-surface-raised);
+  border: var(--border-width, 1px) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.dropdown.open .dropdown-menu {
+  display: block;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus-visible {
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.dropdown-item.danger {
+  color: var(--color-error);
+}
+
+.dropdown-divider {
+  height: 1px;
+  margin: var(--space-xs) 0;
+  background: var(--color-border);
+}
+
+/* ── Tooltip ──────────────────────────────────────────────────
+   CSS-only: [data-tooltip] shows a hint on hover/keyboard focus.
+   Ink/paper pair (both tokens), so it reads on any theme. Only
+   opacity + translate animate (compositor-only), and the
+   transition is disabled under prefers-reduced-motion. */
+
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + var(--space-xs));
+  left: 50%;
+  z-index: 100;
+  transform: translate(-50%, 4px);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: var(--text-xs);
+  line-height: 1.3;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  max-width: 260px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-tooltip]::after {
+    transition: none;
+  }
+}
+
+/* ── Pagination ─────────────────────────────────────────────── */
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 var(--space-xs);
+  border: var(--border-width, 1px) solid transparent;
+  border-radius: var(--radius-control);
+  background: none;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.page-btn:hover:not(:disabled):not(.is-active) {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}
+
+.page-btn.is-active {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-weight: 600;
+}
+
+.page-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.page-ellipsis {
+  padding: 0 var(--space-xs);
+  color: var(--color-muted);
+}
+
+/* ── Breadcrumbs ────────────────────────────────────────────── */
+
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+}
+
+.breadcrumb {
+  color: var(--color-text-secondary);
+  text-decoration: none;
+}
+
+.breadcrumb:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+.breadcrumb-sep {
+  color: var(--color-muted);
+}
+
+.breadcrumb[aria-current="page"] {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+/* ── Date + time inputs ───────────────────────────────────────
+   Native picker chrome is tinted with the text colour so the
+   calendar indicator follows the theme instead of staying black
+   in dark mode. */
+
+.input[type="date"]::-webkit-calendar-picker-indicator,
+.input[type="time"]::-webkit-calendar-picker-indicator,
+.input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  opacity: 1;
+}
+
+/* ── Upload dropzone + queue + progress ───────────────────────
+   Hoisted from UploadField.svelte so the primitives are reusable
+   (the component keeps the class names; its scoped styles only
+   retain what is upload-specific). */
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.dropzone.dragging {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.dropzone.disabled {
+  opacity: 0.6;
+}
+
+.dropzone-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.dropzone-types {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.queue-item {
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.queue-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-size {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.queue-error {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-error);
+}
+
+/* Animated with transform only, per the motion rules: a width
+   transition would lay out on every frame. */
+.progress {
+  margin-top: var(--space-xs);
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-sunken);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  background: var(--color-accent);
+  transition: transform 0.15s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-bar {
+    transition: none;
+  }
+}

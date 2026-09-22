@@ -316,38 +316,14 @@
     gap: var(--space-sm);
   }
 
-  /* ---------- Dropzone ---------- */
-  .dropzone {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--space-xs);
-    padding: var(--space-lg);
-    border: 1px dashed var(--color-border-strong);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    text-align: center;
-  }
+  /* Dropzone, queue rows and the upload progress bar are global
+     primitives in app.css (see "Upload dropzone + queue + progress"
+     there) so any surface can reuse them; this component only keeps
+     what is specific to it. */
 
-  .dropzone.dragging {
-    border-color: var(--color-accent);
-    background: var(--color-accent-subtle);
-  }
-
-  .dropzone.disabled {
-    opacity: 0.6;
-  }
-
-  .dropzone-hint {
-    margin: 0;
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-  }
-
-  .dropzone-types {
-    margin: 0;
+  .queue-dismiss {
     font-size: var(--text-xs);
-    color: var(--color-muted);
+    padding: 2px 8px;
   }
 
   .visually-hidden {
@@ -360,81 +336,6 @@
     clip: rect(0 0 0 0);
     white-space: nowrap;
     border: 0;
-  }
-
-  /* ---------- Queue ---------- */
-  .queue {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-  }
-
-  .queue-item {
-    padding: var(--space-sm);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-  }
-
-  .queue-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-  }
-
-  .queue-name {
-    flex: 1;
-    min-width: 0;
-    font-size: var(--text-sm);
-    color: var(--color-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .queue-size {
-    font-size: var(--text-xs);
-    color: var(--color-muted);
-    white-space: nowrap;
-  }
-
-  .queue-dismiss {
-    font-size: var(--text-xs);
-    padding: 2px 8px;
-  }
-
-  .queue-error {
-    margin: var(--space-xs) 0 0;
-    font-size: var(--text-xs);
-    color: var(--color-error);
-  }
-
-  /* ---------- Progress ----------
-     Animated with transform only, per the motion rules: a width
-     transition would lay out on every frame. */
-  .progress {
-    margin-top: var(--space-xs);
-    height: 4px;
-    border-radius: var(--radius-full);
-    background: var(--color-surface-sunken);
-    overflow: hidden;
-  }
-
-  .progress-bar {
-    height: 100%;
-    width: 100%;
-    transform-origin: left center;
-    background: var(--color-accent);
-    transition: transform 0.15s linear;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .progress-bar {
-      transition: none;
-    }
   }
 
   /* ---------- Badge tones ----------

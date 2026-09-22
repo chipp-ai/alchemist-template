@@ -15,6 +15,7 @@
   import { onMount } from "svelte";
   import Modal from "../components/Modal.svelte";
   import { api } from "../lib/api";
+  import { toastStore } from "../stores/toast.svelte";
   import savedDesignJson from "../design/design.json";
   import type { DesignConfig, DesignMode } from "../design/types";
   import {
@@ -42,6 +43,7 @@
   let browsing = $state<null | "heading" | "body" | "mono">(null);
   let switchOn = $state(true);
   let activeTab = $state("overview");
+  let ddOpen = $state(false);
 
   const issues = $derived(validateDesign(design));
   const blocked = $derived(hasErrors(issues));
@@ -441,6 +443,10 @@
           </select>
         </div>
         <div class="form-field">
+          <label class="label" for="sheet-input-date">Date</label>
+          <input id="sheet-input-date" class="input" type="date" value="2026-09-22" data-testid="design-sheet-input-date" />
+        </div>
+        <div class="form-field">
           <label class="label" for="sheet-input-disabled">Disabled</label>
           <input id="sheet-input-disabled" class="input" value="Read only" disabled />
         </div>
@@ -459,7 +465,7 @@
 
     <!-- Feedback -->
     <section class="block" id="feedback">
-      <h2 class="block-title">Badges &amp; alerts</h2>
+      <h2 class="block-title">Badges, alerts &amp; toasts</h2>
       <div class="card stack">
         <div class="row">
           <span class="badge">Default</span>
@@ -473,6 +479,13 @@
         <div class="alert alert-success">Success: invitation sent to jane@example.com.</div>
         <div class="alert alert-warning">Warning: this schedule fires every 5 minutes.</div>
         <div class="alert alert-error">Error: we couldn't reach the payment provider.</div>
+        <div class="row" data-testid="design-sheet-toast">
+          <button class="btn btn-secondary btn-sm" onclick={() => toastStore.info("Draft saved.")} data-testid="design-sheet-toast-info">Toast: info</button>
+          <button class="btn btn-secondary btn-sm" onclick={() => toastStore.success("Workspace saved.")} data-testid="design-sheet-toast-success">Toast: success</button>
+          <button class="btn btn-secondary btn-sm" onclick={() => toastStore.warning("Storage almost full.")} data-testid="design-sheet-toast-warning">Toast: warning</button>
+          <button class="btn btn-secondary btn-sm" onclick={() => toastStore.error("Upload failed.")} data-testid="design-sheet-toast-error">Toast: error</button>
+          <span class="text-muted">Fires the real toastStore — the container renders bottom-right, mounted once in App.svelte.</span>
+        </div>
       </div>
     </section>
 
@@ -553,6 +566,100 @@
             <tr><td>INV-1040</td><td><span class="badge badge-danger">Failed</span></td><td>12 Jul 2026</td><td class="num">$1,200.00</td></tr>
           </tbody>
         </table>
+      </div>
+      <div class="card">
+        <p class="help-text">Navigation links — the .nav-link primitive the sidebar uses.</p>
+        <nav aria-label="Sheet navigation example" data-testid="design-sheet-nav-link">
+          <a class="nav-link active" href="#/design">Dashboard</a>
+          <a class="nav-link" href="#/design">Settings</a>
+          <a class="nav-link" href="#/design">Design</a>
+        </nav>
+      </div>
+    </section>
+
+    <!-- Dropdown -->
+    <section class="block" id="dropdown">
+      <h2 class="block-title">Dropdown menu</h2>
+      <div class="card row">
+        <div class="dropdown" class:open={ddOpen} data-testid="design-sheet-dropdown">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            aria-haspopup="menu"
+            aria-expanded={ddOpen}
+            onclick={() => (ddOpen = !ddOpen)}
+            data-testid="design-sheet-dropdown-trigger"
+          >Actions ▾</button>
+          <div class="dropdown-menu" role="menu" data-testid="design-sheet-dropdown-menu">
+            <button type="button" class="dropdown-item" onclick={() => (ddOpen = false)} data-testid="design-sheet-dropdown-item-duplicate">Duplicate</button>
+            <button type="button" class="dropdown-item" onclick={() => (ddOpen = false)}>Rename</button>
+            <div class="dropdown-divider" role="separator"></div>
+            <button type="button" class="dropdown-item danger" onclick={() => (ddOpen = false)} data-testid="design-sheet-dropdown-item-delete">Delete</button>
+          </div>
+        </div>
+        <span class="text-muted">Trigger + absolutely-positioned menu. Callers own the open state (ESC / outside-click).</span>
+      </div>
+    </section>
+
+    <!-- Tooltip -->
+    <section class="block" id="tooltip">
+      <h2 class="block-title">Tooltip</h2>
+      <div class="card row">
+        <button type="button" class="btn btn-secondary" data-tooltip="Runs the import in dry-run mode." data-testid="design-sheet-tooltip">Hover or focus me</button>
+        <span class="text-muted">CSS-only: put [data-tooltip] on any element; shows on hover and keyboard focus.</span>
+      </div>
+    </section>
+
+    <!-- Pagination -->
+    <section class="block" id="pagination">
+      <h2 class="block-title">Pagination</h2>
+      <div class="card">
+        <nav class="pagination" aria-label="Pagination" data-testid="design-sheet-pagination">
+          <button type="button" class="page-btn" disabled aria-label="Previous page" data-testid="design-sheet-pagination-prev">‹</button>
+          <button type="button" class="page-btn is-active" data-testid="design-sheet-pagination-1">1</button>
+          <button type="button" class="page-btn" data-testid="design-sheet-pagination-2">2</button>
+          <button type="button" class="page-btn" data-testid="design-sheet-pagination-3">3</button>
+          <span class="page-ellipsis" aria-hidden="true">…</span>
+          <button type="button" class="page-btn" data-testid="design-sheet-pagination-12">12</button>
+          <button type="button" class="page-btn" aria-label="Next page" data-testid="design-sheet-pagination-next">›</button>
+        </nav>
+      </div>
+    </section>
+
+    <!-- Breadcrumbs -->
+    <section class="block" id="breadcrumbs">
+      <h2 class="block-title">Breadcrumbs</h2>
+      <div class="card">
+        <nav class="breadcrumbs" aria-label="Breadcrumb" data-testid="design-sheet-breadcrumbs">
+          <a class="breadcrumb" href="#/design">Home</a>
+          <span class="breadcrumb-sep" aria-hidden="true">/</span>
+          <a class="breadcrumb" href="#/design">Workspace</a>
+          <span class="breadcrumb-sep" aria-hidden="true">/</span>
+          <span class="breadcrumb" aria-current="page">Members</span>
+        </nav>
+      </div>
+    </section>
+
+    <!-- Upload -->
+    <section class="block" id="upload">
+      <h2 class="block-title">File upload &amp; progress</h2>
+      <div class="card stack">
+        <div class="dropzone" data-testid="design-sheet-dropzone">
+          <p class="dropzone-hint">Drop files here, or browse</p>
+          <p class="dropzone-types">PDF, PNG, JPEG — up to 20 MB</p>
+        </div>
+        <ul class="queue" data-testid="design-sheet-upload-queue">
+          <li class="queue-item">
+            <div class="queue-row">
+              <span class="queue-name">receipt-march.pdf</span>
+              <span class="queue-size">412 KB</span>
+              <span class="badge badge-success">Approved</span>
+            </div>
+            <div class="progress" role="progressbar" aria-valuenow={62} aria-valuemin={0} aria-valuemax={100} aria-label="Upload progress" data-testid="design-sheet-progress">
+              <div class="progress-bar" style:transform="scaleX(0.62)"></div>
+            </div>
+          </li>
+        </ul>
       </div>
     </section>
 
