@@ -42,6 +42,9 @@ import { portalRoutes } from "@/api/routes/portal/index.ts";
 import { storageLocalRoutes } from "@/api/routes/storage-local/index.ts";
 import { eventsRoutes } from "@/api/routes/events/index.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
+import { headlessApiRouter } from "@/services/headless-api/router.ts";
+import { mcpProtocolRouter } from "@/services/mcp-protocol/router.ts";
+import { mcpWellKnownRouter } from "@/services/mcp-protocol/well-known-router.ts";
 
 // ── App types ──
 
@@ -232,6 +235,23 @@ app.route("/api/dev", devRoutes);
 // NODE_ENV doesn't break the SPA's breadcrumb POSTs with 404s. See
 // src/observability/envelope.ts.
 app.route("/api/_observability", observabilityRoutes);
+
+// Headless-monorepo-unification (chipp-ai/alchemist-template folding in
+// the retired standalone alchemist-template-api / alchemist-template-mcp
+// repos): three self-gating stubs, mounted UNCONDITIONALLY here so every
+// recipe's app.ts stays byte-for-byte the same file, but each 404s on
+// every request unless ALCHEMIST_TEMPLATE_KEY matches its own recipe (a
+// platform-injected runtime env var, never set by this repo). See
+// src/services/headless-api/router.ts and src/services/mcp-protocol/
+// {router,well-known-router}.ts for the gating + why OAuth discovery is a
+// separate stub from the /api/mcp router. These are the ONLY paths the
+// headless-api-surface / mcp-protocol-surface packs are allowed to TOUCH --
+// never this file itself, which the composition engine would replace
+// wholesale.
+app.route("/api", headlessApiRouter);
+app.route("/api/mcp", mcpProtocolRouter);
+app.route("/api/mcp/", mcpProtocolRouter);
+app.route("/.well-known", mcpWellKnownRouter);
 
 // ── Static SPA ──
 // Serves the Svelte frontend built in the Dockerfile's web-builder stage
