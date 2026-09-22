@@ -132,14 +132,16 @@
     notifLoading = true;
     notifError = null;
     try {
-      const data = await api.get<{
-        orgCommunicationsEnabled: boolean;
-        userCommunicationsEnabled: boolean;
-        canManageOrgSetting: boolean;
+      const res = await api.get<{
+        data: {
+          orgCommunicationsEnabled: boolean;
+          userCommunicationsEnabled: boolean;
+          canManageOrgSetting: boolean;
+        };
       }>("/email/settings");
-      orgCommunicationsEnabled = data.orgCommunicationsEnabled;
-      userCommunicationsEnabled = data.userCommunicationsEnabled;
-      canManageOrgSetting = data.canManageOrgSetting;
+      orgCommunicationsEnabled = res.data.orgCommunicationsEnabled;
+      userCommunicationsEnabled = res.data.userCommunicationsEnabled;
+      canManageOrgSetting = res.data.canManageOrgSetting;
       notifLoaded = true;
     } catch (err) {
       notifError =
@@ -152,11 +154,11 @@
   async function togglePersonalCommunications(e: Event) {
     const next = (e.currentTarget as HTMLInputElement).checked;
     try {
-      const data = await api.patch<{ userCommunicationsEnabled: boolean }>(
+      const res = await api.patch<{ data: { userCommunicationsEnabled: boolean } }>(
         "/email/settings/me",
         { communicationsEnabled: next },
       );
-      userCommunicationsEnabled = data.userCommunicationsEnabled;
+      userCommunicationsEnabled = res.data.userCommunicationsEnabled;
     } catch (err) {
       userCommunicationsEnabled = !next; // snap the checkbox back
       notifError =
@@ -167,11 +169,11 @@
   async function toggleOrgCommunications(e: Event) {
     const next = (e.currentTarget as HTMLInputElement).checked;
     try {
-      const data = await api.patch<{ orgCommunicationsEnabled: boolean }>(
+      const res = await api.patch<{ data: { orgCommunicationsEnabled: boolean } }>(
         "/email/settings/org",
         { communicationsEnabled: next },
       );
-      orgCommunicationsEnabled = data.orgCommunicationsEnabled;
+      orgCommunicationsEnabled = res.data.orgCommunicationsEnabled;
     } catch (err) {
       orgCommunicationsEnabled = !next;
       notifError =
