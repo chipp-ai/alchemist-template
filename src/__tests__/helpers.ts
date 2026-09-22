@@ -17,7 +17,7 @@
  */
 
 import { Hono } from "hono";
-import { db, ensureTestSchema, sql } from "@/db/client.ts";
+import { db, ensureTestSchema, isDatabaseConfigured, sql } from "@/db/client.ts";
 import type { Database } from "@/db/schema.ts";
 import type { Kysely } from "kysely";
 
