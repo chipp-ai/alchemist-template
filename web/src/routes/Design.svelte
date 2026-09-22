@@ -119,10 +119,39 @@
 
   function openBrowser(slot: "heading" | "body" | "mono") {
     browsing = slot;
-    const cats: FontCategory[] = slot === "mono" ? ["mono"] : ["sans", "serif", "display"];
-    for (const cat of cats) {
-      for (const f of fontsByCategory(cat)) loadFontSpecimen(f.family, "The quick brown fox");
-    }
+    // Specimen stylesheets are no longer requested eagerly here — see
+    // `lazySpecimen` below, which loads each family's ~60 as its button
+    // scrolls into view instead of firing all of them the instant the
+    // font browser modal opens.
+  }
+
+  /**
+   * Svelte action: request a font's specimen stylesheet only once its
+   * `.font-option` button is about to be visible, instead of loading
+   * every catalog entry (~60-70 requests) the moment the font browser
+   * modal opens. `rootMargin` starts the fetch a little before the
+   * button is actually on screen so scrolling doesn't outrun the
+   * network. Fires once, then disconnects — a family's specimen link
+   * is a singleton per `loadFontSpecimen`'s own dedup, so re-observing
+   * after the modal closes and reopens is harmless but wasted work.
+   */
+  function lazySpecimen(node: HTMLElement, params: { family: string; text: string }) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          loadFontSpecimen(params.family, params.text);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(node);
+    return {
+      destroy() {
+        observer.disconnect();
+      },
+    };
   }
 
   function pickFont(family: string) {
@@ -702,6 +731,7 @@
             style:font-family={`"${f.family}", ${cat === "serif" ? "serif" : cat === "mono" ? "monospace" : "sans-serif"}`}
             data-testid={`design-font-option-${f.family.replace(/\s+/g, "-").toLowerCase()}`}
             onclick={() => pickFont(f.family)}
+            use:lazySpecimen={{ family: f.family, text: "The quick brown fox" }}
           >
             <span class="font-option-sample">The quick brown fox</span>
             <span class="font-option-name">{f.family}</span>
