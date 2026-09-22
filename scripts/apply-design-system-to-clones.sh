@@ -7,6 +7,17 @@
 # and patches the touched existing files in place, guarded by sentinels
 # so a re-run is a no-op.
 #
+# Scope note: a SEPARATE, larger design-system-program (S1-S4, cross-repo
+# — dark mode, motion.css, the toast kit, the app.css guardrail lint,
+# web/DESIGN.md; see docs/design-system-program.md) landed in this
+# template independently of the design.json/presets/font-catalog/sheet
+# system this script retrofits. This script does NOT carry that program
+# forward into an old clone — it has its own S1p "port to variant repos"
+# work item and its own cross-repo sequencing. Don't assume a
+# retrofitted clone has dark mode / toasts / motion just because this
+# script ran; check for web/DESIGN.md to know whether a given clone
+# already has that separate slice.
+#
 # Usage:
 #   scripts/apply-design-system-to-clones.sh <target-project-dir> [--preset <id>]
 #   scripts/apply-design-system-to-clones.sh --all [--preset <id>]
