@@ -76,7 +76,8 @@ src/                    # Deno + Hono API server
 
 web/                    # Svelte 5 SPA
   src/
-    routes/             # Page components (hash-based routing)
+    design/             # design.json (THE look), presets, fonts catalog, tokens, apply
+    routes/             # Page components (hash-based routing); Design.svelte = the sheet
     stores/             # Svelte stores (state management)
     lib/
       api.ts            # Typed fetch wrapper with 401 handling
@@ -141,6 +142,7 @@ when you work in its area, so the hub stays focused.
 | `auth.md` | `src/auth/**`, middleware, `roles.ts` | Role hierarchy, capabilities, invite flow, soft-disconnect |
 | `services-jobs.md` | `src/services/**`, `src/jobs/**` | Service structure, logging contract, `AppError` classes |
 | `events.md` | `src/lib/events.ts`, `src/jobs/event-consumer.ts`, `src/api/routes/events/**`, the events migration | Durable events: publish, consumer, inbox, outbound webhooks, retry and replay mechanics |
+| `design.md` | `web/src/design/**`, `app.css`, `*.svelte` | design.json, presets, font catalog, token rules, the /#/design sheet |
 
 In Claude Code these load when you read a matching file. The Alchemist
 build agent injects them when a tool call touches a matching path (and
@@ -873,42 +875,61 @@ exported PDFs), reach for `BRAND.*` first. If you find yourself
 typing the literal "Alchemist" anywhere in this repo's customer-
 facing code, stop — that's the bug this module exists to prevent.
 
-## Typography — Google Fonts is the only webfont source
+## Design system — the FIRST step of every new project
 
-All font usage flows through three semantic tokens in `web/src/app.css`:
+Every project used to ship looking exactly like this template. That is the
+bug this section fixes. **Before any feature work on a new project, run the
+design pass:** pick a preset from the user's words, apply it, adjust one or
+two things, save. Details + the judgement calls live in
+`docs/design-principles.md` and the `.claude/rules/design.md` spoke.
 
-```css
---font-heading  /* h1-h6 and any "this should feel like a heading" surface */
---font-sans     /* body + UI (buttons, labels, paragraph text) */
---font-mono     /* code, kbd, samp, pre, tabular numerics */
+**One file is the whole look:** `web/src/design/design.json` — three fonts
+(heading / body / mono), five colours (primary, accent, background, surface,
+text), radius family, shadow style, type scale, density. `web/src/design/
+apply.ts` turns it into a `<style>` block that sets the SAME `--brand-*`
+custom properties `brand-loader.js` writes from the platform's brand config
+(colours, v3 fonts, radius scale, primary contrast) plus the derived tokens
+every component reads, and injects the one Google Fonts `<link>` the design
+needs. `web/src/app.css` is the token contract (`web/DESIGN.md` explains it);
+design.json feeds it, it does not replace it. Dark mode stays the user's
+toggle (`web/src/stores/theme.svelte.ts`); a design with `mode: "dark"` is
+dark under both themes.
+
+```bash
+deno task design list                       # 9 presets + the words that map to them
+deno task design match "calm premium spa"   # rank presets for a phrase
+deno task design apply editorial            # replace design.json with a preset
+deno task design set fonts.heading Fraunces # one value; validated (fonts, hex, WCAG)
+deno task design set colors.primary "#8b2e1f"
+deno task design check                      # exit 1 on a contrast error
 ```
 
-Components **NEVER** hardcode a `font-family` value. They reference one of the three tokens. That contract is the entire point: changing the product's typography is supposed to be a one-token edit, not a find-and-replace across every Svelte file. If you find yourself typing `font-family: "Inter"` (or any literal family name) anywhere in `web/src/`, stop — use the token.
+Same path over HTTP for the platform chat: `GET /api/dev/design`
+(current design + warnings + presets + font catalog, `?match=` ranks
+presets), `PUT /api/dev/design`, `POST /api/dev/design/preset`.
 
-### Adding or changing a font
+**The sheet:** `/#/design` (public in dev, in the sidebar in dev) renders
+every shipped component with the live design and a control rail: preset,
+fonts from the curated catalog with a specimen browser, colours, mode,
+shape, type, density, WCAG checks, and "Save to project". Open it after
+any design change and after adding a component (new components go on the
+sheet in the same change).
 
-Two files, always in lockstep:
-
-1. **`web/index.html`** — update the `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?...">`. Include every weight + italic you'll actually use; don't load 9 weights "just in case" (each weight is a separate font file).
-2. **`web/src/app.css`** — update the `--font-heading` / `--font-sans` / `--font-mono` token(s) to put the new family at the front of the stack. Keep the web-safe fallbacks after — they're what renders during the `display=swap` window (and forever for users behind webfont blockers).
-
-**Google Fonts is the only webfont source.** No Adobe Fonts, no self-hosted `@font-face`, no Typekit. Reasons:
-
-- One CDN, well-cached across the open web (visitors land on your app with the font already in their browser cache from another site).
-- `preconnect` + `display=swap` are a known-good loading pattern; we don't have to rediscover it per app.
-- Lets the local-dev agent's `present_choices` swatch pull from a single curated catalog instead of guessing at family availability.
-
-### When the user asks for a "different vibe"
-
-Don't pick fonts blind. The local-dev agent has a `present_choices` tool (in the orchestrator's tool palette) that opens a swatch of 3-4 visual options with sample text rendered in each candidate. Use it for any aesthetic-direction request: "make it feel more rustic", "modernize the typography", "give it a magazine feel", etc. The user picks; the orchestrator reads the chosen option's `spec` field and applies the two-file change above.
-
-Use it for: `font`, `palette`, `layout`, `copy` — anything a designer would present as a swatch rather than guess at.
-
-**Don't** use it for: bug fixes, specific values the user gave you ("use Inter"), or anything with a clearly-right answer. Over-using `present_choices` is annoying.
-
-### The default pairing
-
-The template ships with **Inter** (everything) + **JetBrains Mono** (code). Inter is the deliberate vibe-neutral default — it works for any product category, doesn't lean visual-design-y, and pairs with anything you'd swap in later. Don't change the default in this repo; let customer apps drift on top.
+**Rules:**
+- Never change the look by editing a component, `app.css` token values, or
+  adding a font `<link>`. Change `design.json`. New COMPONENT classes still
+  go in `app.css` per `web/DESIGN.md` (tokens only, no hex), and on the sheet.
+- Components reference tokens only (`var(--font-heading)`,
+  `var(--color-accent)`, `var(--radius-control)`, ...). A literal
+  `font-family` or hex in `web/src/**/*.svelte` is a bug.
+- Fonts come from Google Fonts. Prefer the catalog in
+  `web/src/design/fonts.ts`; it carries the weights each family ships.
+- Presets and hand edits must pass `validateDesign` (WCAG 2.2 AA text
+  contrast is a hard error). The sheet, the CLI and the API all enforce it.
+- For an open aesthetic request ("more premium"), propose ONE preset with a
+  one-line reason and apply it so the user reacts to the real thing; take
+  their reaction as a delta and change one axis at a time. Do not open a
+  swatch for a bug fix or a value they already gave you.
 
 ## HIPAA mode — env-var-gated, no schema changes
 
@@ -1642,6 +1663,10 @@ GET  /api/dev/jobs     # Registered job kinds + every scheduled_jobs row.
 GET  /api/dev/outbox   # Recent email_outbox rows (?status=&limit=). THE way
                        # to verify "did the email go out" — read the row,
                        # don't scrape the server log.
+GET  /api/dev/design   # design.json + WCAG warnings + presets + font catalog
+                       # (?match=<words> ranks presets by vibe)
+PUT  /api/dev/design   # validate + write design.json (body = DesignConfig)
+POST /api/dev/design/preset  # { preset } — apply a preset verbatim
 ```
 
 ### Recipe — verify a route that requires auth
@@ -1895,6 +1920,8 @@ This section grows as mistakes are discovered. Check it before writing code.
 - **Never call `sendEmail` from a route or job** -- compose with `renderEmailKind`, deliver with `enqueueEmail` (outbox); synchronous sends are for auth-critical kinds only
 - **Every enqueued email from a job gets `ctx.idempotencyKey(...)`** -- a stale-lock re-run must not double-send
 - **Typed Kysely `where`/`orderBy` take camelCase column names** (`"organizationId"`); snake_case is for raw `sql` templates only
+- **The look lives in `web/src/design/design.json`** -- never hardcode a `font-family`, a hex colour or a font `<link>`; never edit `app.css` token values to restyle
+- **New UI component = add it to `/#/design`** in the same change, using global classes from `app.css`
 
 ## JSONB: never pass a pre-stringified value as a parameter
 

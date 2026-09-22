@@ -170,18 +170,61 @@ try {
 "
 
 else
-  # ── Docker fallback (legacy path) ──
+  # ── Plain local services via .env (third path) ──
+  #
+  # Neither the desktop's bundled services nor Docker is available, but
+  # a plain local Postgres may already be running and configured via
+  # DATABASE_URL in .env (brew services, homebrew postgres, a CI box).
+  # If that URL answers SELECT 1, honour it as-is instead of demanding
+  # Docker. Probed last: bundled services and Docker take precedence
+  # because they carry the per-project isolation contract.
 
-  if ! docker info >/dev/null 2>&1; then
-    cat <<EOF
-Error: alchemist-desktop's bundled services (Postgres :${BUNDLED_PG_PORT},
-Redis :${BUNDLED_REDIS_PORT}) are not reachable, and Docker is not
-running as a fallback. Either:
-  • Start the alchemist-desktop app (recommended — no Docker needed), or
-  • Start Docker Desktop and re-run this script.
-EOF
-    exit 1
+  ENV_DATABASE_URL=$(grep -E '^DATABASE_URL=' "$PROJECT_ROOT/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"')
+  ENV_SERVICES=0
+  if [[ -n "$ENV_DATABASE_URL" ]]; then
+    echo "Bundled services not detected — probing .env DATABASE_URL..."
+    if DATABASE_URL="$ENV_DATABASE_URL" deno eval --no-config "
+const postgres = (await import('npm:postgres@3.4.5')).default;
+const probe = postgres(Deno.env.get('DATABASE_URL')!, { max: 1, connect_timeout: 3 });
+try {
+  await probe\`SELECT 1\`;
+  console.log('[dev.sh] .env DATABASE_URL answers SELECT 1');
+} catch (e) {
+  console.error('[dev.sh] .env DATABASE_URL probe failed: ' + String(e).split('\n')[0]);
+  Deno.exit(1);
+} finally {
+  await probe.end({ timeout: 2 });
+}
+" >/dev/null 2>&1; then
+      ENV_SERVICES=1
+      # Export so child processes (db:migrate, deno task dev) get THIS
+      # project's database rather than whatever DATABASE_URL the calling
+      # shell inherited. Exported env beats .env under `deno run --env`,
+      # so without this a profile-level DATABASE_URL would silently win.
+      export DATABASE_URL="$ENV_DATABASE_URL"
+      echo "Using plain local services from .env:"
+      echo "  Postgres → $ENV_DATABASE_URL"
+      if [[ -z "${REDIS_URL:-}" ]] && nc -z localhost 6379 2>/dev/null; then
+        export REDIS_URL="redis://localhost:6379"
+        echo "  Redis    → $REDIS_URL (system Redis on the default port)"
+      fi
+    fi
   fi
+
+  if [[ "$ENV_SERVICES" != "1" ]]; then
+    # ── Docker fallback (legacy path) ──
+
+    if ! docker info >/dev/null 2>&1; then
+      cat <<EOF
+Error: alchemist-desktop's bundled services (Postgres :${BUNDLED_PG_PORT},
+Redis :${BUNDLED_REDIS_PORT}) are not reachable, Docker is not running,
+and .env's DATABASE_URL does not point at a reachable Postgres. Either:
+  • Start the alchemist-desktop app (recommended — no Docker needed), or
+  • Start Docker Desktop and re-run this script, or
+  • Start a local Postgres and set DATABASE_URL in .env to point at it.
+EOF
+      exit 1
+    fi
 
   echo "Bundled services not detected — falling back to docker-compose."
   echo "Checking Docker services..."
@@ -210,6 +253,7 @@ EOF
     sleep 1
   done
   echo "PostgreSQL is ready."
+  fi
 fi
 
 # ── Run migrations ──

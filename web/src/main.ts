@@ -3,6 +3,15 @@ import App from "./App.svelte";
 import "./app.css";
 import "./motion.css";
 import { installBreadcrumbs } from "./lib/observability/breadcrumbs";
+import { applyDesign } from "./design/apply";
+import designJson from "./design/design.json";
+import type { DesignConfig } from "./design/types";
+
+// Apply the project's design system (fonts, palette, shape, type scale)
+// before anything renders. web/src/design/design.json is the single
+// source of truth; app.css only carries first-paint fallbacks. See
+// CLAUDE.md → "Design system".
+applyDesign(designJson as DesignConfig);
 
 // Install observability hooks BEFORE store init / DevPanel / app
 // mount so the rest of bootup is captured in the JSONL stream.

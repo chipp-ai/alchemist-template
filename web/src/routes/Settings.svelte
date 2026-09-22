@@ -532,12 +532,12 @@
       <!-- Pending invites (admin+) -->
       {#if canInvite && orgStore.pendingInvites.length > 0}
         <h3 class="subsection-title">Pending invites</h3>
-        <div class="members-list" data-testid="settings-team-pending-invites">
+        <div class="list-rows" data-testid="settings-team-pending-invites">
           {#each orgStore.pendingInvites as invite (invite.id)}
-            <div class="member-row" data-testid="settings-team-invite-{invite.id}">
-              <div class="member-info">
-                <div class="member-name">{invite.email}</div>
-                <div class="member-email">
+            <div class="list-row" data-testid="settings-team-invite-{invite.id}">
+              <div class="list-row-main">
+                <div class="list-row-title">{invite.email}</div>
+                <div class="list-row-meta">
                   {roleLabel(invite.role)} · {formatRelativeExpiry(invite.expiresAt)}
                   · invited by {invite.invitedByName ?? invite.invitedByEmail}
                 </div>
@@ -557,19 +557,19 @@
 
       <!-- Members list -->
       <h3 class="subsection-title">Members</h3>
-      <div class="members-list" data-testid="settings-team-members">
+      <div class="list-rows" data-testid="settings-team-members">
         {#each orgStore.members as member (member.id)}
           {@const isSelf = member.id === authStore.user?.id}
           {@const canManageThis =
             !isSelf &&
             canManage(authStore.user?.role ?? "", member.role)}
-          <div class="member-row" data-testid="settings-team-member-{member.id}">
-            <div class="member-info">
-              <div class="member-name">
+          <div class="list-row" data-testid="settings-team-member-{member.id}">
+            <div class="list-row-main">
+              <div class="list-row-title">
                 {member.name ?? member.email}
                 {#if isSelf}<span class="text-muted">(you)</span>{/if}
               </div>
-              <div class="member-email">{member.email}</div>
+              <div class="list-row-meta">{member.email}</div>
             </div>
             {#if canChangeRoles && canManageThis}
               <select
@@ -861,42 +861,7 @@
     max-width: 640px;
   }
 
-  .tabs {
-    display: flex;
-    gap: 2px;
-    border-bottom: 1px solid var(--color-border);
-    margin-bottom: var(--space-lg);
-  }
-
-  .tab {
-    padding: var(--space-sm) var(--space-md);
-    font-size: var(--text-sm);
-    font-weight: 500;
-    color: var(--color-muted);
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    cursor: pointer;
-    font-family: var(--font-sans);
-    transition: color 0.15s, border-color 0.15s;
-  }
-
-  .tab:hover {
-    color: var(--color-text-secondary);
-  }
-
-  .tab.active {
-    color: var(--color-text);
-    border-bottom-color: var(--color-accent);
-  }
-
   .settings-section {
-    margin-bottom: var(--space-lg);
-  }
-
-  .section-title {
-    font-size: var(--text-base);
-    font-weight: 600;
     margin-bottom: var(--space-lg);
   }
 
@@ -904,11 +869,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-md);
-  }
-
-  .form-field {
-    display: flex;
-    flex-direction: column;
   }
 
   .settings-form .btn {
@@ -933,40 +893,6 @@
 
   .invite-message {
     margin-bottom: var(--space-md);
-  }
-
-  .members-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
-  }
-
-  .member-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-sm) 0;
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .member-row:last-child {
-    border-bottom: none;
-  }
-
-  .member-name {
-    font-size: var(--text-sm);
-    font-weight: 500;
-    color: var(--color-text);
-  }
-
-  .member-email {
-    font-size: var(--text-xs);
-    color: var(--color-muted);
-  }
-
-  .text-muted {
-    font-size: var(--text-sm);
-    color: var(--color-muted);
   }
 
   /* Billing */

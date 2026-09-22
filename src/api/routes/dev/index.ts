@@ -56,6 +56,13 @@ import {
 import { listJobKinds, runJobsTick } from "@/jobs/index.ts";
 import { listOutbox } from "@/services/email-outbox.service.ts";
 import { listScheduledJobs } from "@/services/scheduled-jobs.service.ts";
+import {
+  applyDesignPreset,
+  describeDesign,
+  matchPresets,
+  readDesign,
+  writeDesign,
+} from "@/services/design.service.ts";
 
 const SESSION_COOKIE = "session_id";
 
@@ -501,6 +508,46 @@ devRoutes.get(
   },
 );
 
+// ── Design system: GET/PUT /api/dev/design, POST /api/dev/design/preset ──
+//
+// The project's look lives in web/src/design/design.json. These routes are
+// the validated read/write path for the /#/design page's "Save to project"
+// and for the platform chat agent. GET returns the config plus its WCAG
+// warnings, derived CSS tokens, every preset (with the vibe words that map
+// to it) and the curated font catalog — enough for an orchestrator to
+// build a swatch UI without knowing the file format.
+
+devRoutes.get("/design", async (c) => {
+  const design = await readDesign();
+  const q = c.req.query("match");
+  return c.json({
+    data: {
+      ...describeDesign(design),
+      ...(q ? { matches: matchPresets(q).map((p) => p.id) } : {}),
+    },
+  });
+});
+
+devRoutes.put("/design", async (c) => {
+  const body = await c.req.json().catch(() => {
+    throw new BadRequestError("Body must be a design JSON object");
+  });
+  const result = await writeDesign(body);
+  return c.json({ data: result });
+});
+
+const presetSchema = z.object({ preset: z.string().trim().min(1).max(64) });
+
+devRoutes.post(
+  "/design/preset",
+  zValidator("json", presetSchema, validationHook),
+  async (c) => {
+    const { preset } = c.req.valid("json");
+    const result = await applyDesignPreset(preset);
+    return c.json({ data: result });
+  },
+);
+
 // ── POST /api/dev/snapshot ──
 //
 // Capture the current row contents of the default-truncate tables
@@ -819,6 +866,19 @@ devRoutes.get("/info", (c) => {
       "GET /api/dev/outbox": {
         purpose: "Recent email_outbox rows (newest first). ?status= and ?limit= filters.",
         returns: "{ data: EmailOutboxRow[] }",
+      },
+      "GET /api/dev/design": {
+        purpose:
+          "Current design.json + WCAG warnings + derived CSS vars + presets + font catalog. " +
+          "?match=<user words> ranks presets by vibe.",
+      },
+      "PUT /api/dev/design": {
+        purpose: "Validate + write web/src/design/design.json. Body = DesignConfig.",
+        returns: "{ data: { design, issues } }",
+      },
+      "POST /api/dev/design/preset": {
+        body: { preset: "clean | modern | editorial | friendly | corporate | luxury | brutalist | dark | organic" },
+        returns: "{ data: { design, issues } }",
       },
       "POST /api/dev/app-state": {
         purpose: "SPA push endpoint. The dev-panel client (web/src/lib/devpanel/) " +

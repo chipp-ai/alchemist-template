@@ -63,43 +63,8 @@
     margin-bottom: var(--space-xl);
   }
 
-  .stat-card {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-  }
-
-  .stat-label {
-    font-size: var(--text-sm);
-    color: var(--color-muted);
-  }
-
-  .stat-value {
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--color-text);
-  }
-
-  .stat-hint {
-    font-size: var(--text-xs);
-    color: var(--color-muted);
-  }
-
-  .stat-hint a {
-    color: var(--color-text-secondary);
-  }
-
-  .stat-hint a:hover {
-    color: var(--color-text);
-  }
-
   .recent-section {
     margin-top: var(--space-lg);
   }
 
-  .section-title {
-    font-size: var(--text-lg);
-    font-weight: 600;
-    margin-bottom: var(--space-md);
-  }
 </style>

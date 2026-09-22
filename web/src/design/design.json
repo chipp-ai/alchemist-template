@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "preset": "clean",
+  "name": "Clean SaaS",
+  "mode": "light",
+  "fonts": {
+    "heading": "Inter",
+    "body": "Inter",
+    "mono": "JetBrains Mono",
+    "headingWeight": 600,
+    "bodyWeight": 400
+  },
+  "colors": {
+    "primary": "#4f46e5",
+    "accent": "#0284c7",
+    "background": "#f8fafc",
+    "surface": "#ffffff",
+    "text": "#0f172a"
+  },
+  "shape": {
+    "radius": "md",
+    "borderWidth": 1,
+    "shadow": "soft"
+  },
+  "type": {
+    "baseSize": 16,
+    "scale": 1.2,
+    "headingTracking": -0.02,
+    "headingCase": "normal"
+  },
+  "density": "comfortable"
+}

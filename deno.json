@@ -11,7 +11,8 @@
     "test:watch": "deno task test:clean-schemas && TEST_PARALLEL_ISOLATION=1 deno test --env --no-check --watch --allow-all src/__tests__/",
     "fmt": "deno fmt",
     "lint": "deno lint",
-    "db:migrate": "deno run --env --allow-net --allow-env --allow-read --allow-write=.scratch/logs db/migrate.ts"
+    "db:migrate": "deno run --env --allow-net --allow-env --allow-read --allow-write=.scratch/logs db/migrate.ts",
+    "design": "deno run --env --allow-env --allow-read --allow-write=web/src/design,.scratch/logs scripts/design.ts"
   },
   "imports": {
     "@/": "./src/",

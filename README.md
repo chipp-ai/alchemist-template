@@ -24,6 +24,7 @@ It is also the seed repo every customer project on the [Alchemist AI](https://ad
 
 - **API** -- Deno 2 + Hono 4 with Zod request validation and typed error handling.
 - **SPA** -- Svelte 5 (runes) + Vite, hash-based router, typed fetch wrapper.
+- **Design system** -- one `design.json` (fonts, palette, shape, type scale, density) drives every component through CSS tokens. Nine researched presets, a curated Google Fonts catalog, WCAG contrast checks, and a `/#/design` sheet that renders every shipped component with live controls. Customising the look is the first step of every project.
 - **Database** -- PostgreSQL via Kysely with `CamelCasePlugin` (camelCase in TS, snake_case in SQL). Migrations are plain SQL files in `db/migrations/`, auto-applied on startup.
 - **Cache + sessions** -- Redis, with helpers for rate limits and key-scoped invalidation.
 - **Auth** -- Email OTP login, session cookies, JWT for API tokens, OAuth providers via Arctic 2. Includes a documented dev-login escape hatch so local + agent testing works without an SMTP inbox.
@@ -114,7 +115,8 @@ src/
     helpers.ts     test utilities (createIsolatedUser, ...)
 web/
   src/
-    routes/        Svelte 5 pages (hash router)
+    design/        design.json (the look), presets, fonts catalog, tokens, apply
+    routes/        Svelte 5 pages (hash router); Design.svelte = the component sheet
     stores/        runes-based state
     lib/api.ts     typed fetch wrapper with 401 handling
 db/

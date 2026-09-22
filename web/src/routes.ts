@@ -7,6 +7,7 @@ import InboundEmails from "./routes/InboundEmails.svelte";
 import InboundEmailDetail from "./routes/InboundEmailDetail.svelte";
 import ReviewQueue from "./routes/ReviewQueue.svelte";
 import Import from "./routes/Import.svelte";
+import Design from "./routes/Design.svelte";
 import InviteAccept from "./routes/InviteAccept.svelte";
 import PortalHome from "./routes/portal/PortalHome.svelte";
 import PortalClaim from "./routes/portal/PortalClaim.svelte";
@@ -39,6 +40,11 @@ const routes: Record<string, any> = {
   // the capability it needs and the page says so rather than hiding an
   // import a person cannot run.
   "/import": Import,
+  // Design system sheet: every component rendered with the live design
+  // config + the controls to change it. Public in dev builds so the
+  // platform's live preview can open it without a session; auth-gated
+  // in production like any other internal page.
+  "/design": Design,
   // Invite acceptance landing page. Token comes from the URL; the
   // page handles both logged-in and logged-out flows.
   "/invite/:token": InviteAccept,
@@ -72,6 +78,7 @@ const PUBLIC_PREFIX_ROUTES = ["/invite/", "/portal/"];
 
 export function isPublicRoute(path: string): boolean {
   if (PUBLIC_LITERAL_ROUTES.has(path)) return true;
+  if (import.meta.env.DEV && path === "/design") return true;
   return PUBLIC_PREFIX_ROUTES.some((prefix) => path.startsWith(prefix));
 }
 
