@@ -200,6 +200,26 @@ export const STORAGE_ENV_LOCK_KEY = 495495;
 const LOCAL_STORAGE_LOCK_KEY = STORAGE_ENV_LOCK_KEY;
 
 /**
+ * The dedicated connection `withLocalStorage()` holds its advisory lock on,
+ * reserved ONCE here at module load -- i.e. before any `Deno.test()` body in
+ * an importing file runs -- and held for this worker's entire life. This
+ * mirrors `storage.test.ts`'s own module-load `sql.reserve()` (see that
+ * file's comment) and exists for the identical reason: `sql.reserve()`
+ * called DURING a running test opens a NEW postgres.js TCP connection
+ * (postgres.js connects lazily, on first use), and returning it to the pool
+ * via `.release()` afterwards does not close that socket. From Deno's leak
+ * sanitizer's point of view the connection (plus its read loop and timers)
+ * is "new since this test started" and never closed by the test's end --
+ * tripping on EVERY test that calls `withLocalStorage()` (ALCHEM7-7).
+ * Reserving before the first test runs means the connection is already part
+ * of every test's "before" snapshot, so acquiring/releasing just the
+ * ADVISORY LOCK inside each call never trips the sanitizer. This connection
+ * is intentionally never returned to the pool -- it lives exactly as long as
+ * the base `sql` pool's own connections do (closed only at process exit).
+ */
+const localStorageLockConnection = isDatabaseConfigured() ? await sql.reserve() : null;
+
+/**
  * Run a test with the LOCAL storage driver active, against a throwaway
  * directory, and put every storage env var back afterwards.
  *
@@ -222,10 +242,15 @@ export async function withLocalStorage<T>(
   fn: (ctx: { root: string; setKeyPrefix: (prefix: string) => void }) => Promise<T> | T,
   opts: { keyPrefix?: string } = {},
 ): Promise<T> {
-  const lock = await sql.reserve();
+  if (!localStorageLockConnection) {
+    throw new Error(
+      "withLocalStorage() requires a configured database (DATABASE_URL/TEST_DATABASE_URL) " +
+        "for its cross-isolate advisory lock",
+    );
+  }
+  const lock = localStorageLockConnection;
+  await lock`SELECT pg_advisory_lock(${LOCAL_STORAGE_LOCK_KEY})`;
   try {
-    await lock`SELECT pg_advisory_lock(${LOCAL_STORAGE_LOCK_KEY})`;
-
     const saved = new Map<string, string | undefined>();
     for (const name of STORAGE_ENV_VARS) saved.set(name, Deno.env.get(name));
 
@@ -255,10 +280,10 @@ export async function withLocalStorage<T>(
     try {
       await lock`SELECT pg_advisory_unlock(${LOCAL_STORAGE_LOCK_KEY})`;
     } catch {
-      // best-effort -- releasing the connection below still frees the
-      // session-scoped lock even if the explicit unlock call fails.
+      // best-effort -- this connection is held open for the whole worker's
+      // life (never returned to the pool), so a failed unlock here does not
+      // leak anything; it would only matter if it deadlocked a later call.
     }
-    lock.release();
   }
 }
 
