@@ -80,3 +80,36 @@ change for what is fundamentally a test-isolation bug.
   already going through a full HTTP-route + DB test setup), and it fully
   serializes storage tests against each other — acceptable since none of
   them are individually slow.
+
+## Update (ALCHEM7-7): the per-call `sql.reserve()` itself leaked
+
+Landing the fix above (calling `sql.reserve()` **inside** every
+`withLocalStorage()` invocation) traded the env race for a new problem: it
+broke CI's `Run tests` step with Deno leak-sanitizer failures on all 22
+tests in `storage-local-driver.test.ts` ("A TCP connection was opened ...
+but not closed", "A timer was started ... never completed", "An async call
+to `op_read` ... never completed").
+
+**Root cause:** `postgres.js` connects lazily — no socket opens until the
+first query. `sql.reserve()` called *during* a running `Deno.test()` body
+is therefore often the thing that opens that first physical connection.
+`lock.release()` in the `finally` block returns the connection to the pool
+without closing the socket (that's the point of pooling), so from Deno's
+sanitizer's point of view a resource was opened after the test's "before"
+snapshot and is still alive at the test's "after" snapshot — a leak, on
+every single call.
+
+**Fix:** reserve the lock connection exactly **once**, at module load —
+before any `Deno.test()` body in an importing file runs — and hold it for
+the whole worker's life, never returning it to the pool. This is the exact
+pattern `storage.test.ts` already used successfully for its own module-load
+`R2_*` mutation (see "Public contract" above): a resource created before
+the first test's snapshot is never "new" for any later test, no matter how
+many times its advisory lock is acquired/released across calls. Only the
+`pg_advisory_lock` / `pg_advisory_unlock` *queries* run per call now — the
+connection itself is a fixture, exported as
+`const localStorageLockConnection` in `src/__tests__/helpers.ts`.
+
+The cross-isolate serialization semantics (the whole reason this is a
+Postgres advisory lock and not a JS mutex) are unchanged — see "Decision"
+above, still true.
