@@ -1,0 +1,22 @@
+-- 20260922180900_drop_token_usage.sql
+-- Removes the `token_usage` table scaffolded in 001_initial_schema.sql.
+--
+-- Why
+--
+-- The table was a copy of the platform's per-turn LLM telemetry shape,
+-- carried into the template as a placeholder for "attribute AI spend per
+-- organization". No route or service ever read or wrote it, and the
+-- purpose it anticipated is now served platform-side: every model call a
+-- customer app makes goes through the Alchemist LLM proxy, which debits
+-- the tenant's credit ledger. Keeping an unused table costs every agent a
+-- little reasoning on every schema read, so it goes.
+--
+-- If a customer app needs to meter AI usage for ITS OWN end users (charge
+-- their orgs, show "tokens used this month"), add a purpose-built table in
+-- a new migration with the columns that product actually needs.
+--
+-- Backward compatibility: nothing in the running code references the
+-- table, so dropping it is safe under the expand/contract rule. IF EXISTS
+-- keeps this idempotent for databases where it was never created.
+
+DROP TABLE IF EXISTS token_usage;

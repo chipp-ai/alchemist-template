@@ -12,6 +12,7 @@ import { startDemoReseedLoop, stopDemoReseedLoop } from "@/jobs/demo-reseed-loop
 import { startExpirationDigestJob, stopExpirationDigestJob } from "@/jobs/expiration-digest.ts";
 import { startEventConsumer, stopEventConsumer } from "@/jobs/event-consumer.ts";
 import { registerEventHandlers } from "@/events/handlers.ts";
+import { jobsEnabled, startJobRunner, stopJobRunner } from "@/jobs/index.ts";
 import { log } from "@/lib/logger.ts";
 import { assertNoLiveStripeKeyInDemoMode } from "@/lib/stripe.ts";
 import { isDemoMode } from "@/config/demo-mode.ts";
@@ -150,6 +151,22 @@ if (runsBackgroundWork) {
   }
 }
 
+// ── Job runner: scheduled jobs + email outbox ──
+// Every tick runs due scheduled_jobs (cron handlers, see src/jobs/) and
+// then delivers due email_outbox rows. Row claims are FOR UPDATE SKIP
+// LOCKED, so several pods never double-run; there is no leader. Dormant
+// without a database or with JOBS_ENABLED=0; never throws at boot. Stopped
+// (and awaited) in shutdown() BEFORE closeDatabase() so an in-flight tick
+// can still write its outcomes.
+if (runsBackgroundWork) {
+  try {
+    if (jobsEnabled()) startJobRunner();
+    else log.info("Job runner disabled by JOBS_ENABLED", { source: "startup" });
+  } catch (err) {
+    log.warn("job runner failed to start (non-fatal)", { source: "startup" }, err);
+  }
+}
+
 // ── Start server ──
 
 log.info("Server starting", {
@@ -209,6 +226,12 @@ async function shutdown(signal: string): Promise<void> {
     await stopEventConsumer();
   } catch (err) {
     log.warn("Error stopping event consumer", { source: "shutdown" }, err);
+  }
+
+  try {
+    await stopJobRunner();
+  } catch (err) {
+    log.warn("Error stopping job runner", { source: "shutdown" }, err);
   }
 
   try {

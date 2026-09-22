@@ -53,6 +53,9 @@ import {
   mailboxCaptureEnabled,
   MAX_CAPTURED_EMAILS,
 } from "@/services/email.ts";
+import { listJobKinds, runJobsTick } from "@/jobs/index.ts";
+import { listOutbox } from "@/services/email-outbox.service.ts";
+import { listScheduledJobs } from "@/services/scheduled-jobs.service.ts";
 
 const SESSION_COOKIE = "session_id";
 
@@ -271,7 +274,7 @@ const seedSchema = z.object({
   raw: z
     .array(
       z.object({
-        // Unqualified table name, e.g. "users", "token_usage".
+        // Unqualified table name, e.g. "users", "email_outbox".
         table: z
           .string()
           .regex(/^[a-z_][a-z0-9_]*$/i, "table must be a valid unqualified identifier"),
@@ -390,7 +393,7 @@ devRoutes.post(
 //
 // Truncates the schema. Two modes:
 //   (a) Default — wipes users / organizations / otps / sessions / invites,
-//       token_usage, job_history. Tables remain; only rows go.
+//       email_outbox, scheduled_jobs, job_history. Tables remain; only rows go.
 //   (b) `tables: [...]` — caller-specified subset of TRUNCATE-able
 //       tables. Same regex-validated unqualified table name shape as /seed.
 
@@ -407,7 +410,8 @@ const DEFAULT_TRUNCATE_TABLES = [
   "event_deliveries",
   "event_subscriptions",
   "events",
-  "token_usage",
+  "email_outbox",
+  "scheduled_jobs",
   "job_history",
   "api_credentials",
   "invites",
@@ -432,6 +436,68 @@ devRoutes.post(
 
     log.info("Dev reset", { source: "dev", feature: "reset", tables: targets });
     return c.json({ ok: true, truncated: targets });
+  },
+);
+
+// ── POST /api/dev/jobs/tick ──
+//
+// Run one job-runner tick right now instead of waiting up to JOBS_TICK_MS.
+// Body (optional): { now: "<ISO 8601>" } time-travels the tick, so an agent
+// can verify "the Monday 9am digest goes out" without waiting for Monday:
+//
+//   curl -X POST -H 'Content-Type: application/json' \
+//     -d '{"now":"2026-09-28T13:00:00Z"}' http://localhost:8000/api/dev/jobs/tick
+//
+// Returns the tick result: how many scheduled jobs and outbox rows were
+// claimed / succeeded / failed. Then read GET /api/dev/outbox to see the
+// queued or sent rows.
+
+const tickSchema = z.object({
+  now: z.string().datetime({ offset: true }).optional(),
+});
+
+devRoutes.post("/jobs/tick", async (c) => {
+  // Tolerate an empty body: `curl -X POST .../jobs/tick` with no JSON is
+  // the common case.
+  const raw = await c.req.json().catch(() => ({}));
+  const parsed = tickSchema.safeParse(raw ?? {});
+  if (!parsed.success) {
+    throw new BadRequestError(parsed.error.issues[0]?.message ?? "Invalid body");
+  }
+  const now = parsed.data.now ? new Date(parsed.data.now) : undefined;
+  const result = await runJobsTick({ now });
+  log.info("Dev tick", { source: "dev", feature: "jobs-tick", ...result.jobs, now: result.now });
+  return c.json({ data: result });
+});
+
+// ── GET /api/dev/jobs ──
+//
+// Registered handler kinds + every scheduled_jobs row, next-run first.
+
+devRoutes.get("/jobs", async (c) => {
+  const jobs = await listScheduledJobs({ limit: 200 });
+  return c.json({ data: { kinds: listJobKinds(), jobs } });
+});
+
+// ── GET /api/dev/outbox ──
+//
+// Recent email_outbox rows, newest first. Filter with ?status=pending|
+// sending|sent|failed|cancelled and cap with ?limit= (default 50).
+// This is how an agent verifies an email went out: the row's status is
+// 'sent' (or 'pending' with a future send_at for a scheduled one).
+
+const outboxQuerySchema = z.object({
+  status: z.enum(["pending", "sending", "sent", "failed", "cancelled"]).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+devRoutes.get(
+  "/outbox",
+  zValidator("query", outboxQuerySchema, validationHook),
+  async (c) => {
+    const { status, limit } = c.req.valid("query");
+    const rows = await listOutbox({ status, limit });
+    return c.json({ data: rows });
   },
 );
 
@@ -739,6 +805,20 @@ devRoutes.get("/info", (c) => {
       },
       "POST /api/dev/reset": {
         body: { tables: "string[]?  // default = all app/billing/jobs tables" },
+      },
+      "POST /api/dev/jobs/tick": {
+        purpose:
+          "Run one job-runner tick now (scheduled jobs, then outbox delivery). " +
+          "Pass { now } to time-travel, e.g. to the next Monday 09:00.",
+        body: { now: "ISO 8601 string?" },
+        returns: "{ data: { now, jobs: {claimed, ok, failed}, emails: {claimed, sent, retried, failed} } }",
+      },
+      "GET /api/dev/jobs": {
+        purpose: "Registered job kinds + every scheduled_jobs row.",
+      },
+      "GET /api/dev/outbox": {
+        purpose: "Recent email_outbox rows (newest first). ?status= and ?limit= filters.",
+        returns: "{ data: EmailOutboxRow[] }",
       },
       "POST /api/dev/app-state": {
         purpose: "SPA push endpoint. The dev-panel client (web/src/lib/devpanel/) " +

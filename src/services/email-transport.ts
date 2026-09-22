@@ -152,6 +152,8 @@ export interface SendEmailOptions {
    * falls back to the recipient's own org.
    */
   organizationId?: string | null;
+  /** Reply-To header, e.g. a support inbox that differs from the sender. */
+  replyTo?: string;
   /**
    * Skip the communications gate for a message that is not auth-critical.
    * The ONLY intended caller is `sendTestEmail()`: an admin proving
@@ -233,6 +235,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
       subject: opts.subject,
       text: opts.text,
       html: opts.html,
+      ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
     });
     log.info("Email sent", { source: "email", to: opts.to, subject: opts.subject });
   } catch (err) {

@@ -49,12 +49,10 @@ const user = await db
   .orderBy("createdAt", "desc")           // camelCase in ORDER BY too
   .executeTakeFirst();
 
-// INSERT -- camelCase in values
 await db
   .insertInto("users")
   .values({ email, name, organizationId: orgId })  // camelCase
   .execute();
-```
 
 The ONE place snake_case appears is raw SQL strings (`sql\`...\``
 templates and migration files) -- those bypass the query builder, so you
@@ -76,6 +74,6 @@ Reading snake_case off them yields `undefined` and silently breaks.
 - **`raceTimeout(ms, promise)`** for raw `postgres.js` queries when you need snake_case result keys.
 - **`countAll()` returns a string** — always wrap with `Number()`.
 - **Never `JSON.stringify()` for Kysely JSONB** — pass objects directly to `.set()` / `.values()`. Stringify double-encodes.
-- **JSONB columns return as strings from SELECT** — always `JSON.parse()` before using. Never cast directly.
+- **JSONB columns come back already parsed** (postgres.js does it) — type them as `Jsonb<...>` in `schema.ts` and read the object. Do NOT `JSON.parse()` a value that is already an object; it throws on `[object Object]`. Coerce a defensive `null` to `{}` at the boundary (see `GET /auth/me/preferences`).
 - **Guard `whereIn()` against empty arrays** — `WHERE column IN ()` is a PostgreSQL syntax error. Always check `if (ids.length === 0) return [];` before the query.
 - **`isTransientDbError(err)`** — use in catch blocks to downgrade connection resets and pool timeouts to `log.warn` instead of `log.error`.

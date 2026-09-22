@@ -276,23 +276,6 @@ export interface ImportDemoPeopleTable {
 export type ImportDemoPersonRow = Selectable<ImportDemoPeopleTable>;
 export type NewImportDemoPerson = Insertable<ImportDemoPeopleTable>;
 
-// ── billing schema ──
-
-export interface TokenUsageTable {
-  id: Generated<string>;
-  organizationId: string | null;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  costCents: Generated<number>;
-  source: string | null;
-  createdAt: CreatedAt;
-}
-
-export type TokenUsage = Selectable<TokenUsageTable>;
-export type NewTokenUsage = Insertable<TokenUsageTable>;
-
 // ── monetization (products + purchases) ──
 
 export type ProductType = "one_time" | "subscription";
@@ -351,13 +334,21 @@ export type PurchaseUpdate = Updateable<PurchasesTable>;
 
 // ── jobs schema ──
 
+/** A JSONB column: postgres.js returns it parsed; insert plain objects. */
+type Jsonb<T = Record<string, unknown>> = ColumnType<T, T | undefined, T | undefined>;
+
+/**
+ * Run records for scheduled jobs (src/jobs/). One row per invocation of a
+ * handler, written by src/services/scheduled-jobs.service.ts.
+ */
 export interface JobHistoryTable {
   id: Generated<string>;
   jobType: string;
   organizationId: string | null;
+  /** job_status enum: pending | running | completed | failed | cancelled */
   status: string;
-  payload: string | null; // JSONB stored as string
-  result: string | null; // JSONB stored as string
+  payload: Jsonb<Record<string, unknown> | null>;
+  result: Jsonb<Record<string, unknown> | null>;
   error: string | null;
   startedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
   completedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
@@ -459,6 +450,69 @@ export interface EventHandlerReceiptsTable {
 
 export type EventHandlerReceiptRow = Selectable<EventHandlerReceiptsTable>;
 export type NewEventHandlerReceipt = Insertable<EventHandlerReceiptsTable>;
+
+// ── email outbox + scheduled jobs ──
+
+export type EmailOutboxStatus = "pending" | "sending" | "sent" | "failed" | "cancelled";
+
+/**
+ * Durable outbound email queue. Written by enqueueEmail()
+ * (src/services/email-outbox.service.ts), drained by the job runner.
+ */
+export interface EmailOutboxTable {
+  id: Generated<string>;
+  organizationId: string | null;
+  userId: string | null;
+  toEmail: string;
+  subject: string;
+  textBody: string;
+  htmlBody: string | null;
+  replyTo: string | null;
+  idempotencyKey: string | null;
+  sendAt: ColumnType<Date, Date | undefined, Date | undefined>;
+  status: ColumnType<EmailOutboxStatus, EmailOutboxStatus | undefined, EmailOutboxStatus>;
+  attempts: Generated<number>;
+  maxAttempts: Generated<number>;
+  lastError: string | null;
+  lockedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  sentAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  source: string | null;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type EmailOutboxRow = Selectable<EmailOutboxTable>;
+export type NewEmailOutboxRow = Insertable<EmailOutboxTable>;
+export type EmailOutboxUpdate = Updateable<EmailOutboxTable>;
+
+/**
+ * Recurring jobs: a cron + timezone + handler kind. Managed by
+ * src/services/scheduled-jobs.service.ts, executed by the job runner.
+ */
+export interface ScheduledJobsTable {
+  id: Generated<string>;
+  organizationId: string | null;
+  kind: string;
+  cron: string;
+  timezone: Generated<string>;
+  payload: Jsonb;
+  enabled: Generated<boolean>;
+  nextRunAt: Date;
+  lastRunAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  lastStatus: ColumnType<
+    "ok" | "failed" | null,
+    "ok" | "failed" | null | undefined,
+    "ok" | "failed" | null
+  >;
+  lastError: string | null;
+  lockedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type ScheduledJob = Selectable<ScheduledJobsTable>;
+export type NewScheduledJob = Insertable<ScheduledJobsTable>;
+export type ScheduledJobUpdate = Updateable<ScheduledJobsTable>;
 
 // ── Database interface ──
 // Register your domain tables here.
@@ -578,8 +632,9 @@ export interface Database {
   uploaded_files: UploadedFilesTable;
   import_sessions: ImportSessionsTable;
   import_demo_people: ImportDemoPeopleTable;
-  token_usage: TokenUsageTable;
   job_history: JobHistoryTable;
+  email_outbox: EmailOutboxTable;
+  scheduled_jobs: ScheduledJobsTable;
   doc_search_index: DocSearchIndexTable;
   inbound_email: InboundEmailTable;
   inbound_email_attachment: InboundEmailAttachmentTable;

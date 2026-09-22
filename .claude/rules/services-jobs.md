@@ -56,3 +56,38 @@ Use `AppError` subclasses from `src/utils/errors.ts`:
 Throw the right subclass from a service; the route's catch block re-throws
 `AppError` subclasses without logging (the global error handler logs them).
 Don't `c.json({ error })` by hand for these — let the handler format them.
+
+## Background jobs (`src/jobs/`)
+
+One in-process runner per replica (`runner.ts`) ticks every `JOBS_TICK_MS`
+and does two things in order: run due `scheduled_jobs` rows, then deliver
+due `email_outbox` rows. Both claims use `FOR UPDATE SKIP LOCKED`, so every
+replica runs the loop and none double-processes. There is no leader and no
+Redis.
+
+- **Handlers** live in `src/jobs/handlers/<kind>.ts`, register with
+  `defineJob(kind, handler, { description })`, and are imported from
+  `src/jobs/index.ts` (the import IS the registration — forget it and the
+  schedule fails with "no handler registered").
+- **Handler contract:** idempotent (a stale-lock re-run is possible), finishes
+  inside `JOBS_HANDLER_TIMEOUT_MS`, does its work by enqueueing, returns
+  `{ summary }`. Throw to mark the run failed; the schedule still advances.
+- **Never `sendEmail` from a job.** Render with `renderEmailKind(kind, data)`
+  (register the kind once at module load) and deliver with
+  `ctx.enqueueEmail({..., idempotencyKey: ctx.idempotencyKey(recipientId) })`.
+  `src/jobs/handlers/org-digest.ts` is the worked example.
+- **Schedules** are rows, not code: `createScheduledJob({ kind, cron,
+  timezone, organizationId, payload })`. Validation rejects unknown kinds,
+  bad cron, unknown IANA zones, and cadences under `JOBS_MIN_INTERVAL_SECONDS`.
+- **Catch-up policy:** `next_run_at` advances from the tick clock, so a job
+  missed N times while the app was down runs once. Track a cursor in
+  `payload` if every window matters.
+- **Run records** go to `job_history` (`job_type = kind`, status
+  completed/failed, `result` = the handler's return, `error` = message).
+- **Never start the runner from a test or a script.** `main.ts` starts it
+  when `JOBS_ENABLED` is not `0`; tests call `runDueScheduledJobs({ now })`
+  and `deliverDueEmails({ now })` directly with an injected clock.
+- **Logging:** `source: "jobs"` for the runner + schedule service,
+  `source: "email-outbox"` for delivery. A permanently failed email is
+  `log.error` (it will page via the platform's error-rate alert); a retry
+  is `log.warn`.

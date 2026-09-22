@@ -13,7 +13,6 @@ BEGIN;
 -- Drop in dependency-aware order
 DROP TABLE IF EXISTS schema_migrations CASCADE;
 DROP TABLE IF EXISTS job_history CASCADE;
-DROP TABLE IF EXISTS token_usage CASCADE;
 DROP TABLE IF EXISTS api_credentials CASCADE;
 DROP TABLE IF EXISTS invites CASCADE;
 DROP TABLE IF EXISTS sessions CASCADE;
@@ -139,20 +138,6 @@ CREATE INDEX idx_api_credentials_user_id ON api_credentials(user_id);
 CREATE INDEX idx_api_credentials_key_hash ON api_credentials(key_hash);
 CREATE INDEX idx_api_credentials_key_prefix ON api_credentials(key_prefix);
 
-CREATE TABLE token_usage (
-  id BIGSERIAL PRIMARY KEY,
-  organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
-  model VARCHAR(100) NOT NULL,
-  input_tokens INTEGER NOT NULL DEFAULT 0,
-  output_tokens INTEGER NOT NULL DEFAULT 0,
-  total_tokens INTEGER NOT NULL DEFAULT 0,
-  cost_cents INTEGER NOT NULL DEFAULT 0,
-  source VARCHAR(50),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX idx_token_usage_organization_id ON token_usage(organization_id);
-CREATE INDEX idx_token_usage_created_at ON token_usage(created_at DESC);
-CREATE INDEX idx_token_usage_model ON token_usage(model);
 
 CREATE TABLE job_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

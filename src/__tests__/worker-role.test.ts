@@ -84,6 +84,7 @@ Deno.test("main.ts gates every background starter on the role", async () => {
       "startDemoReseedLoop()",
       "startExpirationDigestJob()",
       "startEventConsumer()",
+      "startJobRunner()",
     ]
   ) {
     const idx = src.indexOf(starter);

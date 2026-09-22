@@ -6,8 +6,9 @@
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "npm:@e2b/code-interpreter@1": "1.5.1",
     "npm:@hono/zod-validator@0.4": "0.4.3_hono@4.12.8_zod@3.25.76",
-    "npm:@types/node@*": "22.12.0",
+    "npm:@types/node@*": "25.5.0",
     "npm:arctic@2": "2.3.4",
+    "npm:croner@9": "9.1.0",
     "npm:date-fns@3": "3.6.0",
     "npm:hono@^4.6.0": "4.12.8",
     "npm:jose@5": "5.10.0",
@@ -73,17 +74,20 @@
       "integrity": "sha512-zw/wn0sj0j0QKbIXfIlnEcTviaCzYOY3V5rAyjR6YtOByFtJiT574+8p9Wlach0lZH9fddD4yb9laEAIl4vXQA==",
       "dependencies": [
         "@oslojs/binary"
-      ]
+      ],
+      "deprecated": true
     },
     "@oslojs/binary@1.0.0": {
-      "integrity": "sha512-9RCU6OwXU6p67H4NODbuxv2S3eenuQ4/WFLrsq+K/k682xrznH5EVWA7N4VFk9VYVcbFtKqur5YQQZc0ySGhsQ=="
+      "integrity": "sha512-9RCU6OwXU6p67H4NODbuxv2S3eenuQ4/WFLrsq+K/k682xrznH5EVWA7N4VFk9VYVcbFtKqur5YQQZc0ySGhsQ==",
+      "deprecated": true
     },
     "@oslojs/crypto@1.0.1": {
       "integrity": "sha512-7n08G8nWjAr/Yu3vu9zzrd0L9XnrJfpMioQcvCMxBIiF5orECHe5/3J0jmXRVvgfqMm/+4oxlQ+Sq39COYLcNQ==",
       "dependencies": [
         "@oslojs/asn1",
         "@oslojs/binary"
-      ]
+      ],
+      "deprecated": true
     },
     "@oslojs/encoding@0.4.1": {
       "integrity": "sha512-hkjo6MuIK/kQR5CrGNdAPZhS01ZCXuWDRJ187zh6qqF2+yMHZpD9fAYpX8q2bOO6Ryhl3XpCT6kUX76N8hhm4Q=="
@@ -95,18 +99,13 @@
       "integrity": "sha512-bLE7BtHrURedCn4Mco3ma9L4Y1GR2SMBuIvjWr7rmQ4/W/4Jy70TIAgZ+0nIlk0xHz1vNP8x8DCns45Sb2XRbg==",
       "dependencies": [
         "@oslojs/encoding@0.4.1"
-      ]
-    },
-    "@types/node@22.12.0": {
-      "integrity": "sha512-Fll2FZ1riMjNmlmJOdAyY5pUbkftXslB5DgEzlIuNaiWhXd00FhWxVC/r4yV/4wBb9JfImTu+jiSvXTkJ7F/gA==",
-      "dependencies": [
-        "undici-types@6.20.0"
-      ]
+      ],
+      "deprecated": true
     },
     "@types/node@25.5.0": {
       "integrity": "sha512-jp2P3tQMSxWugkCUKLRPVUpGaL5MVFwF8RDuSRztfwgN1wmqJeMSbKlnEtQqU8UrhTmzEmZdu2I6v2dpp7XIxw==",
       "dependencies": [
-        "undici-types@7.18.2"
+        "undici-types"
       ]
     },
     "adler-32@1.3.1": {
@@ -118,7 +117,8 @@
         "@oslojs/crypto",
         "@oslojs/encoding@1.1.0",
         "@oslojs/jwt"
-      ]
+      ],
+      "deprecated": true
     },
     "call-bind-apply-helpers@1.0.2": {
       "integrity": "sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==",
@@ -151,6 +151,9 @@
       "integrity": "sha512-ROmzCKrTnOwybPcJApAA6WBWij23HVfGVNKqqrZpuyZOHqK2CwHSvpGuyt/UNNvaIjEd8X5IFGp4Mh+Ie1IHJQ==",
       "bin": true
     },
+    "croner@9.1.0": {
+      "integrity": "sha512-p9nwwR4qyT5W996vBZhdvBCnMhicY5ytZkR4D1Xj0wuTDEiMnjwR57Q3RXYY/s0EpX6Ay3vgIcfaR+ewGHsi+g=="
+    },
     "date-fns@3.6.0": {
       "integrity": "sha512-fRHTG8g/Gif+kSh50gaGEdToemgfj74aRX3swtiouboip5JDLAyDE9F11nHMIcvOaXeOC6D7SpNhi7uFyB7Uww=="
     },
@@ -162,7 +165,7 @@
         "gopd"
       ]
     },
-    "e2b@1.13.2": {
+    "e2b@1.13.2_@bufbuild+protobuf@2.12.0_@connectrpc+connect@2.0.0-rc.3__@bufbuild+protobuf@2.12.0": {
       "integrity": "sha512-m8acE/MzMAJo1A57DakR2X1Sl5Mt1tcQO2aJfygNaQHLXby/4xsjF0UeJUB70jF7xntiR41pAMbZEHnkzrT9tw==",
       "dependencies": [
         "@bufbuild/protobuf",
@@ -312,12 +315,9 @@
     "stripe@17.7.0": {
       "integrity": "sha512-aT2BU9KkizY9SATf14WhhYVv2uOapBWX0OFWF4xvcj1mPaNotlSc2CsxpS4DS46ZueSppmCF5BX1sNYBtwBvfw==",
       "dependencies": [
-        "@types/node@25.5.0",
+        "@types/node",
         "qs"
       ]
-    },
-    "undici-types@6.20.0": {
-      "integrity": "sha512-Ny6QZ2Nju20vw1SRHe3d9jVu6gJ+4e3+MMpqu7pqE5HT6WsTSlce++GQmK5UXS8mzV8DSYHrQH+Xrf2jVcuKNg=="
     },
     "undici-types@7.18.2": {
       "integrity": "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w=="
@@ -392,6 +392,7 @@
       "jsr:@std/testing@1",
       "npm:@hono/zod-validator@0.4",
       "npm:arctic@2",
+      "npm:croner@9",
       "npm:date-fns@3",
       "npm:hono@^4.6.0",
       "npm:jose@5",

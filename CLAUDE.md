@@ -57,6 +57,12 @@ src/                    # Deno + Hono API server
     routes/             # Hono route handlers (thin orchestration)
     middleware/          # Auth, validation, error handling
   services/             # Business logic (one service per domain)
+    email-outbox.service.ts   # enqueueEmail() — durable, retried, idempotent sends
+    scheduled-jobs.service.ts # cron schedules (create/update/run)
+  jobs/
+    runner.ts           # in-process tick loop (every replica, SKIP LOCKED claims)
+    registry.ts         # defineJob(kind, handler)
+    handlers/           # one file per job kind; import each from jobs/index.ts
   db/
     client.ts           # Kysely client with CamelCasePlugin
     schema.ts           # TypeScript type definitions for all tables
@@ -1428,6 +1434,115 @@ scheduled flow. If the portal turns out to have a real HTTP API, skip
 this lane and write a normal API client service instead. Full contract:
 the platform recipe `browser-scrape-flows`.
 
+## Email — event-driven + scheduled, always through the outbox
+
+Every customer project wants "email the user when X happens" and "email
+users every <cadence>". Both exist in the template; do not build a second
+mechanism. Composition and delivery are two separate paved roads:
+
+- **Compose** with the kind registry (`registerEmailKind` + `renderEmailKind`
+  in `src/services/email-kinds.ts`): the branded shell, the preview route
+  and the admin test-send come free. Never hand-roll email markup.
+- **Deliver** through the outbox: `enqueueEmail()` writes an `email_outbox`
+  row and the job runner sends it with retries. `sendEmail` / `sendEmailKind`
+  synchronously is for auth-critical mail only (OTP, invite, portal link).
+  The transport still applies the per-org communications gate to every
+  outbox row, so a muted workspace stays muted.
+
+### Event-driven: `enqueueEmail()` after the state change
+
+```ts
+import { enqueueEmail } from "@/services/email-outbox.service.ts";
+import { brandedEmailShell, escapeHtml, EMAIL_STYLE } from "@/services/email.ts";
+
+await db.transaction().execute(async (trx) => {
+  const order = await trx.updateTable("orders").set({ status: "shipped" })...;
+  await enqueueEmail({
+    to: customer.email,
+    subject: `Order ${order.number} shipped`,
+    text: `Your order is on its way.`,
+    html: brandedEmailShell({ bodyHtml: `<p style="font-family:${EMAIL_STYLE.sans}">…</p>` }),
+    organizationId: order.organizationId,
+    userId: customer.id,
+    idempotencyKey: `order.shipped:${order.id}`,   // never double-send
+    source: "order.shipped",                       // becomes the gate/mailbox `kind`
+  }, trx);                                          // atomic with the update
+});
+```
+
+(When the change is already published as an event, enqueue from the event
+handler instead; the outbox is the delivery half either way.)
+
+Pass the transaction so the email is queued if and only if the state
+change commits. `sendAt` schedules a one-off future send (reminders,
+"your trial ends in 3 days"). The runner delivers within one tick
+(`JOBS_TICK_MS`, default 30 s), retries SMTP failures with 1m/5m/30m/2h/12h
+backoff, and marks the row `failed` after `maxAttempts` (default 5).
+
+### Scheduled: a job handler on a cron
+
+1. Write a handler in `src/jobs/handlers/<kind>.ts` and register it:
+
+   ```ts
+   import { defineJob } from "@/jobs/registry.ts";
+
+   defineJob("weekly_report", async (ctx) => {
+     const owners = await db.selectFrom("users")
+       .select(["id", "email"])
+       .where("organizationId", "=", ctx.organizationId!)
+       .where("role", "=", "owner").execute();
+     for (const o of owners) {
+       await ctx.enqueueEmail({
+         to: o.email, userId: o.id,
+         subject: "Your week in numbers", text: "...", html: "...",
+         idempotencyKey: ctx.idempotencyKey(o.id),   // safe on re-run
+       });
+     }
+     return { summary: `queued ${owners.length}` };
+   }, { description: "Monday summary to org owners" });
+   ```
+
+2. Add `import "./handlers/weekly-report.ts";` to `src/jobs/index.ts`.
+3. Create the schedule (from a settings route, onboarding, or a seed):
+
+   ```ts
+   await createScheduledJob({
+     kind: "weekly_report",
+     cron: "0 9 * * 1",             // 5-field cron
+     timezone: "America/Chicago",   // IANA zone; DST handled
+     organizationId: org.id,        // or null for an app-global job
+     payload: { includeRevenue: true },
+   });
+   ```
+
+`org_digest` in `src/jobs/handlers/org-digest.ts` is the reference
+implementation. Handler rules: finish inside `JOBS_HANDLER_TIMEOUT_MS`
+(60 s), do work by enqueueing not inline, always key emails with
+`ctx.idempotencyKey(...)`. A throwing handler is recorded in `job_history`
+and `scheduled_jobs.last_error`; the schedule still advances. Minimum
+cadence is `JOBS_MIN_INTERVAL_SECONDS` (5 min). Missed fires while the app
+was down collapse into one run.
+
+### Verifying (agent recipe)
+
+```bash
+# time-travel to next Monday 09:00 UTC and run one tick
+curl -sS -X POST -H 'Content-Type: application/json' \
+  -d '{"now":"2026-09-28T09:00:00Z"}' http://localhost:__API_PORT__/api/dev/jobs/tick
+# every queued/sent row, newest first
+curl -sS http://localhost:__API_PORT__/api/dev/outbox | jq '.data[] | {toEmail, subject, status, source}'
+```
+
+Without SMTP the delivery step logs the email to the console and marks
+the row `sent`, so the flow is verifiable end-to-end in dev.
+
+### Sender identity
+
+The `From:` header is `APP_NAME <EMAIL_FROM>` from `BRAND`. Whitelabel
+sending (the customer's own domain) is a platform concern: the platform
+injects `EMAIL_FROM` + SMTP creds, and a project can override all of them
+in its env. Nothing in this repo composes a From address by hand.
+
 ## Verification Checklist
 
 Before reporting any implementation as complete:
@@ -1520,6 +1635,13 @@ POST /api/dev/seed     # Body: { users?: [{email, name?}], raw?: [{table, rows}]
 POST /api/dev/reset    # Body: { tables?: [...] } (default = all
                        # app/billing/jobs tables). TRUNCATE CASCADE.
                        # Use BEFORE seeding for a known starting point.
+POST /api/dev/jobs/tick # Body: { now?: ISO } — run one job-runner tick NOW
+                       # (scheduled jobs, then outbox delivery). `now` time-
+                       # travels: verify Monday's digest without waiting.
+GET  /api/dev/jobs     # Registered job kinds + every scheduled_jobs row.
+GET  /api/dev/outbox   # Recent email_outbox rows (?status=&limit=). THE way
+                       # to verify "did the email go out" — read the row,
+                       # don't scrape the server log.
 ```
 
 ### Recipe — verify a route that requires auth
@@ -1770,6 +1892,9 @@ This section grows as mistakes are discovered. Check it before writing code.
 - **date-fns 3: no default export** -- `import { format } from "date-fns"`, not `import dateFns from "date-fns"`
 - **Stripe 17: pin `apiVersion` on the client** -- SDK major and API version must agree
 - **Svelte 5 runes only** -- `$props()`, `$state()`, `$derived`, `$effect`, `{@render children()}`. NEVER `export let` (compile error)
+- **Never call `sendEmail` from a route or job** -- compose with `renderEmailKind`, deliver with `enqueueEmail` (outbox); synchronous sends are for auth-critical kinds only
+- **Every enqueued email from a job gets `ctx.idempotencyKey(...)`** -- a stale-lock re-run must not double-send
+- **Typed Kysely `where`/`orderBy` take camelCase column names** (`"organizationId"`); snake_case is for raw `sql` templates only
 
 ## JSONB: never pass a pre-stringified value as a parameter
 
