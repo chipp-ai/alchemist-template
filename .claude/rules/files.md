@@ -19,6 +19,15 @@ is HOW.
 
 ## File storage — use `storage.service.ts`, never write to R2 directly
 
+Per-project storage hands the pod a TEMPORARY credential: `R2_SESSION_TOKEN`
+(and `R2_SESSION_EXPIRES_AT`) next to the key pair. `storage.service.ts`
+sends the token on every request and clamps presigned URLs to the
+credential's life; `.alchemist/deployment.yaml` declares
+`storage.sessionToken: true` so the platform knows this app can take one.
+Never remove that declaration, never read `R2_SESSION_TOKEN` in app code,
+and never build an R2 request outside the service: a request without the
+token is a 403 the moment the project is on its own bucket.
+
 > **For END-USER uploads, read "File uploads: use the paved road" below
 > FIRST.** This section is the storage layer underneath it. Reach for
 > `putObject` / `getSignedUploadUrl` directly only for machine-to-machine

@@ -67,6 +67,18 @@ export { assertOwnedKey, keyPrefix, relativeKeyOf, scopedKey };
  * worker imported this module.
  */
 const env = (name: string): string => Deno.env.get(name) ?? "";
+/**
+ * Present only on a pod holding a TEMPORARY, bucket-scoped R2 credential
+ * (per-project storage). A temporary credential is a key pair PLUS this
+ * token, and every request signed with it must carry the token as
+ * `x-amz-security-token` (header-signed) or `X-Amz-Security-Token`
+ * (query-signed), or R2 answers 403 InvalidAccessKeyId. Absent on a pod
+ * with the legacy long-lived key, so every signature below is unchanged
+ * when it is empty. Read lazily like the other names.
+ */
+const sessionToken = (): string => env("R2_SESSION_TOKEN");
+/** ISO 8601 expiry of the temporary credential; rides next to the token. */
+const sessionExpiresAt = (): string => env("R2_SESSION_EXPIRES_AT");
 
 const REGION = "auto";
 const SERVICE = "s3";
@@ -213,11 +225,17 @@ export async function putObject(opts: {
   // byte-identical to the sent path -- re-encoding here double-encoded spaces
   // (%20 -> %2520) and 403'd with SignatureDoesNotMatch.
   const canonicalUri = url.pathname;
+  // Canonical headers sort by lowercase name, so the session token (when a
+  // temporary credential is in use) goes after x-amz-date, in BOTH the
+  // canonical list and the signed-headers list.
+  const token = sessionToken();
   const canonicalHeaders = `content-type:${contentType}\n` +
     `host:${host}\n` +
     `x-amz-content-sha256:${payloadHash}\n` +
-    `x-amz-date:${amzDate}\n`;
-  const signedHeaders = "content-type;host;x-amz-content-sha256;x-amz-date";
+    `x-amz-date:${amzDate}\n` +
+    (token ? `x-amz-security-token:${token}\n` : "");
+  const signedHeaders = "content-type;host;x-amz-content-sha256;x-amz-date" +
+    (token ? ";x-amz-security-token" : "");
 
   const canonicalRequest = [
     "PUT",
@@ -251,6 +269,7 @@ export async function putObject(opts: {
       "Host": host,
       "X-Amz-Content-Sha256": payloadHash,
       "X-Amz-Date": amzDate,
+      ...(token ? { "X-Amz-Security-Token": token } : {}),
       "Authorization": authorization,
     },
     // Cast: Deno's lib.dom.d.ts in some versions doesn't list Uint8Array
@@ -328,10 +347,13 @@ export async function deleteObject(relativeKey: string): Promise<void> {
   // byte-identical to the sent path -- re-encoding here double-encoded spaces
   // (%20 -> %2520) and 403'd with SignatureDoesNotMatch.
   const canonicalUri = url.pathname;
+  const token = sessionToken();
   const canonicalHeaders = `host:${host}\n` +
     `x-amz-content-sha256:${emptyHash}\n` +
-    `x-amz-date:${amzDate}\n`;
-  const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
+    `x-amz-date:${amzDate}\n` +
+    (token ? `x-amz-security-token:${token}\n` : "");
+  const signedHeaders = "host;x-amz-content-sha256;x-amz-date" +
+    (token ? ";x-amz-security-token" : "");
 
   const canonicalRequest = [
     "DELETE",
@@ -364,6 +386,7 @@ export async function deleteObject(relativeKey: string): Promise<void> {
       "Host": host,
       "X-Amz-Content-Sha256": emptyHash,
       "X-Amz-Date": amzDate,
+      ...(token ? { "X-Amz-Security-Token": token } : {}),
       "Authorization": authorization,
     },
   });
@@ -386,6 +409,19 @@ export async function deleteObject(relativeKey: string): Promise<void> {
 // this app's own public `/api/storage/local/o` route. Same contract
 // either way, so calling code never branches.
 
+/**
+ * Seconds left on the temporary credential, floored at 1 so a URL is still
+ * produced (and fails honestly at R2) rather than throwing here. No expiry
+ * in the env, or one that does not parse, means no clamp.
+ */
+function secondsUntilSessionExpiry(): number {
+  const raw = sessionExpiresAt();
+  if (!raw) return Number.POSITIVE_INFINITY;
+  const at = Date.parse(raw);
+  if (Number.isNaN(at)) return Number.POSITIVE_INFINITY;
+  return Math.max(1, Math.floor((at - Date.now()) / 1000));
+}
+
 interface PresignOptions {
   /** TTL in seconds. Default 3600 (1h). R2/S3 max is 7 days = 604800. */
   expiresInSeconds?: number;
@@ -402,21 +438,29 @@ function presign(
   fullKey: string,
   options: PresignOptions & { contentType?: string } = {},
 ): string {
+  const token = sessionToken();
   const expiresInSeconds = Math.min(
     Math.max(options.expiresInSeconds ?? 3600, 1),
     604_800, // 7 days, R2 / S3 max
+    // A presigned URL must not outlive the temporary credential that signed
+    // it: R2 rejects the URL the moment the token expires, whatever
+    // X-Amz-Expires says. Clamp to the time left on the credential.
+    token ? secondsUntilSessionExpiry() : Number.POSITIVE_INFINITY,
   );
 
   const { url, amzDate, dateStamp, host } = newSignedUrl(fullKey);
   const credentialScope = `${dateStamp}/${REGION}/${SERVICE}/aws4_request`;
 
   // Query params that go INTO the canonical request. Sorted at the end.
+  // The session token is one of them, so it is signed like the others and
+  // the URL carries it (the S3 contract for temporary credentials).
   const params: Record<string, string> = {
     "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
     "X-Amz-Credential": `${env("R2_ACCESS_KEY_ID")}/${credentialScope}`,
     "X-Amz-Date": amzDate,
     "X-Amz-Expires": String(expiresInSeconds),
     "X-Amz-SignedHeaders": "host",
+    ...(token ? { "X-Amz-Security-Token": token } : {}),
   };
 
   // For presigned GETs we want a content-disposition override on the
@@ -532,10 +576,13 @@ export function describeStorageConfig(): {
   prefix: string;
   endpoint: string;
   localRoot: string | null;
+  /** Whether a TEMPORARY, bucket-scoped credential is in use (never the value). */
+  sessionToken: boolean;
 } {
   const driver = storageDriver();
   return {
     driver,
+    sessionToken: sessionToken() !== "",
     // Storage always works. Kept for callers that read this field.
     configured: true,
     // Whether files survive a pod restart. The honest signal for an
