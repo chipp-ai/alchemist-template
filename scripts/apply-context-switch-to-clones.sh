@@ -17,25 +17,26 @@
 #
 # What it does:
 #   * Copies 4 new files from this template into the target:
-#       web/src/lib/context-switch.svelte.ts
+#       web/src/lib/context-switch.svelte.ts   (query import stripped when the clone has no query layer)
 #       .claude/rules/frontend-state.md
 #       src/__tests__/routes/context-switch-remount-lint.test.ts
 #       src/__tests__/context-switch-guidance.test.ts
-#   * Idempotently patches 6 existing files:
-#       web/src/App.svelte                   (import, routerKey, {#key} around both <Router>, signed-out branch)
-#       web/src/lib/query.svelte.ts          (resetQueries)
-#       web/src/stores/auth.svelte.ts        (logout fires runContextSwitch)
+#   * Idempotently patches up to 6 existing files:
+#       web/src/App.svelte                    (import, routerKey, {#key} around both <Router>, signed-out branch)
+#       web/src/lib/query.svelte.ts           (generation guard + resetQueries; skipped when absent)
+#       web/src/stores/auth.svelte.ts         (logout fires runContextSwitch)
 #       web/src/stores/organization.svelte.ts (registers its reset)
-#       web/src/lib/view-transitions-dom.ts  (skipped-transition rejections handled)
-#       CLAUDE.md                            (hub section, spoke table row, pitfalls tripwire)
+#       web/src/lib/view-transitions-dom.ts   (skipped-transition rejections handled; skipped when absent)
+#       CLAUDE.md                             (hub section, spoke table row, pitfalls tripwire)
 #
-# CLAUDE.md IS patched here, unlike the observability retrofit: the prompt
-# guidance is the point of this change. Every insertion is anchored and
-# sentinel-guarded; a customer CLAUDE.md that lost an anchor gets a [warn]
-# and the rest still applies.
-#
-# Failure mode: a code patch whose anchor is gone reports [fail] and exits
-# non-zero, so a half-applied guard is never silently left behind.
+# Every patch is SHAPE-tolerant, not text-exact: clones drift (a cockpit
+# shell instead of the portal lane, extra state cleared in logout, an
+# invalidateQueries with a throttle field, a hub without a spoke table).
+# The 2026-09-24 fleet dry run over 123 clones is where each fallback here
+# came from. A code patch whose anchor is truly gone reports [fail] and
+# exits non-zero, so a half-applied guard is never silently left behind;
+# CLAUDE.md fallbacks append rather than fail, because a customer hub may
+# have been restructured.
 
 set -euo pipefail
 
@@ -58,41 +59,24 @@ copy_new_files() {
     cp "$TEMPLATE_ROOT/$rel" "$target/$rel"
     ok "copy $rel"
   done
-}
-
-# Replace exactly one occurrence of OLD with NEW in FILE. SENTINEL present
-# in the file means the patch already applied. Anchored + guarded so a
-# re-run is a no-op and a missing anchor is loud.
-replace_once() {
-  local file="$1" sentinel="$2" old="$3" new="$4" label="$5"
-  if [ ! -f "$file" ]; then fail "missing $file"; fi
-  if grep -qF -- "$sentinel" "$file"; then
-    skip "$label already applied"
-    return
-  fi
-  OLD="$old" NEW="$new" python3 - "$file" "$label" <<'PY'
-import os, sys
-path, label = sys.argv[1], sys.argv[2]
-old, new = os.environ["OLD"], os.environ["NEW"]
+  if [ ! -f "$target/web/src/lib/query.svelte.ts" ]; then
+    # Pre-createQuery clone: there is no cache to reset. Strip the import and
+    # the call so the module loads; the store resets and the epoch still work.
+    python3 - "$target/web/src/lib/context-switch.svelte.ts" <<'PY'
+import sys
+path = sys.argv[1]
 src = open(path).read()
-n = src.count(old)
-if n != 1:
-    print(f"ERR: {label}: expected exactly one anchor match in {path}, found {n}", file=sys.stderr)
-    sys.exit(1)
-open(path, "w").write(src.replace(old, new))
+src = src.replace('import { resetQueries } from "./query.svelte";\n\n', "")
+src = src.replace("  resetQueries();\n", "  // (no createQuery layer in this project: nothing to reset here)\n")
+open(path, "w").write(src)
 PY
-  ok "$label"
+    ok "context-switch.svelte.ts: query-layer import stripped (clone predates createQuery)"
+  fi
 }
 
 patch_app_svelte() {
   local f="$1/web/src/App.svelte"
   if [ ! -f "$f" ]; then fail "missing $f"; fi
-  # Clones drift here (a cockpit shell instead of the portal lane, extra
-  # comments around the bare Router, a different showLayout predicate), so
-  # this patch is shape-tolerant: it anchors on the auth-store import, the
-  # first </script>, each `<Router {routes} />` line, and the {:else} that
-  # owns the bare Router, and it builds the signed-out condition from the
-  # derived names the file actually defines.
   python3 - "$f" <<'PY'
 import re, sys
 path = sys.argv[1]
@@ -101,14 +85,16 @@ def ok(m): print(f"  [ok]   App.svelte: {m}")
 def skip(m): print(f"  [skip] App.svelte: {m}")
 def fail(m): print(f"ERR: App.svelte: {m}", file=sys.stderr); sys.exit(1)
 
+# 1. import
 if "import { contextSwitch }" in src:
     skip("import already present")
 else:
-    anchor = 'import { authStore } from "./stores/auth.svelte";\n'
-    if src.count(anchor) != 1: fail("no single authStore import to anchor on")
-    src = src.replace(anchor, anchor + '  import { contextSwitch } from "./lib/context-switch.svelte";\n', 1)
+    m = re.search(r'^(\s*)import \{ authStore \} from "\./stores/auth\.svelte";\n', src, re.M)
+    if not m: fail("no authStore import to anchor on")
+    src = src[:m.end()] + m.group(1) + 'import { contextSwitch } from "./lib/context-switch.svelte";\n' + src[m.end():]
     ok("import contextSwitch")
 
+# 2. routerKey, right before the first </script>
 if "const routerKey = $derived" in src:
     skip("routerKey already present")
 else:
@@ -126,16 +112,17 @@ else:
 """
     i = src.find("</script>\n")
     if i == -1: fail("no </script>")
+    if "$location" not in src[:i]:
+        fail("App.svelte does not import `location` from svelte-spa-router; add it before retrofitting")
     src = src[:i].rstrip("\n") + "\n" + block + src[i + len("</script>\n"):]
     ok("routerKey")
 
+# 3. key every <Router {routes} /> line, keeping its indent
 if "{#key routerKey}" in src:
     skip("routers already keyed")
 else:
-    lines = src.split("\n")
-    out = []
-    keyed = 0
-    for line in lines:
+    out, keyed = [], 0
+    for line in src.split("\n"):
         m = re.match(r"^(\s*)<Router \{routes\} />\s*$", line)
         if m:
             ind = m.group(1)
@@ -147,30 +134,46 @@ else:
     src = "\n".join(out)
     ok(f"keyed {keyed} <Router> mounts")
 
+# 4. signed-out branch around the bare (last) Router
 if "Signed out on a protected path" in src:
     skip("signed-out branch already present")
 else:
-    terms = ["onPublicRoute"]
-    if "const onPublicRoute" not in src: fail("no `const onPublicRoute` derived; cannot build the signed-out condition")
+    if "const onPublicRoute" in src: pub = "onPublicRoute"
+    elif re.search(r"import routes, \{[^}]*\bisPublicRoute\b", src): pub = "isPublicRoute($location)"
+    else: fail("neither `const onPublicRoute` nor an isPublicRoute import; cannot build the signed-out condition")
+    terms = [pub]
     if "const onPortalRoute" in src: terms.append("onPortalRoute")
     terms.append("authStore.isAuthenticated")
     cond = " || ".join(terms)
-    # The {:else} that owns the bare (top-level, unindented key) Router.
-    m = re.search(r"^\{:else\}\n(?=(?:\s*<!--[\s\S]*?-->\n)?\s*\{#key routerKey\}\n)", src, re.M)
-    if not m: fail("could not find the {:else} branch that renders the bare <Router>")
-    src = src[:m.start()] + "{:else if " + cond + "}\n" + src[m.end():]
-    # Append the empty signed-out branch before the {/if} that closes it.
-    j = src.find("{/if}", m.start())
-    if j == -1: fail("no {/if} after the bare Router")
-    branch = """{:else}
-  <!-- Signed out on a protected path: the redirect effect above is already
-       moving us to /login. Rendering nothing here (instead of mounting the
-       protected page for one frame) keeps its onMount loaders from firing
-       against a session that no longer exists, which is what a logout
-       from /settings used to do: three 401s and an aborted view
-       transition in the console for every sign-out. -->
-"""
-    src = src[:j] + branch + src[j:]
+
+    lines = src.split("\n")
+    last_key = max(i for i, l in enumerate(lines) if l.strip() == "{#key routerKey}")
+    # nearest {:else} above the bare Router, with no other branch marker between
+    else_i = None
+    for i in range(last_key - 1, -1, -1):
+        s = lines[i].strip()
+        if s == "{:else}":
+            else_i = i; break
+        if s.startswith("{:else if") or s.startswith("{#if") or s == "{/if}":
+            break
+    if else_i is None: fail("could not find the {:else} branch that renders the bare <Router>")
+    ind = lines[else_i][: len(lines[else_i]) - len(lines[else_i].lstrip())]
+    lines[else_i] = f"{ind}{{:else if {cond}}}"
+    # the {/if} that closes that branch: first {/if} after the bare Router's {/key}
+    close_key = next(i for i in range(last_key, len(lines)) if lines[i].strip() == "{/key}")
+    endif_i = next((i for i in range(close_key, len(lines)) if lines[i].strip() == "{/if}"), None)
+    if endif_i is None: fail("no {/if} after the bare Router")
+    branch = [
+        f"{ind}{{:else}}",
+        f"{ind}  <!-- Signed out on a protected path: the redirect effect above is already",
+        f"{ind}       moving us to /login. Rendering nothing here (instead of mounting the",
+        f"{ind}       protected page for one frame) keeps its onMount loaders from firing",
+        f"{ind}       against a session that no longer exists, which is what a logout",
+        f"{ind}       from /settings used to do: three 401s and an aborted view",
+        f"{ind}       transition in the console for every sign-out. -->",
+    ]
+    lines[endif_i:endif_i] = branch
+    src = "\n".join(lines)
     ok(f"signed-out branch (condition: {cond})")
 
 open(path, "w").write(src)
@@ -179,89 +182,63 @@ PY
 
 patch_query() {
   local f="$1/web/src/lib/query.svelte.ts"
-  if [ ! -f "$f" ]; then fail "missing $f"; fi
-  # Four sentinel-guarded steps. Step 4 also UPGRADES a clone that received
-  # the first cut of resetQueries (which refetched active entries and so
-  # fired 401s on logout) to the clear-only version with the generation
-  # guard.
+  if [ ! -f "$f" ]; then skip "query.svelte.ts: no createQuery layer in this clone"; return; fi
   python3 - "$f" <<'PY'
-import sys
+import re, sys
 path = sys.argv[1]
 src = open(path).read()
 def ok(m): print(f"  [ok]   query.svelte.ts: {m}")
 def skip(m): print(f"  [skip] query.svelte.ts: {m}")
 def fail(m): print(f"ERR: query.svelte.ts: {m}", file=sys.stderr); sys.exit(1)
-def once(old, new, label):
-    global src
-    n = src.count(old)
-    if n != 1: fail(f"{label}: expected one anchor match, found {n}")
-    src = src.replace(old, new)
-    ok(label)
+def fn_span(name):
+    i = src.find(name)
+    if i == -1: return None
+    j = src.find("\n}\n", i)
+    return (i, j + 3)
 
 # 1. QueryEntry.gen
 if "gen: number;" in src:
     skip("QueryEntry.gen already present")
 else:
-    once("  inFlight: Promise<void> | null;\n",
-         "  inFlight: Promise<void> | null;\n"
-         "  /** Bumped by resetQueries(); a fetch started under an older generation\n"
-         "   *  discards its result so a previous tenant's response can never land. */\n"
-         "  gen: number;\n", "QueryEntry.gen")
+    a = "  inFlight: Promise<void> | null;\n"
+    if src.count(a) != 1: fail("QueryEntry.inFlight field not found once")
+    src = src.replace(a, a +
+        "  /** Bumped by resetQueries(); a fetch started under an older generation\n"
+        "   *  discards its result so a previous tenant's response can never land. */\n"
+        "  gen: number;\n")
+    ok("QueryEntry.gen")
 
-# 2. revalidate() generation guard
+# 2. revalidate() generation guard, by shape
 if "const gen = entry.gen;" in src:
     skip("revalidate() guard already present")
 else:
-    once("""  if (entry.inFlight) return entry.inFlight;
-  entry.state.isFetching = true;
-  entry.inFlight = entry
-    .fetcher()
-    .then((data) => {
-      entry.state.data = data;
-      entry.state.error = null;
-      entry.state.updatedAt = Date.now();
-    })
-    .catch((err) => {
-      // Keep last good data; surface the error. Next trigger retries.
-      entry.state.error = err instanceof Error ? err.message : String(err);
-    })
-    .finally(() => {
-      entry.state.isFetching = false;
-      entry.inFlight = null;
-    });
-  return entry.inFlight;
-}""", """  if (entry.inFlight) return entry.inFlight;
-  const gen = entry.gen;
-  entry.state.isFetching = true;
-  entry.inFlight = entry
-    .fetcher()
-    .then((data) => {
-      if (gen !== entry.gen) return; // reset happened mid-flight: stale tenant
-      entry.state.data = data;
-      entry.state.error = null;
-      entry.state.updatedAt = Date.now();
-    })
-    .catch((err) => {
-      if (gen !== entry.gen) return;
-      // Keep last good data; surface the error. Next trigger retries.
-      entry.state.error = err instanceof Error ? err.message : String(err);
-    })
-    .finally(() => {
-      if (gen !== entry.gen) return; // the reset already cleared these
-      entry.state.isFetching = false;
-      entry.inFlight = null;
-    });
-  return entry.inFlight;
-}""", "revalidate() generation guard")
+    span = fn_span("function revalidate<T>(")
+    if not span: fail("no revalidate<T>() function")
+    body = src[span[0]:span[1]]
+    a = "  if (entry.inFlight) return entry.inFlight;\n"
+    if body.count(a) != 1: fail("revalidate() has no single `if (entry.inFlight) return entry.inFlight;`")
+    body = body.replace(a, a + "  const gen = entry.gen;\n")
+    for opener, guard in [
+        (".then((data) => {\n", "      if (gen !== entry.gen) return; // reset happened mid-flight: stale tenant\n"),
+        (".catch((err) => {\n", "      if (gen !== entry.gen) return;\n"),
+        (".finally(() => {\n", "      if (gen !== entry.gen) return; // the reset already cleared these\n"),
+    ]:
+        if body.count(opener) != 1: fail(f"revalidate() has no single `{opener.strip()}` block")
+        body = body.replace(opener, opener + guard)
+    src = src[:span[0]] + body + src[span[1]:]
+    ok("revalidate() generation guard")
 
 # 3. entry literal
-if "    gen: 0,\n" in src:
+if re.search(r"^\s+gen: 0,\n", src, re.M):
     skip("entry literal gen already present")
 else:
-    once("    lastReadAt: 0,\n    inFlight: null,\n    intervalTimer: null,\n",
-         "    lastReadAt: 0,\n    inFlight: null,\n    gen: 0,\n    intervalTimer: null,\n", "entry literal gen: 0")
+    m = re.search(r"^(\s+)inFlight: null,\n", src, re.M)
+    if not m: fail("createQuery entry literal has no `inFlight: null,`")
+    src = src[:m.end()] + m.group(1) + "gen: 0,\n" + src[m.end():]
+    ok("entry literal gen: 0")
 
-# 4. resetQueries (insert, or upgrade the first cut)
+# 4. resetQueries: insert after invalidateQueries, or upgrade the first cut
+extra = "    entry.lastAttemptAt = 0;\n" if "lastAttemptAt" in src else ""
 NEW = """/**
  * Drop every cached result (data AND error) without refetching anything.
  * Called by `runContextSwitch()` (web/src/lib/context-switch.svelte.ts)
@@ -283,47 +260,28 @@ export function resetQueries(): void {
     entry.gen += 1;
     entry.inFlight = null;
     entry.lastReadAt = 0;
-    entry.state.data = undefined;
+""" + extra + """    entry.state.data = undefined;
     entry.state.error = null;
     entry.state.updatedAt = 0;
     entry.state.isFetching = false;
   }
 }
 """
-OLD_FIRST_CUT = """/**
- * Drop every cached result (data AND error) and refetch the active ones.
- * Called by `runContextSwitch()` (web/src/lib/context-switch.svelte.ts)
- * when the tenant changes or the user signs out: query keys carry no
- * tenant id, so a cached `shipments:list` from the previous organization
- * would otherwise be served, instantly and wrong, to the next one. Unlike
- * `invalidateQueries`, this does not keep stale data on screen while the
- * refetch runs; there is no "stale" version of another tenant's data.
- */
-export function resetQueries(): void {
-  for (const entry of CACHE.values()) {
-    entry.state.data = undefined;
-    entry.state.error = null;
-    entry.state.updatedAt = 0;
-    if (isActive(entry)) void revalidate(entry);
-  }
-}
-"""
 if "export function resetQueries" not in src:
-    anchor = """export function invalidateQueries(prefix: string): void {
-  for (const [key, entry] of CACHE) {
-    if (!key.startsWith(prefix)) continue;
-    entry.state.updatedAt = 0;
-    if (isActive(entry)) void revalidate(entry);
-  }
-}
-"""
-    once(anchor, anchor + "\n" + NEW, "resetQueries inserted")
+    span = fn_span("export function invalidateQueries(")
+    if not span: fail("no invalidateQueries() to anchor resetQueries after")
+    src = src[:span[1]] + "\n" + NEW + src[span[1]:]
+    ok("resetQueries inserted")
 elif "entry.gen += 1;" in src:
     skip("resetQueries already the clear-only version")
-elif OLD_FIRST_CUT in src:
-    once(OLD_FIRST_CUT, NEW, "resetQueries upgraded from the refetching first cut")
 else:
-    fail("resetQueries exists in an unknown shape; upgrade it by hand to the clear-only version")
+    # first cut (refetched active entries): replace the whole function + its doc comment
+    fi = src.find("export function resetQueries")
+    doc = src.rfind("/**", 0, fi)
+    fe = src.find("\n}\n", fi) + 3
+    if doc == -1 or src.find("*/", doc, fi) == -1: doc = fi
+    src = src[:doc] + NEW + src[fe:]
+    ok("resetQueries upgraded from the refetching first cut")
 
 open(path, "w").write(src)
 PY
@@ -331,75 +289,105 @@ PY
 
 patch_auth() {
   local f="$1/web/src/stores/auth.svelte.ts"
-  replace_once "$f" 'import { runContextSwitch }' \
-'import { defineStore } from "../lib/devpanel/store.svelte";
-' \
-'import { defineStore } from "../lib/devpanel/store.svelte";
-import { runContextSwitch } from "../lib/context-switch.svelte";
-' "auth.svelte.ts: import runContextSwitch"
-  if grep -qF 'runContextSwitch();' "$f"; then
-    skip "auth.svelte.ts: logout already fires runContextSwitch"
-  else
-    # Clones differ in the redirect target (`redirectTo` vs "#/login"), so
-    # anchor on the `state.user = null;` line that precedes the hash write.
-    python3 - "$f" <<'PY'
+  if [ ! -f "$f" ]; then fail "missing $f"; fi
+  python3 - "$f" <<'PY'
 import re, sys
 path = sys.argv[1]
 src = open(path).read()
-pat = re.compile(r"(\n  state\.user = null;\n)(  window\.location\.hash = )")
-if len(pat.findall(src)) != 1:
-    print("ERR: auth.svelte.ts: expected one `state.user = null;` followed by the hash redirect in logout()", file=sys.stderr)
-    sys.exit(1)
-hook = """  // Signing out is a context switch: clear every tenant-scoped store and
+def ok(m): print(f"  [ok]   auth.svelte.ts: {m}")
+def skip(m): print(f"  [skip] auth.svelte.ts: {m}")
+def fail(m): print(f"ERR: auth.svelte.ts: {m}", file=sys.stderr); sys.exit(1)
+
+if "import { runContextSwitch }" in src:
+    skip("import already present")
+else:
+    a = 'import { defineStore } from "../lib/devpanel/store.svelte";\n'
+    line = 'import { runContextSwitch } from "../lib/context-switch.svelte";\n'
+    if src.count(a) == 1:
+        src = src.replace(a, a + line)
+    else:
+        imports = list(re.finditer(r"^import .*;\n", src, re.M))
+        if not imports: fail("no import lines to anchor on")
+        e = imports[-1].end()
+        src = src[:e] + line + src[e:]
+    ok("import runContextSwitch")
+
+if "runContextSwitch();" in src:
+    skip("logout already fires runContextSwitch")
+else:
+    i = src.find("async function logout(")
+    if i == -1: i = src.find("function logout(")
+    if i == -1: fail("no logout() function")
+    j = src.find("\n}\n", i)
+    body = src[i:j]
+    if "state.user = null;" not in body: fail("logout() does not clear `state.user`; patch by hand")
+    hook = """  // Signing out is a context switch: clear every tenant-scoped store and
   // the query cache so the next sign-in (same SPA lifetime, maybe another
   // user or organization) never sees this session's data.
   runContextSwitch();
 """
-src = pat.sub(lambda m: m.group(1) + hook + m.group(2), src, count=1)
+    m = list(re.finditer(r"^\s*window\.location\.hash = .*$", body, re.M))
+    if m:
+        k = m[-1].start()
+        body = body[:k] + hook + body[k:]
+    else:
+        body = body + "\n" + hook.rstrip("\n")
+    src = src[:i] + body + src[j:]
+    ok("logout fires runContextSwitch")
+
 open(path, "w").write(src)
 PY
-    ok "auth.svelte.ts: logout fires runContextSwitch"
-  fi
 }
 
 patch_org() {
   local f="$1/web/src/stores/organization.svelte.ts"
-  replace_once "$f" 'import { registerContextReset }' \
-'import { defineStore } from "../lib/devpanel/store.svelte";
-' \
-'import { defineStore } from "../lib/devpanel/store.svelte";
-import { registerContextReset } from "../lib/context-switch.svelte";
-' "organization.svelte.ts: import registerContextReset"
-  replace_once "$f" 'registerContextReset(reset);' \
-'function reset(): void {
-  state.currentOrg = null;
-  state.members = [];
-  state.pendingInvites = [];
-  state.isLoading = false;
-  state.error = null;
-}
-' \
-'function reset(): void {
-  state.currentOrg = null;
-  state.members = [];
-  state.pendingInvites = [];
-  state.isLoading = false;
-  state.error = null;
-}
+  if [ ! -f "$f" ]; then warn "no organization.svelte.ts; register resets for your tenant-scoped stores by hand"; return; fi
+  python3 - "$f" <<'PY'
+import re, sys
+path = sys.argv[1]
+src = open(path).read()
+def ok(m): print(f"  [ok]   organization.svelte.ts: {m}")
+def skip(m): print(f"  [skip] organization.svelte.ts: {m}")
+def warn(m): print(f"  [warn] organization.svelte.ts: {m}", file=sys.stderr)
 
+if "registerContextReset(" in src:
+    skip("reset already registered")
+    sys.exit(0)
+i = src.find("function reset(): void {")
+if i == -1:
+    warn("no reset() function; register a reset for this store by hand")
+    sys.exit(0)
+a = 'import { defineStore } from "../lib/devpanel/store.svelte";\n'
+line = 'import { registerContextReset } from "../lib/context-switch.svelte";\n'
+if src.count(a) == 1:
+    src = src.replace(a, a + line)
+else:
+    imports = list(re.finditer(r"^import .*;\n", src, re.M))
+    e = imports[-1].end() if imports else 0
+    src = src[:e] + line + src[e:]
+ok("import registerContextReset")
+i = src.find("function reset(): void {")
+j = src.find("\n}\n", i) + 3
+src = src[:j] + """
 // Tenant-scoped: cleared on every context switch (org switch, logout) so a
 // remounted page never reads the previous organization out of this store.
 registerContextReset(reset);
-' "organization.svelte.ts: register reset"
+""" + src[j:]
+ok("register reset")
+open(path, "w").write(src)
+PY
 }
 
 patch_view_transitions() {
   local f="$1/web/src/lib/view-transitions-dom.ts"
   if [ ! -f "$f" ]; then warn "no view-transitions-dom.ts (older clone), skipping"; return; fi
-  replace_once "$f" 'transition.ready.catch' \
-'  (document as unknown as { startViewTransition: (cb: () => void) => void }).startViewTransition(update);
-}' \
-'  const transition = (document as unknown as {
+  if grep -qF 'transition.ready.catch' "$f"; then skip "view-transitions-dom.ts: already handled"; return; fi
+  python3 - "$f" <<'PY'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+old = "  (document as unknown as { startViewTransition: (cb: () => void) => void }).startViewTransition(update);\n}"
+new = """  const transition = (document as unknown as {
     startViewTransition: (cb: () => void) => { ready: Promise<void>; finished: Promise<void> };
   }).startViewTransition(update);
 
@@ -412,12 +400,15 @@ patch_view_transitions() {
   // the logout redirect).
   transition.ready.catch(() => {});
   transition.finished.catch(() => {});
-}' "view-transitions-dom.ts: handle skipped transitions"
+}"""
+if src.count(old) != 1:
+    print("  [warn] view-transitions-dom.ts: startViewTransition call has an unexpected shape; handle `ready`/`finished` rejections by hand", file=sys.stderr)
+    sys.exit(0)
+open(path, "w").write(src.replace(old, new))
+print("  [ok]   view-transitions-dom.ts: handle skipped transitions")
+PY
 }
 
-# CLAUDE.md: three anchored insertions. A missing anchor warns instead of
-# failing (customer hubs drift); the section is copied verbatim from this
-# template so the guidance test passes in the clone afterwards.
 patch_claude_md() {
   local f="$1/CLAUDE.md"
   if [ ! -f "$f" ]; then warn "no CLAUDE.md, skipping prompt guidance"; return; fi
@@ -426,22 +417,22 @@ import os, re, sys
 path = sys.argv[1]
 tpl = open(os.environ["CLAUDE_SRC"]).read()
 src = open(path).read()
+def warn(m): print(f"  [warn] {m}", file=sys.stderr)
+def ok(m): print(f"  [ok]   {m}")
+def skip(m): print(f"  [skip] {m}")
+if not src.endswith("\n"): src += "\n"
 
-def warn(msg): print(f"  [warn] {msg}", file=sys.stderr)
-def ok(msg): print(f"  [ok]   {msg}")
-def skip(msg): print(f"  [skip] {msg}")
-
-# 1. Hub section, copied verbatim from the template (heading .. before "### Routing").
+# 1. Hub section, verbatim from the template.
 sec_start = tpl.index("### Tenant and route context: the Router key, not per-page watches")
-sec_end = tpl.index("### Routing", sec_start)
-section = tpl[sec_start:sec_end]
+section = tpl[sec_start:tpl.index("### Routing", sec_start)]
 if "### Tenant and route context" in src:
     skip("CLAUDE.md: hub section already present")
 elif "### Routing" in src:
     src = src.replace("### Routing", section + "### Routing", 1)
     ok("CLAUDE.md: hub section inserted before '### Routing'")
 else:
-    warn("CLAUDE.md: no '### Routing' anchor; append the 'Tenant and route context' section by hand")
+    src += "\n## Frontend: tenant and route context\n\n" + section
+    ok("CLAUDE.md: hub section appended (no '### Routing' anchor)")
 
 # 2. Spoke table row.
 row = "| `frontend-state.md` | `web/src/App.svelte`, `web/src/routes/**`, `web/src/stores/**`, `query.svelte.ts`, `context-switch.svelte.ts` | Page lifetime and tenant context: the Router key, `runContextSwitch()`, store resets, the switcher checklist |\n"
@@ -449,22 +440,23 @@ if "| `frontend-state.md` |" in src:
     skip("CLAUDE.md: spoke table row already present")
 else:
     m = re.search(r"^\| `design\.md` \|.*\n", src, re.M)
-    if not m:
-        # Clones without the design spoke: append after the LAST row of the
-        # spoke table (the table whose header starts with "| Spoke |").
-        h = re.search(r"^\| Spoke \|.*\n\|[-| ]+\n", src, re.M)
-        if h:
-            end = h.end()
-            for line in src[end:].split("\n"):
-                if not line.startswith("|"): break
-                end += len(line) + 1
-            src = src[:end] + row + src[end:]
-            ok("CLAUDE.md: spoke table row added (after the last spoke row)")
-        else:
-            warn("CLAUDE.md: no spoke table found; add the frontend-state.md row by hand")
-    else:
+    h = re.search(r"^\| Spoke \|.*\n\|[-| ]+\n", src, re.M)
+    if m:
         src = src[:m.end()] + row + src[m.end():]
         ok("CLAUDE.md: spoke table row added")
+    elif h:
+        end = h.end()
+        for line in src[end:].split("\n"):
+            if not line.startswith("|"): break
+            end += len(line) + 1
+        src = src[:end] + row + src[end:]
+        ok("CLAUDE.md: spoke table row added (after the last spoke row)")
+    else:
+        src += ("\n## Convention spokes - `.claude/rules/`\n\n"
+                "Area-specific conventions live in `.claude/rules/<name>.md`, each scoped to a\n"
+                "path glob via `paths:` frontmatter. A spoke loads only when you work in its area.\n\n"
+                "| Spoke | Auto-loads when you touch | Covers |\n|---|---|---|\n" + row)
+        ok("CLAUDE.md: spoke table created with the frontend-state.md row (no table existed)")
 
 # 3. Common Pitfalls tripwire.
 bullet = "- **A tenant switch (org / workspace / account) or logout must call `runContextSwitch()` AFTER the server confirms, and every `<Router>` stays inside the `routerKey` `{#key}` in `App.svelte`** -- pages fetch in `onMount` and rely on the remount; a per-page org-id watch is the wrong fix (see \"Tenant and route context\")\n"
@@ -472,11 +464,19 @@ if "must call `runContextSwitch()` AFTER the server confirms" in src:
     skip("CLAUDE.md: pitfalls tripwire already present")
 else:
     m = re.search(r"^- \*\*SPA error redirects use `replace\(\)`, not `push\(\)`\*\*.*\n", src, re.M)
+    h = re.search(r"^## Common Pitfalls\s*\n", src, re.M)
     if m:
         src = src[:m.end()] + bullet + src[m.end():]
         ok("CLAUDE.md: pitfalls tripwire added")
+    elif h:
+        # first bullet under the heading
+        b = re.compile(r"^- ", re.M).search(src, h.end())
+        at = b.start() if b else h.end()
+        src = src[:at] + bullet + src[at:]
+        ok("CLAUDE.md: pitfalls tripwire added under '## Common Pitfalls'")
     else:
-        warn("CLAUDE.md: no 'SPA error redirects' pitfall anchor; add the tripwire bullet by hand")
+        src += "\n## Common Pitfalls\n\n" + bullet
+        ok("CLAUDE.md: '## Common Pitfalls' created with the tripwire")
 
 open(path, "w").write(src)
 PY
@@ -489,8 +489,8 @@ apply_to() {
     warn "$target doesn't look like a template clone (missing app.ts or web/), skipping"
     return
   fi
-  if [ ! -f "$target/web/src/lib/query.svelte.ts" ]; then
-    warn "$target predates the createQuery layer; apply that retrofit first, skipping"
+  if [ ! -f "$target/web/src/App.svelte" ] || [ ! -f "$target/web/src/stores/auth.svelte.ts" ]; then
+    warn "$target has no web/src/App.svelte or auth store, skipping"
     return
   fi
   printf "\n-> %s\n" "$target"

@@ -78,18 +78,35 @@ Deno.test("context switch: the module exports the signal and orders reset -> que
   assert(/get epoch\(\): number/.test(src), "contextSwitch must expose a reactive epoch getter");
   assert(/export function registerContextReset\(/.test(src), "must export registerContextReset");
   assert(/export function runContextSwitch\(\): void/.test(src), "must export runContextSwitch");
-  assert(/import \{ resetQueries \} from "\.\/query\.svelte"/.test(src), "must import resetQueries");
 
   const fnStart = src.indexOf("export function runContextSwitch");
   const body = src.slice(fnStart);
   const loopAt = body.indexOf("for (const fn of resets)");
-  const queriesAt = body.indexOf("resetQueries();");
   const bumpAt = body.indexOf("epoch += 1;");
-  assert(loopAt !== -1 && queriesAt !== -1 && bumpAt !== -1, "runContextSwitch must run resets, resetQueries() and bump the epoch");
-  assert(loopAt < queriesAt && queriesAt < bumpAt, "order must be: store resets, then resetQueries(), then the epoch bump (the bump is what remounts; nothing stale may survive it)");
+  assert(loopAt !== -1 && bumpAt !== -1, "runContextSwitch must run the resets and bump the epoch");
+  if (await hasQueryLayer()) {
+    assert(/import \{ resetQueries \} from "\.\/query\.svelte"/.test(src), "must import resetQueries");
+    const queriesAt = body.indexOf("resetQueries();");
+    assert(queriesAt !== -1, "runContextSwitch must call resetQueries()");
+    assert(loopAt < queriesAt && queriesAt < bumpAt, "order must be: store resets, then resetQueries(), then the epoch bump (the bump is what remounts; nothing stale may survive it)");
+  } else {
+    // A clone that predates createQuery: the retrofit strips the import.
+    assert(loopAt < bumpAt, "order must be: store resets, then the epoch bump");
+  }
 });
 
+/** Clones provisioned before the createQuery layer have no query.svelte.ts. */
+async function hasQueryLayer(): Promise<boolean> {
+  try {
+    await Deno.stat(new URL("lib/query.svelte.ts", WEB_SRC));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 Deno.test("context switch: the query layer can drop its whole cache", async () => {
+  if (!(await hasQueryLayer())) return; // nothing to reset in a pre-createQuery clone
   const src = await read("lib/query.svelte.ts");
   assert(/export function resetQueries\(\): void/.test(src), "query.svelte.ts must export resetQueries");
   const fnStart = src.indexOf("export function resetQueries");
