@@ -86,61 +86,95 @@ PY
 
 patch_app_svelte() {
   local f="$1/web/src/App.svelte"
-  replace_once "$f" 'import { contextSwitch }' \
-'  import { authStore } from "./stores/auth.svelte";
-' \
-'  import { authStore } from "./stores/auth.svelte";
-  import { contextSwitch } from "./lib/context-switch.svelte";
-' "App.svelte: import contextSwitch"
+  if [ ! -f "$f" ]; then fail "missing $f"; fi
+  # Clones drift here (a cockpit shell instead of the portal lane, extra
+  # comments around the bare Router, a different showLayout predicate), so
+  # this patch is shape-tolerant: it anchors on the auth-store import, the
+  # first </script>, each `<Router {routes} />` line, and the {:else} that
+  # owns the bare Router, and it builds the signed-out condition from the
+  # derived names the file actually defines.
+  python3 - "$f" <<'PY'
+import re, sys
+path = sys.argv[1]
+src = open(path).read()
+def ok(m): print(f"  [ok]   App.svelte: {m}")
+def skip(m): print(f"  [skip] App.svelte: {m}")
+def fail(m): print(f"ERR: App.svelte: {m}", file=sys.stderr); sys.exit(1)
 
-  replace_once "$f" 'const routerKey = $derived' \
-'  const showLayout = $derived(
-    !authStore.isLoading && authStore.isAuthenticated && !onPublicRoute && !onPortalRoute,
-  );
-</script>
-' \
-'  const showLayout = $derived(
-    !authStore.isLoading && authStore.isAuthenticated && !onPublicRoute && !onPortalRoute,
-  );
+if "import { contextSwitch }" in src:
+    skip("import already present")
+else:
+    anchor = 'import { authStore } from "./stores/auth.svelte";\n'
+    if src.count(anchor) != 1: fail("no single authStore import to anchor on")
+    src = src.replace(anchor, anchor + '  import { contextSwitch } from "./lib/context-switch.svelte";\n', 1)
+    ok("import contextSwitch")
 
+if "const routerKey = $derived" in src:
+    skip("routerKey already present")
+else:
+    block = """
   // Router key: the routed page mounts fresh whenever the tenant context
   // changes (contextSwitch.epoch, bumped by runContextSwitch() on an
   // org / workspace / account switch and on logout) or the path changes
   // ($location, so /things/A -> /things/B remounts the detail page
-  // instead of leaving it on A'"'"'s data). Pages fetch in onMount and rely
+  // instead of leaving it on A's data). Pages fetch in onMount and rely
   // on THIS to re-run; never add a per-page org-id watch instead. See
   // web/src/lib/context-switch.svelte.ts and CLAUDE.md -> "Tenant and
   // route context". Both <Router> mounts below must stay inside the key.
   const routerKey = $derived(`${contextSwitch.epoch}:${$location}`);
 </script>
-' "App.svelte: routerKey"
+"""
+    i = src.find("</script>\n")
+    if i == -1: fail("no </script>")
+    src = src[:i].rstrip("\n") + "\n" + block + src[i + len("</script>\n"):]
+    ok("routerKey")
 
-  replace_once "$f" '{#key routerKey}' \
-'    <main class="app-main">
-      <Router {routes} />
-    </main>
-  </div>
-{:else}
-  <Router {routes} />
-{/if}' \
-'    <main class="app-main">
-      {#key routerKey}
-        <Router {routes} />
-      {/key}
-    </main>
-  </div>
-{:else if onPublicRoute || onPortalRoute || authStore.isAuthenticated}
-  {#key routerKey}
-    <Router {routes} />
-  {/key}
-{:else}
+if "{#key routerKey}" in src:
+    skip("routers already keyed")
+else:
+    lines = src.split("\n")
+    out = []
+    keyed = 0
+    for line in lines:
+        m = re.match(r"^(\s*)<Router \{routes\} />\s*$", line)
+        if m:
+            ind = m.group(1)
+            out += [f"{ind}{{#key routerKey}}", f"{ind}  <Router {{routes}} />", f"{ind}{{/key}}"]
+            keyed += 1
+        else:
+            out.append(line)
+    if keyed < 2: fail(f"expected at least two `<Router {{routes}} />` lines, found {keyed}")
+    src = "\n".join(out)
+    ok(f"keyed {keyed} <Router> mounts")
+
+if "Signed out on a protected path" in src:
+    skip("signed-out branch already present")
+else:
+    terms = ["onPublicRoute"]
+    if "const onPublicRoute" not in src: fail("no `const onPublicRoute` derived; cannot build the signed-out condition")
+    if "const onPortalRoute" in src: terms.append("onPortalRoute")
+    terms.append("authStore.isAuthenticated")
+    cond = " || ".join(terms)
+    # The {:else} that owns the bare (top-level, unindented key) Router.
+    m = re.search(r"^\{:else\}\n(?=(?:\s*<!--[\s\S]*?-->\n)?\s*\{#key routerKey\}\n)", src, re.M)
+    if not m: fail("could not find the {:else} branch that renders the bare <Router>")
+    src = src[:m.start()] + "{:else if " + cond + "}\n" + src[m.end():]
+    # Append the empty signed-out branch before the {/if} that closes it.
+    j = src.find("{/if}", m.start())
+    if j == -1: fail("no {/if} after the bare Router")
+    branch = """{:else}
   <!-- Signed out on a protected path: the redirect effect above is already
        moving us to /login. Rendering nothing here (instead of mounting the
        protected page for one frame) keeps its onMount loaders from firing
        against a session that no longer exists, which is what a logout
        from /settings used to do: three 401s and an aborted view
        transition in the console for every sign-out. -->
-{/if}' "App.svelte: key both routers + signed-out branch"
+"""
+    src = src[:j] + branch + src[j:]
+    ok(f"signed-out branch (condition: {cond})")
+
+open(path, "w").write(src)
+PY
 }
 
 patch_query() {
@@ -190,17 +224,29 @@ patch_auth() {
 'import { defineStore } from "../lib/devpanel/store.svelte";
 import { runContextSwitch } from "../lib/context-switch.svelte";
 ' "auth.svelte.ts: import runContextSwitch"
-  replace_once "$f" 'runContextSwitch();' \
-'  state.user = null;
-  window.location.hash = redirectTo;
-}' \
-'  state.user = null;
-  // Signing out is a context switch: clear every tenant-scoped store and
+  if grep -qF 'runContextSwitch();' "$f"; then
+    skip "auth.svelte.ts: logout already fires runContextSwitch"
+  else
+    # Clones differ in the redirect target (`redirectTo` vs "#/login"), so
+    # anchor on the `state.user = null;` line that precedes the hash write.
+    python3 - "$f" <<'PY'
+import re, sys
+path = sys.argv[1]
+src = open(path).read()
+pat = re.compile(r"(\n  state\.user = null;\n)(  window\.location\.hash = )")
+if len(pat.findall(src)) != 1:
+    print("ERR: auth.svelte.ts: expected one `state.user = null;` followed by the hash redirect in logout()", file=sys.stderr)
+    sys.exit(1)
+hook = """  // Signing out is a context switch: clear every tenant-scoped store and
   // the query cache so the next sign-in (same SPA lifetime, maybe another
-  // user or organization) never sees this session'"'"'s data.
+  // user or organization) never sees this session's data.
   runContextSwitch();
-  window.location.hash = redirectTo;
-}' "auth.svelte.ts: logout fires runContextSwitch"
+"""
+src = pat.sub(lambda m: m.group(1) + hook + m.group(2), src, count=1)
+open(path, "w").write(src)
+PY
+    ok "auth.svelte.ts: logout fires runContextSwitch"
+  fi
 }
 
 patch_org() {
@@ -290,11 +336,22 @@ if "| `frontend-state.md` |" in src:
     skip("CLAUDE.md: spoke table row already present")
 else:
     m = re.search(r"^\| `design\.md` \|.*\n", src, re.M)
-    if m:
+    if not m:
+        # Clones without the design spoke: append after the LAST row of the
+        # spoke table (the table whose header starts with "| Spoke |").
+        h = re.search(r"^\| Spoke \|.*\n\|[-| ]+\n", src, re.M)
+        if h:
+            end = h.end()
+            for line in src[end:].split("\n"):
+                if not line.startswith("|"): break
+                end += len(line) + 1
+            src = src[:end] + row + src[end:]
+            ok("CLAUDE.md: spoke table row added (after the last spoke row)")
+        else:
+            warn("CLAUDE.md: no spoke table found; add the frontend-state.md row by hand")
+    else:
         src = src[:m.end()] + row + src[m.end():]
         ok("CLAUDE.md: spoke table row added")
-    else:
-        warn("CLAUDE.md: no '| `design.md` |' table row; add the frontend-state.md row by hand")
 
 # 3. Common Pitfalls tripwire.
 bullet = "- **A tenant switch (org / workspace / account) or logout must call `runContextSwitch()` AFTER the server confirms, and every `<Router>` stays inside the `routerKey` `{#key}` in `App.svelte`** -- pages fetch in `onMount` and rely on the remount; a per-page org-id watch is the wrong fix (see \"Tenant and route context\")\n"
