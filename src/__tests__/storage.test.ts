@@ -279,3 +279,109 @@ Deno.test("getSignedDownloadUrl: clamps non-positive TTL to 1s", () => {
 Deno.test("release the storage-env lock", async () => {
   await releaseStorageEnvLock?.();
 });
+
+// ── Temporary credential: the session token rides on every request ────────
+//
+// Per-project storage hands the pod a TEMPORARY, bucket-scoped credential
+// (chipp-deno: docs/implementation-plans/customer-storage-per-project/
+// template-follow-up.md). It is a key pair PLUS `R2_SESSION_TOKEN`; a request
+// signed without the token is a 403 at R2. With the variable unset every
+// signature must be byte-identical to today's, so a legacy pod is untouched.
+
+function withSessionToken<T>(token: string | null, expiresAt: string | null, fn: () => T): T {
+  const prevToken = Deno.env.get("R2_SESSION_TOKEN");
+  const prevExp = Deno.env.get("R2_SESSION_EXPIRES_AT");
+  if (token === null) Deno.env.delete("R2_SESSION_TOKEN");
+  else Deno.env.set("R2_SESSION_TOKEN", token);
+  if (expiresAt === null) Deno.env.delete("R2_SESSION_EXPIRES_AT");
+  else Deno.env.set("R2_SESSION_EXPIRES_AT", expiresAt);
+  try {
+    return fn();
+  } finally {
+    if (prevToken === undefined) Deno.env.delete("R2_SESSION_TOKEN");
+    else Deno.env.set("R2_SESSION_TOKEN", prevToken);
+    if (prevExp === undefined) Deno.env.delete("R2_SESSION_EXPIRES_AT");
+    else Deno.env.set("R2_SESSION_EXPIRES_AT", prevExp);
+  }
+}
+
+/** Capture the one fetch a header-signed call makes; answer it as R2 would. */
+async function captureFetch(status: number, fn: () => Promise<unknown>): Promise<Request> {
+  const original = globalThis.fetch;
+  let captured: Request | null = null;
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    captured = new Request(input, init);
+    return Promise.resolve(new Response(null, { status }));
+  }) as typeof fetch;
+  try {
+    await fn();
+  } finally {
+    globalThis.fetch = original;
+  }
+  if (!captured) throw new Error("no fetch was made");
+  return captured;
+}
+
+Deno.test("presign: a session token is a signed query parameter, and it changes the signature", () => {
+  const plain = new URL(withSessionToken(null, null, () => storage.getSignedDownloadUrl("a/b.txt", 600)));
+  const withA = new URL(withSessionToken("tok-A", null, () => storage.getSignedDownloadUrl("a/b.txt", 600)));
+  const withB = new URL(withSessionToken("tok-B", null, () => storage.getSignedDownloadUrl("a/b.txt", 600)));
+  assertEquals(plain.searchParams.has("X-Amz-Security-Token"), false);
+  assertEquals(withA.searchParams.get("X-Amz-Security-Token"), "tok-A");
+  assertEquals(withB.searchParams.get("X-Amz-Security-Token"), "tok-B");
+  assertEquals(
+    withA.searchParams.get("X-Amz-Signature") === withB.searchParams.get("X-Amz-Signature"),
+    false,
+    "the token is inside the canonical request, so a different token signs differently",
+  );
+  assertEquals(withA.searchParams.get("X-Amz-Expires"), "600", "no expiry in the env means no clamp");
+});
+
+Deno.test("presign: the URL never outlives the temporary credential", () => {
+  const soon = new Date(Date.now() + 120_000).toISOString();
+  const url = new URL(withSessionToken("tok", soon, () => storage.getSignedUploadUrl("a/b.txt", "text/plain", 3600)));
+  const expires = Number(url.searchParams.get("X-Amz-Expires"));
+  assertEquals(expires <= 120 && expires >= 100, true, `clamped to the credential: ${expires}`);
+  const legacy = new URL(withSessionToken(null, soon, () => storage.getSignedUploadUrl("a/b.txt", "text/plain", 3600)));
+  assertEquals(legacy.searchParams.get("X-Amz-Expires"), "3600", "no token, no clamp");
+});
+
+Deno.test("putObject: the session token is sent and named in SignedHeaders; absent, the signature is unchanged", async () => {
+  const body = new TextEncoder().encode("hello");
+  const withTok = await withSessionToken("tok-put", null, () =>
+    captureFetch(200, () => storage.putObject({ key: "t/hello.txt", body, contentType: "text/plain" })));
+  assertEquals(withTok.headers.get("X-Amz-Security-Token"), "tok-put");
+  assertEquals(
+    /SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token,/.test(withTok.headers.get("Authorization") ?? ""),
+    true,
+    withTok.headers.get("Authorization") ?? "",
+  );
+  const without = await withSessionToken(null, null, () =>
+    captureFetch(200, () => storage.putObject({ key: "t/hello.txt", body, contentType: "text/plain" })));
+  assertEquals(without.headers.has("X-Amz-Security-Token"), false);
+  assertEquals(
+    /SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date,/.test(without.headers.get("Authorization") ?? ""),
+    true,
+    without.headers.get("Authorization") ?? "",
+  );
+});
+
+Deno.test("deleteObject: the session token is sent and named in SignedHeaders", async () => {
+  const req = await withSessionToken("tok-del", null, () =>
+    captureFetch(204, () => storage.deleteObject("t/hello.txt")));
+  assertEquals(req.method, "DELETE");
+  assertEquals(req.headers.get("X-Amz-Security-Token"), "tok-del");
+  assertEquals(
+    /SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token,/.test(req.headers.get("Authorization") ?? ""),
+    true,
+    req.headers.get("Authorization") ?? "",
+  );
+});
+
+Deno.test("describeStorageConfig: reports whether a session token is in use, never its value", () => {
+  const on = withSessionToken("tok-secret", null, () => storage.describeStorageConfig());
+  const off = withSessionToken(null, null, () => storage.describeStorageConfig());
+  assertEquals(on.sessionToken, true);
+  assertEquals(off.sessionToken, false);
+  assertEquals(JSON.stringify(on).includes("tok-secret"), false);
+});

@@ -1,0 +1,14 @@
+# Deployment declarations the platform reads at build-complete
+# (chipp-deno: src/alchemist/services/deployment-manifest-parser.service.ts).
+# Every key is optional; the schema is strict, so an unknown key fails the
+# parse and the build keeps the defaults.
+#
+# storage.sessionToken: this app's storage client
+# (src/services/storage.service.ts) sends R2_SESSION_TOKEN on every R2
+# request, header-signed and query-signed. That is what lets the platform
+# hand this pod a TEMPORARY credential bound to the project's own bucket
+# instead of the shared account-wide key. Remove this line and the platform
+# keeps (or returns to) the legacy shared-bucket env for this project; a
+# storage-migrated project can no longer deploy without it.
+storage:
+  sessionToken: true

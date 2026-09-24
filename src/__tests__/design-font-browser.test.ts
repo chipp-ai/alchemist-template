@@ -31,7 +31,7 @@ async function read(path: string): Promise<string> {
 
 deno("Design.svelte: openBrowser() does not eagerly load every font's specimen on modal open", async () => {
   const src = await read("web/src/routes/Design.svelte");
-  const fnMatch = src.match(/function openBrowser\([\s\S]*?\n  \}/);
+  const fnMatch = src.match(/function openBrowser\([\s\S]*?\n {2}\}/);
   assert(fnMatch, "Design.svelte should define openBrowser()");
   const body = fnMatch![0];
   assert(
@@ -51,7 +51,7 @@ deno("Design.svelte: a lazy-load action backs the font specimen request", async 
   // IntersectionObserver callback, and disconnects once it has fired —
   // it shouldn't keep observing (and re-requesting) after the family's
   // specimen has already been loaded once.
-  const actionMatch = src.match(/function lazySpecimen\([\s\S]*?\n  \}/);
+  const actionMatch = src.match(/function lazySpecimen\([\s\S]*?\n {2}\}/);
   assert(actionMatch, "Design.svelte should define a lazySpecimen (or equivalently named) action");
   const body = actionMatch![0];
   assertStringIncludes(body, "isIntersecting");
