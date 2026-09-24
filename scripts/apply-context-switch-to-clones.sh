@@ -123,14 +123,14 @@ if "{#key routerKey}" in src:
 else:
     out, keyed = [], 0
     for line in src.split("\n"):
-        m = re.match(r"^(\s*)<Router \{routes\} />\s*$", line)
+        m = re.match(r"^(\s*)(<Router\b[^>]*/>)\s*$", line)
         if m:
-            ind = m.group(1)
-            out += [f"{ind}{{#key routerKey}}", f"{ind}  <Router {{routes}} />", f"{ind}{{/key}}"]
+            ind, tag = m.group(1), m.group(2)
+            out += [f"{ind}{{#key routerKey}}", f"{ind}  {tag}", f"{ind}{{/key}}"]
             keyed += 1
         else:
             out.append(line)
-    if keyed < 2: fail(f"expected at least two `<Router {{routes}} />` lines, found {keyed}")
+    if keyed < 2: fail(f"expected at least two single-line `<Router ... />` mounts, found {keyed}")
     src = "\n".join(out)
     ok(f"keyed {keyed} <Router> mounts")
 
@@ -138,9 +138,19 @@ else:
 if "Signed out on a protected path" in src:
     skip("signed-out branch already present")
 else:
+    def warn(m): print(f"  [warn] App.svelte: {m}", file=sys.stderr)
     if "const onPublicRoute" in src: pub = "onPublicRoute"
+    elif re.search(r"const isPublicRoute = \$derived\(", src): pub = "isPublicRoute"
     elif re.search(r"import routes, \{[^}]*\bisPublicRoute\b", src): pub = "isPublicRoute($location)"
-    else: fail("neither `const onPublicRoute` nor an isPublicRoute import; cannot build the signed-out condition")
+    elif re.search(r"import routes, \{[^}]*\bpublicRoutes\b", src): pub = "publicRoutes.has($location)"
+    else: pub = None
+    if pub is None:
+        # A custom shell (own admin / public / auth-form branches). The guard
+        # (routerKey on every Router) is in place; the signed-out branch only
+        # avoids a one-frame mount of a protected page after logout.
+        warn("custom shell without a public-route predicate; signed-out branch skipped (routers are keyed, the guard holds)")
+        open(path, "w").write(src)
+        sys.exit(0)
     terms = [pub]
     if "const onPortalRoute" in src: terms.append("onPortalRoute")
     terms.append("authStore.isAuthenticated")
@@ -156,7 +166,10 @@ else:
             else_i = i; break
         if s.startswith("{:else if") or s.startswith("{#if") or s == "{/if}":
             break
-    if else_i is None: fail("could not find the {:else} branch that renders the bare <Router>")
+    if else_i is None:
+        warn("no bare {:else} branch around the last <Router> (custom shell); signed-out branch skipped (routers are keyed, the guard holds)")
+        open(path, "w").write(src)
+        sys.exit(0)
     ind = lines[else_i][: len(lines[else_i]) - len(lines[else_i].lstrip())]
     lines[else_i] = f"{ind}{{:else if {cond}}}"
     # the {/if} that closes that branch: first {/if} after the bare Router's {/key}
@@ -215,9 +228,9 @@ else:
     span = fn_span("function revalidate<T>(")
     if not span: fail("no revalidate<T>() function")
     body = src[span[0]:span[1]]
-    a = "  if (entry.inFlight) return entry.inFlight;\n"
-    if body.count(a) != 1: fail("revalidate() has no single `if (entry.inFlight) return entry.inFlight;`")
-    body = body.replace(a, a + "  const gen = entry.gen;\n")
+    a = "  entry.state.isFetching = true;\n"
+    if body.count(a) != 1: fail("revalidate() has no single `entry.state.isFetching = true;` to anchor the generation on")
+    body = body.replace(a, "  const gen = entry.gen;\n" + a)
     for opener, guard in [
         (".then((data) => {\n", "      if (gen !== entry.gen) return; // reset happened mid-flight: stale tenant\n"),
         (".catch((err) => {\n", "      if (gen !== entry.gen) return;\n"),
@@ -320,7 +333,7 @@ else:
     if i == -1: fail("no logout() function")
     j = src.find("\n}\n", i)
     body = src[i:j]
-    if "state.user = null;" not in body: fail("logout() does not clear `state.user`; patch by hand")
+    if not re.search(r"^\s*(state\.)?user = null;", body, re.M): fail("logout() does not clear the user; patch by hand")
     hook = """  // Signing out is a context switch: clear every tenant-scoped store and
   // the query cache so the next sign-in (same SPA lifetime, maybe another
   // user or organization) never sees this session's data.
