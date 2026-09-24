@@ -3,6 +3,7 @@
   import Router, { location, push, replace } from "svelte-spa-router";
   import routes, { isPortalRoute, isPublicRoute } from "./routes";
   import { authStore } from "./stores/auth.svelte";
+  import { contextSwitch } from "./lib/context-switch.svelte";
   import { sessionTimeoutStore } from "./stores/sessionTimeout.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import SessionTimeoutWarning from "./components/SessionTimeoutWarning.svelte";
@@ -81,6 +82,16 @@
   const showLayout = $derived(
     !authStore.isLoading && authStore.isAuthenticated && !onPublicRoute && !onPortalRoute,
   );
+
+  // Router key: the routed page mounts fresh whenever the tenant context
+  // changes (contextSwitch.epoch, bumped by runContextSwitch() on an
+  // org / workspace / account switch and on logout) or the path changes
+  // ($location, so /things/A -> /things/B remounts the detail page
+  // instead of leaving it on A's data). Pages fetch in onMount and rely
+  // on THIS to re-run; never add a per-page org-id watch instead. See
+  // web/src/lib/context-switch.svelte.ts and CLAUDE.md -> "Tenant and
+  // route context". Both <Router> mounts below must stay inside the key.
+  const routerKey = $derived(`${contextSwitch.epoch}:${$location}`);
 </script>
 
 {#if authStore.isLoading}
@@ -91,11 +102,22 @@
   <div class="app-layout" data-testid="app-layout">
     <Sidebar />
     <main class="app-main">
-      <Router {routes} />
+      {#key routerKey}
+        <Router {routes} />
+      {/key}
     </main>
   </div>
+{:else if onPublicRoute || onPortalRoute || authStore.isAuthenticated}
+  {#key routerKey}
+    <Router {routes} />
+  {/key}
 {:else}
-  <Router {routes} />
+  <!-- Signed out on a protected path: the redirect effect above is already
+       moving us to /login. Rendering nothing here (instead of mounting the
+       protected page for one frame) keeps its onMount loaders from firing
+       against a session that no longer exists, which is what a logout
+       from /settings used to do: three 401s and an aborted view
+       transition in the console for every sign-out. -->
 {/if}
 
 <!--

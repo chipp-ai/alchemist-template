@@ -32,7 +32,19 @@ export function runWithViewTransition(update: () => void): void {
     return;
   }
 
-  (document as unknown as { startViewTransition: (cb: () => void) => void }).startViewTransition(update);
+  const transition = (document as unknown as {
+    startViewTransition: (cb: () => void) => { ready: Promise<void>; finished: Promise<void> };
+  }).startViewTransition(update);
+
+  // A transition that gets skipped (a second navigation lands mid-fade, the
+  // tab is hidden, the routed tree remounts under it) rejects `ready` with
+  // InvalidStateError. That is the browser saying "no cross-fade this
+  // time", not a failure: `update()` already ran. Without these handlers
+  // every skipped fade surfaces as an unhandled promise rejection in the
+  // console (seen on logout, which navigates twice: the auth effect and
+  // the logout redirect).
+  transition.ready.catch(() => {});
+  transition.finished.catch(() => {});
 }
 
 /**

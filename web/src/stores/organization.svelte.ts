@@ -22,6 +22,7 @@
 
 import { api, ApiError } from "../lib/api";
 import { defineStore } from "../lib/devpanel/store.svelte";
+import { registerContextReset } from "../lib/context-switch.svelte";
 
 // ---------- Types ----------
 
@@ -221,6 +222,10 @@ function reset(): void {
   state.isLoading = false;
   state.error = null;
 }
+
+// Tenant-scoped: cleared on every context switch (org switch, logout) so a
+// remounted page never reads the previous organization out of this store.
+registerContextReset(reset);
 
 // ---------- Export ----------
 

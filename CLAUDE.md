@@ -143,6 +143,7 @@ when you work in its area, so the hub stays focused.
 | `services-jobs.md` | `src/services/**`, `src/jobs/**` | Service structure, logging contract, `AppError` classes |
 | `events.md` | `src/lib/events.ts`, `src/jobs/event-consumer.ts`, `src/api/routes/events/**`, the events migration | Durable events: publish, consumer, inbox, outbound webhooks, retry and replay mechanics |
 | `design.md` | `web/src/design/**`, `app.css`, `*.svelte` | design.json, presets, font catalog, token rules, the /#/design sheet |
+| `frontend-state.md` | `web/src/App.svelte`, `web/src/routes/**`, `web/src/stores/**`, `query.svelte.ts`, `context-switch.svelte.ts` | Page lifetime and tenant context: the Router key, `runContextSwitch()`, store resets, the switcher checklist |
 
 In Claude Code these load when you read a matching file. The Alchemist
 build agent injects them when a tool call touches a matching path (and
@@ -564,6 +565,35 @@ later `.then()` write fires after the tracking phase and *can* be safe,
 but if the synchronous portion of the effect writes ANY reactive value,
 the loop is back. Default to `onMount` for fetchers; reach for `$effect`
 only when the reactivity is intentional.
+
+### Tenant and route context: the Router key, not per-page watches
+
+`onMount` runs once per mount, so a page that fetched for organization A
+keeps showing A after the user switches to organization B unless something
+remounts it. Chipp shipped exactly that bug on its billing page. This
+template closes the class in one place, and every page relies on it:
+
+- **`web/src/App.svelte` keys every `<Router>`** on
+  `` `${contextSwitch.epoch}:${$location}` ``. A tenant switch bumps the
+  epoch; a path change moves `$location`; either one destroys and remounts
+  the routed page, so its `onMount` loaders run again for the new context.
+  Never move a `<Router>` outside that key (a lint test fails the build).
+- **`runContextSwitch()`** (`web/src/lib/context-switch.svelte.ts`) is the
+  switch signal: it runs every registered store reset, drops the whole
+  `createQuery` cache via `resetQueries()`, then bumps the epoch. `logout()`
+  already calls it. **Any switcher you add (organization, workspace,
+  account) MUST call it after the server acknowledged the switch**, never
+  before, and must not rely on navigation instead.
+- **A store whose state mirrors tenant data registers a reset** once at
+  module load: `registerContextReset(() => { ... })`. Queries need nothing.
+- **Never key a refetch on an org or workspace id** in a page
+  (`$effect(() => { if (orgStore.currentOrg?.id) load(); })`): a same-org
+  re-select or a switch between two workspaces of one org never moves the
+  id, so the watch does nothing, while the epoch moves on every switch.
+- **Detail pages read `params.id` once in `onMount`**; the `$location` half
+  of the key remounts them on `/things/A` -> `/things/B`.
+
+Mechanics and the switcher checklist: `.claude/rules/frontend-state.md`.
 
 ### Routing
 
@@ -1930,6 +1960,7 @@ This section grows as mistakes are discovered. Check it before writing code.
 - **`whereIn()` with empty array crashes** -- guard with early return
 - **CamelCase in SELECT/INSERT, snake_case in WHERE/ORDER** -- the CamelCasePlugin only transforms result columns
 - **SPA error redirects use `replace()`, not `push()`** -- prevents back-button loops
+- **A tenant switch (org / workspace / account) or logout must call `runContextSwitch()` AFTER the server confirms, and every `<Router>` stays inside the `routerKey` `{#key}` in `App.svelte`** -- pages fetch in `onMount` and rely on the remount; a per-page org-id watch is the wrong fix (see "Tenant and route context")
 - **Hard reload after frontend changes** -- HMR is disabled
 - **Test isolation requires `createIsolatedUser()`** -- shared users cause FK violations in parallel tests
 - **Deno 2: `Deno.run` removed** -- use `new Deno.Command(...)` (Deno 1 idiom is the default in training data)

@@ -14,6 +14,7 @@
 
 import { api, ApiError } from "../lib/api";
 import { defineStore } from "../lib/devpanel/store.svelte";
+import { runContextSwitch } from "../lib/context-switch.svelte";
 import { identifyChippInsightsUser } from "../lib/chipp-insights";
 
 // ---------- Types ----------
@@ -138,6 +139,10 @@ async function logout(redirectTo = "#/login"): Promise<void> {
     // Swallow errors — we clear state regardless.
   }
   state.user = null;
+  // Signing out is a context switch: clear every tenant-scoped store and
+  // the query cache so the next sign-in (same SPA lifetime, maybe another
+  // user or organization) never sees this session's data.
+  runContextSwitch();
   window.location.hash = redirectTo;
 }
 

@@ -260,6 +260,24 @@ export function invalidateQueries(prefix: string): void {
   }
 }
 
+/**
+ * Drop every cached result (data AND error) and refetch the active ones.
+ * Called by `runContextSwitch()` (web/src/lib/context-switch.svelte.ts)
+ * when the tenant changes or the user signs out: query keys carry no
+ * tenant id, so a cached `shipments:list` from the previous organization
+ * would otherwise be served, instantly and wrong, to the next one. Unlike
+ * `invalidateQueries`, this does not keep stale data on screen while the
+ * refetch runs; there is no "stale" version of another tenant's data.
+ */
+export function resetQueries(): void {
+  for (const entry of CACHE.values()) {
+    entry.state.data = undefined;
+    entry.state.error = null;
+    entry.state.updatedAt = 0;
+    if (isActive(entry)) void revalidate(entry);
+  }
+}
+
 // ── Window-focus revalidation (one global listener) ────────────────────────
 if (typeof window !== "undefined") {
   const onFocus = () => {
