@@ -95,6 +95,9 @@ interface QueryEntry<T> {
   /** epoch ms of the last `.data` read — drives the "active" window. */
   lastReadAt: number;
   inFlight: Promise<void> | null;
+  /** Bumped by resetQueries(); a fetch started under an older generation
+   *  discards its result so a previous tenant's response can never land. */
+  gen: number;
   intervalTimer: ReturnType<typeof setInterval> | null;
   handle: Query<T>;
 }
@@ -128,19 +131,23 @@ function isStale(entry: QueryEntry<unknown>): boolean {
 function revalidate<T>(entry: QueryEntry<T>): Promise<void> {
   // Dedupe: one fetch at a time per key; concurrent triggers share it.
   if (entry.inFlight) return entry.inFlight;
+  const gen = entry.gen;
   entry.state.isFetching = true;
   entry.inFlight = entry
     .fetcher()
     .then((data) => {
+      if (gen !== entry.gen) return; // reset happened mid-flight: stale tenant
       entry.state.data = data;
       entry.state.error = null;
       entry.state.updatedAt = Date.now();
     })
     .catch((err) => {
+      if (gen !== entry.gen) return;
       // Keep last good data; surface the error. Next trigger retries.
       entry.state.error = err instanceof Error ? err.message : String(err);
     })
     .finally(() => {
+      if (gen !== entry.gen) return; // the reset already cleared these
       entry.state.isFetching = false;
       entry.inFlight = null;
     });
@@ -193,6 +200,7 @@ export function createQuery<T>(opts: {
     refetchOnWindowFocus: opts.refetchOnWindowFocus ?? true,
     lastReadAt: 0,
     inFlight: null,
+    gen: 0,
     intervalTimer: null,
     handle: null as unknown as Query<T>,
   };
@@ -261,20 +269,30 @@ export function invalidateQueries(prefix: string): void {
 }
 
 /**
- * Drop every cached result (data AND error) and refetch the active ones.
+ * Drop every cached result (data AND error) without refetching anything.
  * Called by `runContextSwitch()` (web/src/lib/context-switch.svelte.ts)
  * when the tenant changes or the user signs out: query keys carry no
  * tenant id, so a cached `shipments:list` from the previous organization
- * would otherwise be served, instantly and wrong, to the next one. Unlike
- * `invalidateQueries`, this does not keep stale data on screen while the
- * refetch runs; there is no "stale" version of another tenant's data.
+ * would otherwise be served, instantly and wrong, to the next one.
+ *
+ * Three deliberate differences from `invalidateQueries`:
+ *   - nothing is refetched here: on logout there is no session to fetch
+ *     with (every active query would 401), and on a tenant switch the
+ *     remounted page's first read triggers the fetch anyway;
+ *   - `lastReadAt` drops to 0 so the poll interval and the window-focus
+ *     handler treat the entry as inactive until a remounted page reads it;
+ *   - `gen` is bumped and `inFlight` cleared so a fetch that started under
+ *     the previous tenant discards its result instead of landing late.
  */
 export function resetQueries(): void {
   for (const entry of CACHE.values()) {
+    entry.gen += 1;
+    entry.inFlight = null;
+    entry.lastReadAt = 0;
     entry.state.data = undefined;
     entry.state.error = null;
     entry.state.updatedAt = 0;
-    if (isActive(entry)) void revalidate(entry);
+    entry.state.isFetching = false;
   }
 }
 

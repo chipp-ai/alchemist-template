@@ -92,10 +92,13 @@ Deno.test("context switch: the module exports the signal and orders reset -> que
 Deno.test("context switch: the query layer can drop its whole cache", async () => {
   const src = await read("lib/query.svelte.ts");
   assert(/export function resetQueries\(\): void/.test(src), "query.svelte.ts must export resetQueries");
-  const body = src.slice(src.indexOf("export function resetQueries"));
-  for (const needle of ["entry.state.data = undefined;", "entry.state.error = null;", "entry.state.updatedAt = 0;"]) {
+  const fnStart = src.indexOf("export function resetQueries");
+  const body = src.slice(fnStart, src.indexOf("\n}\n", fnStart) + 3);
+  for (const needle of ["entry.gen += 1;", "entry.inFlight = null;", "entry.lastReadAt = 0;", "entry.state.data = undefined;", "entry.state.error = null;", "entry.state.updatedAt = 0;"]) {
     assert(body.includes(needle), `resetQueries must include '${needle}'`);
   }
+  assert(!/revalidate\(/.test(body), "resetQueries must NOT refetch: on logout there is no session (every active query would 401); the remounted page's first read fetches");
+  assert(/const gen = entry\.gen;/.test(src) && /if \(gen !== entry\.gen\) return;/.test(src), "revalidate() must discard a result whose generation predates a reset");
 });
 
 Deno.test("context switch: logout fires it, and the organization store registers its reset", async () => {

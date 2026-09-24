@@ -179,31 +179,125 @@ PY
 
 patch_query() {
   local f="$1/web/src/lib/query.svelte.ts"
-  replace_once "$f" 'export function resetQueries' \
-'export function invalidateQueries(prefix: string): void {
-  for (const [key, entry] of CACHE) {
-    if (!key.startsWith(prefix)) continue;
-    entry.state.updatedAt = 0;
-    if (isActive(entry)) void revalidate(entry);
-  }
-}
-' \
-'export function invalidateQueries(prefix: string): void {
-  for (const [key, entry] of CACHE) {
-    if (!key.startsWith(prefix)) continue;
-    entry.state.updatedAt = 0;
-    if (isActive(entry)) void revalidate(entry);
-  }
-}
+  if [ ! -f "$f" ]; then fail "missing $f"; fi
+  # Four sentinel-guarded steps. Step 4 also UPGRADES a clone that received
+  # the first cut of resetQueries (which refetched active entries and so
+  # fired 401s on logout) to the clear-only version with the generation
+  # guard.
+  python3 - "$f" <<'PY'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+def ok(m): print(f"  [ok]   query.svelte.ts: {m}")
+def skip(m): print(f"  [skip] query.svelte.ts: {m}")
+def fail(m): print(f"ERR: query.svelte.ts: {m}", file=sys.stderr); sys.exit(1)
+def once(old, new, label):
+    global src
+    n = src.count(old)
+    if n != 1: fail(f"{label}: expected one anchor match, found {n}")
+    src = src.replace(old, new)
+    ok(label)
 
-/**
+# 1. QueryEntry.gen
+if "gen: number;" in src:
+    skip("QueryEntry.gen already present")
+else:
+    once("  inFlight: Promise<void> | null;\n",
+         "  inFlight: Promise<void> | null;\n"
+         "  /** Bumped by resetQueries(); a fetch started under an older generation\n"
+         "   *  discards its result so a previous tenant's response can never land. */\n"
+         "  gen: number;\n", "QueryEntry.gen")
+
+# 2. revalidate() generation guard
+if "const gen = entry.gen;" in src:
+    skip("revalidate() guard already present")
+else:
+    once("""  if (entry.inFlight) return entry.inFlight;
+  entry.state.isFetching = true;
+  entry.inFlight = entry
+    .fetcher()
+    .then((data) => {
+      entry.state.data = data;
+      entry.state.error = null;
+      entry.state.updatedAt = Date.now();
+    })
+    .catch((err) => {
+      // Keep last good data; surface the error. Next trigger retries.
+      entry.state.error = err instanceof Error ? err.message : String(err);
+    })
+    .finally(() => {
+      entry.state.isFetching = false;
+      entry.inFlight = null;
+    });
+  return entry.inFlight;
+}""", """  if (entry.inFlight) return entry.inFlight;
+  const gen = entry.gen;
+  entry.state.isFetching = true;
+  entry.inFlight = entry
+    .fetcher()
+    .then((data) => {
+      if (gen !== entry.gen) return; // reset happened mid-flight: stale tenant
+      entry.state.data = data;
+      entry.state.error = null;
+      entry.state.updatedAt = Date.now();
+    })
+    .catch((err) => {
+      if (gen !== entry.gen) return;
+      // Keep last good data; surface the error. Next trigger retries.
+      entry.state.error = err instanceof Error ? err.message : String(err);
+    })
+    .finally(() => {
+      if (gen !== entry.gen) return; // the reset already cleared these
+      entry.state.isFetching = false;
+      entry.inFlight = null;
+    });
+  return entry.inFlight;
+}""", "revalidate() generation guard")
+
+# 3. entry literal
+if "    gen: 0,\n" in src:
+    skip("entry literal gen already present")
+else:
+    once("    lastReadAt: 0,\n    inFlight: null,\n    intervalTimer: null,\n",
+         "    lastReadAt: 0,\n    inFlight: null,\n    gen: 0,\n    intervalTimer: null,\n", "entry literal gen: 0")
+
+# 4. resetQueries (insert, or upgrade the first cut)
+NEW = """/**
+ * Drop every cached result (data AND error) without refetching anything.
+ * Called by `runContextSwitch()` (web/src/lib/context-switch.svelte.ts)
+ * when the tenant changes or the user signs out: query keys carry no
+ * tenant id, so a cached `shipments:list` from the previous organization
+ * would otherwise be served, instantly and wrong, to the next one.
+ *
+ * Three deliberate differences from `invalidateQueries`:
+ *   - nothing is refetched here: on logout there is no session to fetch
+ *     with (every active query would 401), and on a tenant switch the
+ *     remounted page's first read triggers the fetch anyway;
+ *   - `lastReadAt` drops to 0 so the poll interval and the window-focus
+ *     handler treat the entry as inactive until a remounted page reads it;
+ *   - `gen` is bumped and `inFlight` cleared so a fetch that started under
+ *     the previous tenant discards its result instead of landing late.
+ */
+export function resetQueries(): void {
+  for (const entry of CACHE.values()) {
+    entry.gen += 1;
+    entry.inFlight = null;
+    entry.lastReadAt = 0;
+    entry.state.data = undefined;
+    entry.state.error = null;
+    entry.state.updatedAt = 0;
+    entry.state.isFetching = false;
+  }
+}
+"""
+OLD_FIRST_CUT = """/**
  * Drop every cached result (data AND error) and refetch the active ones.
  * Called by `runContextSwitch()` (web/src/lib/context-switch.svelte.ts)
  * when the tenant changes or the user signs out: query keys carry no
  * tenant id, so a cached `shipments:list` from the previous organization
  * would otherwise be served, instantly and wrong, to the next one. Unlike
  * `invalidateQueries`, this does not keep stale data on screen while the
- * refetch runs; there is no "stale" version of another tenant'"'"'s data.
+ * refetch runs; there is no "stale" version of another tenant's data.
  */
 export function resetQueries(): void {
   for (const entry of CACHE.values()) {
@@ -213,7 +307,26 @@ export function resetQueries(): void {
     if (isActive(entry)) void revalidate(entry);
   }
 }
-' "query.svelte.ts: resetQueries"
+"""
+if "export function resetQueries" not in src:
+    anchor = """export function invalidateQueries(prefix: string): void {
+  for (const [key, entry] of CACHE) {
+    if (!key.startsWith(prefix)) continue;
+    entry.state.updatedAt = 0;
+    if (isActive(entry)) void revalidate(entry);
+  }
+}
+"""
+    once(anchor, anchor + "\n" + NEW, "resetQueries inserted")
+elif "entry.gen += 1;" in src:
+    skip("resetQueries already the clear-only version")
+elif OLD_FIRST_CUT in src:
+    once(OLD_FIRST_CUT, NEW, "resetQueries upgraded from the refetching first cut")
+else:
+    fail("resetQueries exists in an unknown shape; upgrade it by hand to the clear-only version")
+
+open(path, "w").write(src)
+PY
 }
 
 patch_auth() {
