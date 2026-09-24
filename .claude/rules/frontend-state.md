@@ -78,3 +78,11 @@ evict by tenant on switch; do not go there.
 component would stay mounted with A's data. The `$location` half of the
 Router key remounts it. A detail page therefore reads `params.id` once, in
 `onMount`, and never needs a param watch.
+
+## Existing clones
+
+Customer projects do not track this template. To bring one up to this
+contract, run `scripts/apply-context-switch-to-clones.sh <project-dir>`
+(or `--all`). It copies the four new files, patches the six touched files
+behind sentinels (safe to re-run), and prints the test and build commands
+to verify the result.
