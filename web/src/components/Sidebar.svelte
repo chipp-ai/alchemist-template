@@ -41,13 +41,39 @@
     return [...recipe, ...base];
   });
 
+  // Phones: the sidebar is a drawer behind a top bar (see the 768px media
+  // query below). Any navigation closes it.
+  let menuOpen = $state(false);
+  $effect(() => {
+    void $location;
+    menuOpen = false;
+  });
+
   function isActive(itemPath: string, currentPath: string): boolean {
     if (itemPath === "/") return currentPath === "/";
     return currentPath.startsWith(itemPath);
   }
 </script>
 
-<nav class="sidebar" data-testid="sidebar">
+<header class="mobile-topbar" data-testid="sidebar-topbar">
+  <button
+    class="btn btn-ghost mobile-menu-btn"
+    aria-label="Open menu"
+    aria-expanded={menuOpen}
+    aria-controls="app-sidebar"
+    onclick={() => (menuOpen = true)}
+    data-testid="sidebar-btn-menu"
+  >
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <span class="sidebar-logo">{orgStore.currentOrg?.name ?? "App"}</span>
+</header>
+
+{#if menuOpen}
+  <button class="sidebar-backdrop" aria-label="Close menu" onclick={() => (menuOpen = false)} data-testid="sidebar-backdrop"></button>
+{/if}
+
+<nav class="sidebar" class:open={menuOpen} id="app-sidebar" data-testid="sidebar">
   <div class="sidebar-header">
     <span class="sidebar-logo" data-testid="sidebar-logo">
       {orgStore.currentOrg?.name ?? "App"}
@@ -110,6 +136,66 @@
 </script>
 
 <style>
+  .mobile-topbar,
+  .sidebar-backdrop {
+    display: none;
+  }
+
+  /* Phones and narrow tablets: a fixed top bar, and the sidebar slides in
+     as a drawer over the page. App.svelte pads the page below the bar. */
+  @media (max-width: 768px) {
+    .mobile-topbar {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 56px;
+      padding: 0 var(--space-sm);
+      background: var(--color-surface);
+      border-bottom: 1px solid var(--color-border);
+      z-index: 200;
+    }
+    .mobile-topbar .sidebar-logo {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .sidebar-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      border: 0;
+      padding: 0;
+      background: color-mix(in srgb, var(--color-text) 35%, transparent);
+      z-index: 210;
+    }
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      height: 100dvh;
+      max-width: 85vw;
+      z-index: 220;
+      transform: translateX(-100%);
+      visibility: hidden;
+      transition: transform 0.2s ease, visibility 0.2s;
+    }
+    .sidebar.open {
+      transform: none;
+      visibility: visible;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar {
+      transition: none;
+    }
+  }
+
   .sidebar {
     width: 240px;
     height: 100vh;

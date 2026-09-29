@@ -172,7 +172,21 @@
 
   .app-main {
     flex: 1;
+    min-width: 0;
     overflow-y: auto;
     padding: var(--space-xl);
+  }
+
+  /* Phones: Sidebar.svelte shows a 56px top bar and a drawer instead of the
+     side column, so the page takes the full width and scrolls the body. */
+  @media (max-width: 768px) {
+    .app-layout {
+      display: block;
+      height: auto;
+    }
+    .app-main {
+      overflow: visible;
+      padding: calc(56px + var(--space-md)) var(--space-md) var(--space-md);
+    }
   }
 </style>
