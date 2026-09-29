@@ -49,6 +49,7 @@ import { commandCenterDashboardRouter } from "@/services/dashboard/command-cente
 import { landingPageRouter } from "@/services/landing-page/router.ts";
 import { cmsRouter } from "@/services/cms/router.ts";
 import { storefrontRouter } from "@/services/storefront/router.ts";
+import { clientTicketsPortalRouter } from "@/services/client-tickets-portal/router.ts";
 
 // ── App types ──
 
@@ -262,6 +263,13 @@ app.route("/.well-known", mcpWellKnownRouter);
 // base router is inert for every other recipe. See
 // src/services/dashboard/command-center-router.ts.
 app.route("/api/dashboard/command-center", commandCenterDashboardRouter);
+
+// Client Tickets Portal feature stub: an empty router, inert until a builder
+// turns the portal on. The client-tickets-portal pack replaces the stub FILE
+// (src/services/client-tickets-portal/router.ts) with the owner-only ticket
+// queue and ledger summary, and restores it when the portal is turned off.
+// Its SPA half is web/src/features/client-tickets-portal.ts.
+app.route("/api/tickets-and-billing", clientTicketsPortalRouter);
 
 // Agency CMS stub: an empty router at the site root, inert until the CMS is
 // turned on. The cms-admin-shell pack replaces the stub FILE

@@ -5,6 +5,7 @@
   import { can } from "../lib/permissions";
   import ThemeToggle from "./ThemeToggle.svelte";
   import { recipeNavItems } from "../recipe-routes";
+  import { clientTicketsPortalNavItems } from "../features/client-tickets-portal";
 
   // File review is admin-only. Hiding the link for everyone else is a UX
   // choice, not the control: the API gate is what enforces it.
@@ -23,14 +24,16 @@
     ...(import.meta.env.DEV ? [{ path: "/design", label: "Design", icon: "palette" }] : []),
   ]);
 
-  // Recipe links (web/src/recipe-routes.ts) come first. A recipe link for
-  // a path the base also lists (usually "/") replaces the base link.
+  // Recipe links (web/src/recipe-routes.ts) come first, then feature links
+  // (web/src/features/*.ts). A link for a path the base also lists
+  // (usually "/") replaces the base link.
   const navItems = $derived.by(() => {
     const role = authStore.user?.role ?? "";
-    const recipe = recipeNavItems
+    const added = [...recipeNavItems, ...clientTicketsPortalNavItems];
+    const recipe = added
       .filter((item) => !item.visibleTo || item.visibleTo(role))
       .map((item) => ({ path: item.path, label: item.label, icon: item.icon, testId: item.testId }));
-    const taken = new Set(recipeNavItems.map((item) => item.path));
+    const taken = new Set(added.map((item) => item.path));
     const base = baseNavItems
       .filter((item) => !taken.has(item.path))
       .map((item) => ({ ...item, testId: item.icon }));
