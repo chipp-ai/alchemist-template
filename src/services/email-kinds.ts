@@ -35,6 +35,7 @@
  */
 
 import { BRAND } from "@/config/brand.ts";
+import { escapeHtml } from "@/lib/safe-html.ts";
 import { NotFoundError } from "@/utils/errors.ts";
 import { appUrl, sendEmail } from "@/services/email-transport.ts";
 
@@ -202,16 +203,9 @@ const EMAIL_BORDER = "#e7e1d4";
 /**
  * Minimal HTML escape for email interpolation. Only safe for text nodes +
  * attribute values, which is all we use it for here. Every kind must run
- * interpolated values through this.
+ * interpolated values through this. One copy, in src/lib/safe-html.ts.
  */
-export function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+export { escapeHtml };
 
 /**
  * The shared shell. Exported for the preview surface; kinds get it applied

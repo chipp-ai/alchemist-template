@@ -46,6 +46,7 @@ import { headlessApiRouter } from "@/services/headless-api/router.ts";
 import { mcpProtocolRouter } from "@/services/mcp-protocol/router.ts";
 import { mcpWellKnownRouter } from "@/services/mcp-protocol/well-known-router.ts";
 import { commandCenterDashboardRouter } from "@/services/dashboard/command-center-router.ts";
+import { landingPageRouter } from "@/services/landing-page/router.ts";
 
 // ── App types ──
 
@@ -259,6 +260,14 @@ app.route("/.well-known", mcpWellKnownRouter);
 // base router is inert for every other recipe. See
 // src/services/dashboard/command-center-router.ts.
 app.route("/api/dashboard/command-center", commandCenterDashboardRouter);
+
+// landing-page recipe stub: an empty router at the site root, so it is inert
+// for every other recipe. The marketing-site-scaffold pack replaces the stub
+// FILE (src/services/landing-page/router.ts) with the public marketing page,
+// /sitemap.xml, /robots.txt and POST /api/leads. Mounted after the API
+// routes and before the SPA fallback, so it owns `/` only in landing-page
+// projects. In DEMO_MODE the demo landing route above still wins `/`.
+app.route("/", landingPageRouter);
 
 // ── Static SPA ──
 // Serves the Svelte frontend built in the Dockerfile's web-builder stage
