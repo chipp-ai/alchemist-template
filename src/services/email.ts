@@ -28,6 +28,7 @@
 export {
   describeEmailSender,
   effectiveSendHeaders,
+  isReservedRecipientAddress,
   isSmtpConfigured,
   isUnverifiedSenderRejection,
   mailboxCaptureEnabled,

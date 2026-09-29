@@ -170,6 +170,32 @@ export function describeEmailSender(): {
   };
 }
 
+// ── Reserved recipient domains ──────────────────────────────────────────────
+
+/**
+ * Domains that can never receive mail: the RFC 2606 / RFC 6761 reserved
+ * names, plus test.com, which agents and tests reach for as often as
+ * example.com. A real SMTP send to one of these bounces, and a high bounce
+ * rate gets the sending account flagged. So `sendEmail` records the message
+ * in the dev mailbox as usual and then stops before SMTP.
+ */
+const RESERVED_EXACT_DOMAINS = new Set(["example.com", "example.net", "example.org", "test.com"]);
+const RESERVED_TLDS = new Set(["test", "example", "invalid", "localhost"]);
+
+/** True when `to` is an address at a reserved domain (or a subdomain of one). */
+export function isReservedRecipientAddress(to: string): boolean {
+  const at = to.lastIndexOf("@");
+  if (at < 0) return false;
+  const domain = to.slice(at + 1).trim().toLowerCase().replace(/[>.\s]+$/, "");
+  if (!domain) return false;
+  const labels = domain.split(".");
+  if (RESERVED_TLDS.has(labels[labels.length - 1])) return true;
+  for (let i = 0; i < labels.length - 1; i++) {
+    if (RESERVED_EXACT_DOMAINS.has(labels.slice(i).join("."))) return true;
+  }
+  return false;
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 export interface SendEmailOptions {
@@ -282,6 +308,19 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
     console.log(`[email] To: ${opts.to}`);
     console.log(`[email] Subject: ${opts.subject}`);
     console.log(`[email] Body: ${opts.text}`);
+    return;
+  }
+
+  // Reserved recipient domains never reach SMTP. The mailbox above already
+  // recorded the message and the console fallback above covers dev, so this
+  // only guards a real send. info, not warn: working as designed, never pages.
+  if (isReservedRecipientAddress(opts.to)) {
+    log.info("Reserved recipient domain: not sending over SMTP", {
+      source: "email",
+      feature: "reserved-recipient",
+      to: opts.to,
+      kind: opts.kind ?? null,
+    });
     return;
   }
 

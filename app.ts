@@ -43,6 +43,7 @@ import { storageLocalRoutes } from "@/api/routes/storage-local/index.ts";
 import { eventsRoutes } from "@/api/routes/events/index.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 import { headlessApiRouter } from "@/services/headless-api/router.ts";
+import { embeddedAgentRouter } from "@/services/embedded-agent/router.ts";
 import { mcpProtocolRouter } from "@/services/mcp-protocol/router.ts";
 import { mcpWellKnownRouter } from "@/services/mcp-protocol/well-known-router.ts";
 import { commandCenterDashboardRouter } from "@/services/dashboard/command-center-router.ts";
@@ -269,6 +270,12 @@ app.route("/api/dashboard/command-center", commandCenterDashboardRouter);
 // queue and ledger summary, and restores it when the portal is turned off.
 // Its SPA half is web/src/features/client-tickets-portal.ts.
 app.route("/api/tickets-and-billing", clientTicketsPortalRouter);
+
+// embedded-chipp-agent feature stub: an empty router, inert until a builder
+// turns the embedded Chipp agent on. The pack replaces the stub FILE
+// (src/services/embedded-agent/router.ts) with the chat session proxy. The
+// path is unique to that feature.
+app.route("/api/embedded-agent", embeddedAgentRouter);
 
 // Agency CMS stub: an empty router at the site root, inert until the CMS is
 // turned on. The cms-admin-shell pack replaces the stub FILE
