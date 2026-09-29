@@ -67,8 +67,12 @@ import { redisSubscribe } from "@/lib/redis.ts";
 import { sql } from "kysely";
 
 // waitFor returns as soon as its condition holds, so this is only the failure
-// deadline. 3s flaked under the parallel suite on a loaded machine (the nudged
-// tick waits behind whatever tick is in flight).
+// deadline. NOTE: the consumer's tick lock lives in Redis under an unprefixed
+// key when REDIS_KEY_PREFIX is unset. Another app on the same local Redis
+// (a dev server of a second project) holds that lock now and then, and a
+// tick that loses it waits for the next poll: these tests then time out
+// however long the deadline is. Run the suite with no other app on the
+// same REDIS_URL, or give each a REDIS_KEY_PREFIX.
 const WAIT_MS = 10_000;
 
 const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
