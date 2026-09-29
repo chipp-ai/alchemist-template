@@ -14,14 +14,14 @@ import { safeJsonAttr, safeJsonScript } from "@/services/ssr/safe-json.ts";
 import {
   __setIslandsManifestPathForTests,
   ISLANDS_ENTRY_SRC,
-  islandsScriptTag,
+  prodIslandsScriptTag,
   renderIsland,
   resolveIslandsTagFromManifestJson,
 } from "@/services/ssr/islands.ts";
 import { currentDesign, designHead, designHtmlAttributes } from "@/services/ssr/design-head.ts";
 import { __setSpaIndexPathForTests, renderSpaShellHtml, serveSpaShell } from "@/lib/spa-shell.ts";
 import { appPath } from "@/config/site.ts";
-import { appOrigin } from "@/services/app-links.ts";
+import { appOrigin, originFrom } from "@/services/app-links.ts";
 import { escapeHtml as baseEscapeHtml, sanitizeHref as baseSanitizeHref } from "@/lib/safe-html.ts";
 
 const SPA_FIXTURE = new URL("../fixtures/spa-shell-index.html", import.meta.url);
@@ -121,20 +121,19 @@ Deno.test("resolveIslandsTagFromManifestJson: script + css from the entry chunk;
   assertEquals(resolveIslandsTagFromManifestJson(JSON.stringify({ [ISLANDS_ENTRY_SRC]: {} })), null);
 });
 
-Deno.test("islandsScriptTag: reads the built manifest, and is empty (not a throw) without one", async () => {
-  const prevDev = Deno.env.get("ALCHEMIST_DEV_ROUTES");
-  Deno.env.delete("ALCHEMIST_DEV_ROUTES");
+Deno.test("the production islands tag reads the built manifest, and is empty (not a throw) without one", async () => {
+  // Never flip ALCHEMIST_DEV_ROUTES here: parallel test files share one
+  // process environment, and other files (the dev mailbox) read that flag.
   const dir = await Deno.makeTempDir();
   try {
     const path = `${dir}/manifest.json`;
     await Deno.writeTextFile(path, JSON.stringify({ [ISLANDS_ENTRY_SRC]: { file: "assets/i.js" } }));
     __setIslandsManifestPathForTests(path);
-    assertEquals(islandsScriptTag(), '<script type="module" src="/assets/i.js"></script>');
+    assertEquals(prodIslandsScriptTag(), '<script type="module" src="/assets/i.js"></script>');
     __setIslandsManifestPathForTests(`${dir}/missing.json`);
-    assertEquals(islandsScriptTag(), "");
+    assertEquals(prodIslandsScriptTag(), "");
   } finally {
     __setIslandsManifestPathForTests(null);
-    if (prevDev !== undefined) Deno.env.set("ALCHEMIST_DEV_ROUTES", prevDev);
     await Deno.remove(dir, { recursive: true });
   }
 });
@@ -187,15 +186,11 @@ Deno.test("appPath links into the SPA at the site root and rejects a relative pa
   assert(threw);
 });
 
-Deno.test("appOrigin is APP_URL without a trailing slash, or the dev origin", () => {
-  const prev = Deno.env.get("APP_URL");
-  try {
-    Deno.env.set("APP_URL", "https://shop.example.com//");
-    assertEquals(appOrigin(), "https://shop.example.com");
-    Deno.env.delete("APP_URL");
-    assertEquals(appOrigin(), "http://localhost:8000");
-  } finally {
-    if (prev === undefined) Deno.env.delete("APP_URL");
-    else Deno.env.set("APP_URL", prev);
-  }
+Deno.test("the origin is APP_URL without a trailing slash, or the dev origin", () => {
+  // originFrom is the pure half of appOrigin(); the env is never mutated
+  // here, since parallel test files share it.
+  assertEquals(originFrom("https://shop.example.com//"), "https://shop.example.com");
+  assertEquals(originFrom("  "), "http://localhost:8000");
+  assertEquals(originFrom(undefined), "http://localhost:8000");
+  assertEquals(appOrigin(), originFrom(Deno.env.get("APP_URL")));
 });

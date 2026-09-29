@@ -107,6 +107,15 @@ export function islandsScriptTag(): string {
 }
 
 /**
+ * The production tag, from the built manifest, whatever the dev flag says.
+ * Exported for tests: they must not flip ALCHEMIST_DEV_ROUTES, because
+ * parallel test files share one process environment.
+ */
+export function prodIslandsScriptTag(): string {
+  return resolveProdTag();
+}
+
+/**
  * The marker for one island. `fallbackHtml` is already-escaped markup (the
  * no-JS view), not text; this function does not escape it. `props` goes
  * through `safeJsonAttr`, and is untrusted on the client side too.

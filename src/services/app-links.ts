@@ -18,6 +18,11 @@ export function appOrigin(): string {
     // No env permission (a sandboxed script): fall back like an unset var.
     raw = undefined;
   }
+  return originFrom(raw);
+}
+
+/** The origin for a raw `APP_URL` value. Pure: exported for tests. */
+export function originFrom(raw: string | undefined): string {
   const value = raw?.trim();
   return (value ? value : DEV_ORIGIN).replace(/\/+$/, "");
 }
