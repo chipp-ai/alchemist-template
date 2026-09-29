@@ -1,17 +1,26 @@
 /**
- * MCP OAuth discovery router stub (the `mcp-server` recipe).
+ * OAuth discovery for the MCP server feature, mounted at the origin root
+ * (/.well-known) by the base app.ts: RFC 8414/9728 require the root path.
  *
- * `app.ts` mounts this router at `/.well-known` for every recipe built from
- * this monorepo. Here it is empty, so the mount is inert.
- *
- * The `mcp-protocol-surface` pack (chipp-deno
- * src/alchemist/services/template-packs/) replaces this whole file in
- * `mcp-server` projects with the router that serves
- * `/.well-known/oauth-authorization-server` (RFC 8414) and
- * `/.well-known/oauth-protected-resource` (RFC 9728). Remote MCP clients
- * probe these at the origin root, so they cannot live under `/api/mcp`. Keep
- * the export name `mcpWellKnownRouter`, since `app.ts` imports it.
+ * OFF by default, like the rest of the feature: while ALCHEMIST_FEATURE_MCP
+ * is off these documents answer 404. The gate covers only the two OAuth
+ * documents, so any other /.well-known file the project serves (for
+ * example from web/dist) is unaffected.
  */
 import { Hono } from "hono";
+import { wellKnownRoutes } from "@/api/routes/well-known.ts";
+import { requireFeature } from "@/lib/features.ts";
 
 export const mcpWellKnownRouter = new Hono();
+
+for (
+  const path of [
+    "/oauth-authorization-server",
+    "/oauth-authorization-server/*",
+    "/oauth-protected-resource",
+    "/oauth-protected-resource/*",
+  ]
+) {
+  mcpWellKnownRouter.use(path, requireFeature("mcp"));
+}
+mcpWellKnownRouter.route("/", wellKnownRoutes);

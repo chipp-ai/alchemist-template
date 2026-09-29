@@ -241,14 +241,13 @@ app.route("/api/dev", devRoutes);
 // src/observability/envelope.ts.
 app.route("/api/_observability", observabilityRoutes);
 
-// Recipe router stubs for the headless recipes (api, mcp-server). Each stub
-// is an empty router, so these mounts are inert for every other recipe. The
-// headless-api-surface / mcp-protocol-surface packs replace the stub FILES
-// (src/services/headless-api/router.ts, src/services/mcp-protocol/
-// {router,well-known-router}.ts) with full routers in their own projects.
-// Packs never write this file: the composition engine would replace it
-// wholesale. OAuth discovery is a separate stub because RFC 8414/9728 put it
-// at the origin root, not under /api/mcp.
+// Built-in API and MCP features, OFF until the project turns them on
+// (ALCHEMIST_FEATURE_API / ALCHEMIST_FEATURE_MCP, src/lib/features.ts).
+// While off, every route they own answers 404. Each router gates only the
+// exact paths it owns (/api/api-keys and /api/v1 for the API; /api/mcp and
+// the /.well-known/oauth-* documents for MCP), so the /api mount never
+// shadows another route. OAuth discovery is a separate router because RFC
+// 8414/9728 put it at the origin root, not under /api/mcp.
 app.route("/api", headlessApiRouter);
 app.route("/api/mcp", mcpProtocolRouter);
 app.route("/api/mcp/", mcpProtocolRouter);

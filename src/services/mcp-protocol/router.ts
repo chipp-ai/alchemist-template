@@ -1,20 +1,25 @@
 /**
- * MCP protocol router stub (the `mcp-server` recipe).
+ * The MCP server feature (ALCHEMIST_FEATURE_MCP), mounted at /api/mcp by
+ * the base app.ts. OFF by default: every path below answers 404 until the
+ * project turns the feature on (src/lib/features.ts). /api/mcp belongs to
+ * this router alone, so the gate covers all of it.
  *
- * `app.ts` mounts this router at `/api/mcp` (and `/api/mcp/`) for every recipe
- * built from this monorepo. Here it is empty, so the mount is inert.
+ *   /api/mcp            the MCP endpoint (Streamable HTTP, src/mcp/)
+ *   /api/mcp/oauth/*    OAuth 2.1 authorize, token, register (DCR), revoke
+ *   /api/mcp/api-keys   mint, list and revoke mcp_sk_ keys (session auth)
  *
- * The `mcp-protocol-surface` pack (chipp-deno
- * src/alchemist/services/template-packs/) replaces this whole file in
- * `mcp-server` projects with the router that serves the MCP endpoint and the
- * OAuth authorization server under `/api/mcp`. The pack overlay writes the
- * complete file: it never appends to this one. Keep the export name
- * `mcpProtocolRouter`, since `app.ts` imports it.
- *
- * OAuth discovery (`/.well-known/*`) is a separate stub
- * (`well-known-router.ts` in this directory): RFC 8414 and RFC 9728 require
- * those documents at the origin root, not under `/api/mcp`.
+ * OAuth discovery (/.well-known/oauth-*) lives in well-known-router.ts:
+ * RFC 8414/9728 put it at the origin root, not under /api/mcp.
  */
 import { Hono } from "hono";
+import { mcpRoutes } from "@/api/routes/mcp/index.ts";
+import { mcpOauthRoutes } from "@/api/routes/mcp/oauth.ts";
+import { mcpApiKeyRoutes } from "@/api/routes/mcp/api-keys.ts";
+import { requireFeature } from "@/lib/features.ts";
 
 export const mcpProtocolRouter = new Hono();
+
+mcpProtocolRouter.use("*", requireFeature("mcp"));
+mcpProtocolRouter.route("/oauth", mcpOauthRoutes);
+mcpProtocolRouter.route("/api-keys", mcpApiKeyRoutes);
+mcpProtocolRouter.route("/", mcpRoutes);

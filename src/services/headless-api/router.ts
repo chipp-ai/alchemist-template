@@ -1,23 +1,25 @@
 /**
- * Headless API router stub (the `api` recipe).
+ * The headless API feature (ALCHEMIST_FEATURE_API), mounted at /api by the
+ * base app.ts. OFF by default: every path below answers 404 until the
+ * project turns the feature on (src/lib/features.ts).
  *
- * `app.ts` mounts this router at `/api` for every recipe built from this
- * monorepo. Here it is empty, so the mount is inert: it registers no route
- * and no middleware, and every other `/api` route answers as if it were not
- * there.
+ *   /api/api-keys  mint, list and revoke api_sk_ keys (session auth only,
+ *                  so a leaked key cannot mint more keys)
+ *   /api/v1/*      the API product (src/services/headless-api/v1.ts)
  *
- * The `headless-api-surface` pack (chipp-deno
- * src/alchemist/services/template-packs/) replaces this whole file in `api`
- * projects with a router that registers the API-product routes
- * (`/api/api-keys` and whatever the project adds). The `mcp-protocol-surface`
- * pack does the same to mount `/api/api-keys` in `mcp-server` projects. The
- * pack overlay writes the complete file: it never appends to this one. Keep
- * the export name `headlessApiRouter`, since `app.ts` imports it.
- *
- * There is no middleware here on purpose. A `use("*")` on a router mounted at
- * `/api` runs for every `/api` request that reaches it, so a gate here would
- * 404 any `/api` route a recipe registers after this mount.
+ * The gate sits on these exact prefixes, never on "*": this router shares
+ * /api with every other route, and a catch-all gate would 404 them too.
+ * Add API routes to v1.ts, not here and not in app.ts.
  */
 import { Hono } from "hono";
+import { apiKeyRoutes } from "@/api/routes/api-keys/index.ts";
+import { requireFeature } from "@/lib/features.ts";
+import { apiV1Routes } from "@/services/headless-api/v1.ts";
 
 export const headlessApiRouter = new Hono();
+
+for (const path of ["/api-keys", "/api-keys/*", "/v1", "/v1/*"]) {
+  headlessApiRouter.use(path, requireFeature("api"));
+}
+headlessApiRouter.route("/api-keys", apiKeyRoutes);
+headlessApiRouter.route("/v1", apiV1Routes);

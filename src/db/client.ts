@@ -220,6 +220,12 @@ export function ensureTestSchema(): Promise<void> {
       // (which uses its OWN connection) so provisioning is serialized worker-wide.
       const lock = await sql.reserve();
       try {
+        // The pool's 15s statement_timeout must not apply to the wait: with
+        // many workers queued behind one another's migrations, a later
+        // worker waits longer than 15s and its provisioning died with
+        // "canceling statement due to statement timeout" (seen once a recipe
+        // added a few migrations). RESET in finally restores the pool value.
+        await lock`SET statement_timeout = 0`;
         await lock`SELECT pg_advisory_lock(${PROVISION_LOCK_KEY})`;
         await lock.unsafe(
           `DROP SCHEMA IF EXISTS "${TEST_SCHEMA}" CASCADE; CREATE SCHEMA "${TEST_SCHEMA}"`,
@@ -235,6 +241,7 @@ export function ensureTestSchema(): Promise<void> {
       } finally {
         try {
           await lock`SELECT pg_advisory_unlock(${PROVISION_LOCK_KEY})`;
+          await lock`RESET statement_timeout`;
         } catch { /* best-effort */ }
         lock.release();
       }
