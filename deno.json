@@ -3,7 +3,7 @@
   "tasks": {
     "dev": "ALCHEMIST_DEV_ROUTES=1 deno run --env --watch --allow-net --allow-env --allow-read --allow-write --allow-ffi --allow-sys main.ts",
     "start": "deno run --env --allow-net --allow-env --allow-read --allow-ffi --allow-sys main.ts",
-    "check": "deno check main.ts",
+    "check": "deno check main.ts src/services/storefront/",
     "check:tests": "deno check src/__tests__/",
     "check:touched": "deno check",
     "test:clean-schemas": "deno run --env --allow-net --allow-env --allow-read db/clean-test-schemas.ts",

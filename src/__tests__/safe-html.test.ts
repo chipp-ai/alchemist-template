@@ -27,6 +27,8 @@ Deno.test("sanitizeHref: keeps safe links", () => {
     assertEquals(sanitizeHref(href), href);
   }
   assertEquals(sanitizeHref("  /x  "), "/x");
+  // A dot inside a segment is fine; only a whole "." or ".." segment is not.
+  assertEquals(sanitizeHref("/files/v1.2/a..b.png?x=../y"), "/files/v1.2/a..b.png?x=../y");
 });
 
 Deno.test("sanitizeHref: rejects unsafe or malformed links", () => {
@@ -42,6 +44,10 @@ Deno.test("sanitizeHref: rejects unsafe or malformed links", () => {
       "",
       "not a url",
       "ftp://example.com",
+      "/images/../../admin",
+      "/a/./b",
+      "/a/%2e%2e/b",
+      "/..",
     ]
   ) {
     assertEquals(sanitizeHref(href), null, href);

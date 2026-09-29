@@ -145,6 +145,7 @@ when you work in its area, so the hub stays focused.
 | `events.md` | `src/lib/events.ts`, `src/jobs/event-consumer.ts`, `src/api/routes/events/**`, the events migration | Durable events: publish, consumer, inbox, outbound webhooks, retry and replay mechanics |
 | `design.md` | `web/src/design/**`, `app.css`, `*.svelte` | design.json, presets, font catalog, token rules, the /#/design sheet |
 | `frontend-state.md` | `web/src/App.svelte`, `web/src/routes/**`, `web/src/stores/**`, `query.svelte.ts`, `context-switch.svelte.ts` | Page lifetime and tenant context: the Router key, `runContextSwitch()`, store resets, the switcher checklist |
+| `ssr.md` | `src/services/ssr/**`, `src/services/storefront/**`, `web/src/islands/**`, `optional-session.ts`, `spa-shell.ts` | Server-rendered public pages: route-module discovery, escaping, JSON-LD, design tokens, `optionalSession`, caching, Svelte islands |
 
 In Claude Code these load when you read a matching file. The Alchemist
 build agent injects them when a tool call touches a matching path (and

@@ -322,6 +322,28 @@ export function designToCssVars(design: DesignConfig): Record<string, string> {
   return vars;
 }
 
+/**
+ * The CSS text for a design: a `:root` rule with every token. The SPA
+ * installs it (`applyDesign` in apply.ts) and SSR pages inline it
+ * (`designHead()` in src/services/ssr/design-head.ts). Pure.
+ */
+export function designStylesheet(design: DesignConfig): string {
+  const vars = designToCssVars(design);
+  const decls = Object.entries(vars).map(([k, v]) => `  --${k}: ${v};`).join("\n");
+  let css = `:root {\n${decls}\n}\n`;
+  if (design.mode === "dark") {
+    // Dark by design: restate the palette under the theme selector so the
+    // toggle cannot flip the canvas to app.css's generic dark values, and
+    // pin the canvas itself (app.css's dark block ignores --brand-neutral).
+    const darkDecls = Object.entries(vars)
+      .map(([k, v]) => `  --${k}: ${k === "color-bg" ? vars["brand-neutral"] : v};`)
+      .join("\n");
+    css += `:root[data-theme="dark"] {\n${darkDecls}\n}\n`;
+  }
+  return css;
+}
+
+
 // ── Validation ──────────────────────────────────────────────────────────
 
 export type IssueLevel = "error" | "warn";

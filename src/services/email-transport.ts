@@ -25,6 +25,7 @@ import { isDemoMode } from "@/config/demo-mode.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 import { captureEmail } from "@/services/email-mailbox.ts";
 import { checkCommunicationsSuppression } from "@/services/communications.service.ts";
+import { appOrigin } from "@/services/app-links.ts";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -70,9 +71,9 @@ function safeEnv(key: string): string | undefined {
   }
 }
 
-/** The app's own base URL, for links this module puts in headers. */
+/** The app's own base URL, for links this module puts in headers. One APP_URL reader: app-links.ts. */
 export function appUrl(): string {
-  return (safeEnv("APP_URL") ?? "http://localhost:8000").replace(/\/+$/, "");
+  return appOrigin();
 }
 
 // ── Transport ───────────────────────────────────────────────────────────────

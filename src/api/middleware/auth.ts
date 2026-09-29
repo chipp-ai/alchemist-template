@@ -228,6 +228,22 @@ async function resolveUser(payload: jose.JWTPayload): Promise<AuthUser | null> {
 }
 
 /**
+ * The signed-in user for this request, or null. Never throws: a missing,
+ * foreign, expired or revoked session is simply "no user". Same verify path
+ * as `authMiddleware` / `requireAuth`. Used by `optionalSession` on public
+ * SSR pages, which must render for anonymous visitors and crawlers.
+ */
+export async function resolveOptionalUser(
+  c: { req: { header: (name: string) => string | undefined } },
+): Promise<AuthUser | null> {
+  const candidates = getSessionTokenCandidates(c);
+  if (candidates.length === 0) return null;
+  const payload = await verifyFirstValidToken(candidates);
+  if (!payload) return null;
+  return await resolveUser(payload);
+}
+
+/**
  * Auth middleware that populates c.get("user") and c.get("organizationId").
  * Does NOT throw on missing/invalid auth -- sets user to undefined.
  * Use `requireAuth` for routes that must be authenticated.

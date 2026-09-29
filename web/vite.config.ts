@@ -49,6 +49,20 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: false,
+    // SSR kernel islands runtime (see .claude/rules/ssr.md). A second,
+    // independent entry: the SPA (index.html -> src/main.ts) is unchanged,
+    // and src/islands/entry.ts builds into its own chunk that server-rendered
+    // pages load through islandsScriptTag() (src/services/ssr/islands.ts),
+    // which reads the hashed file name from the manifest below. With no
+    // islands it is a tiny chunk nothing loads.
+    manifest: true,
+    rollupOptions: {
+      input: {
+        // Once `input` is set Vite no longer finds index.html by itself.
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        islands: fileURLToPath(new URL("./src/islands/entry.ts", import.meta.url)),
+      },
+    },
   },
   server: {
     port: 5273,

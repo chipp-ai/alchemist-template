@@ -47,6 +47,8 @@ import { mcpProtocolRouter } from "@/services/mcp-protocol/router.ts";
 import { mcpWellKnownRouter } from "@/services/mcp-protocol/well-known-router.ts";
 import { commandCenterDashboardRouter } from "@/services/dashboard/command-center-router.ts";
 import { landingPageRouter } from "@/services/landing-page/router.ts";
+import { cmsRouter } from "@/services/cms/router.ts";
+import { storefrontRouter } from "@/services/storefront/router.ts";
 
 // ── App types ──
 
@@ -261,6 +263,13 @@ app.route("/.well-known", mcpWellKnownRouter);
 // src/services/dashboard/command-center-router.ts.
 app.route("/api/dashboard/command-center", commandCenterDashboardRouter);
 
+// Agency CMS stub: an empty router at the site root, inert until the CMS is
+// turned on. The cms-admin-shell pack replaces the stub FILE
+// (src/services/cms/router.ts) with the CMS API at /api/cms and the public
+// client sites (by Host header, or at /_sites/<slug>/). Mounted before the
+// landing-page stub so a client site's Host wins over a marketing page.
+app.route("/", cmsRouter);
+
 // landing-page recipe stub: an empty router at the site root, so it is inert
 // for every other recipe. The marketing-site-scaffold pack replaces the stub
 // FILE (src/services/landing-page/router.ts) with the public marketing page,
@@ -268,6 +277,15 @@ app.route("/api/dashboard/command-center", commandCenterDashboardRouter);
 // routes and before the SPA fallback, so it owns `/` only in landing-page
 // projects. In DEMO_MODE the demo landing route above still wins `/`.
 app.route("/", landingPageRouter);
+
+// Storefront SSR kernel: public server-rendered pages. The router mounts
+// every src/services/storefront/*.routes.ts at boot; the base ships none, so
+// it is empty and inert for every recipe that does not add one. The
+// storefront recipes (agent-storefront, commerce-storefront) add the landing
+// page at "/", the SPA at /admin, product pages, cart and checkout. Mounted
+// after the API routes and before the SPA fallback, like the landing-page
+// stub above. See .claude/rules/ssr.md.
+app.route("/", storefrontRouter);
 
 // ── Static SPA ──
 // Serves the Svelte frontend built in the Dockerfile's web-builder stage

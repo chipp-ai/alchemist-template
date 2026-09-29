@@ -23,7 +23,12 @@
  */
 
 import type { DesignConfig } from "./types.ts";
-import { designToCssVars, RADIUS_SCALE_LABEL } from "./tokens.ts";
+import { designStylesheet, RADIUS_SCALE_LABEL } from "./tokens.ts";
+
+// designStylesheet lives in tokens.ts (pure) so the server can render the
+// same CSS on SSR pages (src/services/ssr/design-head.ts). Re-exported here
+// for existing callers.
+export { designStylesheet };
 import { fontRequestsFor, googleFontsUrl, nearestWeight } from "./fonts.ts";
 
 const STYLE_ID = "design-tokens";
@@ -31,23 +36,6 @@ const FONT_LINK_ID = "design-fonts";
 const PREVIEW_LINK_PREFIX = "design-font-preview-";
 
 let lastFontUrl: string | null = null;
-
-/** The CSS text `applyDesign` installs. Pure; exported for tests. */
-export function designStylesheet(design: DesignConfig): string {
-  const vars = designToCssVars(design);
-  const decls = Object.entries(vars).map(([k, v]) => `  --${k}: ${v};`).join("\n");
-  let css = `:root {\n${decls}\n}\n`;
-  if (design.mode === "dark") {
-    // Dark by design: restate the palette under the theme selector so the
-    // toggle cannot flip the canvas to app.css's generic dark values, and
-    // pin the canvas itself (app.css's dark block ignores --brand-neutral).
-    const darkDecls = Object.entries(vars)
-      .map(([k, v]) => `  --${k}: ${k === "color-bg" ? vars["brand-neutral"] : v};`)
-      .join("\n");
-    css += `:root[data-theme="dark"] {\n${darkDecls}\n}\n`;
-  }
-  return css;
-}
 
 /** Install the design's tokens, attributes and fonts on the document. */
 export function applyDesign(design: DesignConfig, root: HTMLElement = document.documentElement): void {

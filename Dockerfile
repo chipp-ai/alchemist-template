@@ -35,7 +35,9 @@ COPY . .
 COPY --from=web-builder /web/dist ./web/dist
 
 # Typecheck + cache the full application graph
-RUN deno check main.ts
+# The storefront route modules load by discovery at boot (see
+# src/services/storefront/router.ts), so check them explicitly too.
+RUN deno check main.ts src/services/storefront/
 
 # ── Runtime stage ──
 FROM denoland/deno:2.3.1
