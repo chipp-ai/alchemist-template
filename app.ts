@@ -237,18 +237,14 @@ app.route("/api/dev", devRoutes);
 // src/observability/envelope.ts.
 app.route("/api/_observability", observabilityRoutes);
 
-// Headless-monorepo-unification (chipp-ai/alchemist-template folding in
-// the retired standalone alchemist-template-api / alchemist-template-mcp
-// repos): three self-gating stubs, mounted UNCONDITIONALLY here so every
-// recipe's app.ts stays byte-for-byte the same file, but each 404s on
-// every request unless ALCHEMIST_TEMPLATE_KEY matches its own recipe (a
-// platform-injected runtime env var, never set by this repo). See
-// src/services/headless-api/router.ts and src/services/mcp-protocol/
-// {router,well-known-router}.ts for the gating + why OAuth discovery is a
-// separate stub from the /api/mcp router. These are the ONLY paths the
-// headless-api-surface / mcp-protocol-surface packs are allowed to TOUCH --
-// never this file itself, which the composition engine would replace
-// wholesale.
+// Recipe router stubs for the headless recipes (api, mcp-server). Each stub
+// is an empty router, so these mounts are inert for every other recipe. The
+// headless-api-surface / mcp-protocol-surface packs replace the stub FILES
+// (src/services/headless-api/router.ts, src/services/mcp-protocol/
+// {router,well-known-router}.ts) with full routers in their own projects.
+// Packs never write this file: the composition engine would replace it
+// wholesale. OAuth discovery is a separate stub because RFC 8414/9728 put it
+// at the origin root, not under /api/mcp.
 app.route("/api", headlessApiRouter);
 app.route("/api/mcp", mcpProtocolRouter);
 app.route("/api/mcp/", mcpProtocolRouter);
@@ -259,9 +255,8 @@ app.route("/.well-known", mcpWellKnownRouter);
 // replaced wholesale by that pack's two-line route registration -- no
 // auth, no billing, no docs routes, no static SPA serving. Fixed the same
 // way as the headless stubs above: a dedicated stub the pack's overlay
-// touches instead. Needs no env-var gate (unlike the headless stubs) --
-// this path is unique to command-center, so an empty router here is
-// inert for every other recipe. See
+// replaces instead. The path is unique to command-center, so the empty
+// base router is inert for every other recipe. See
 // src/services/dashboard/command-center-router.ts.
 app.route("/api/dashboard/command-center", commandCenterDashboardRouter);
 

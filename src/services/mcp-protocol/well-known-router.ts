@@ -1,29 +1,17 @@
 /**
- * mcp-protocol-surface OAuth discovery stub (headless-monorepo-unification).
+ * MCP OAuth discovery router stub (the `mcp-server` recipe).
  *
- * Mounted unconditionally at `/.well-known` in `app.ts` for EVERY recipe
- * built from this monorepo, but self-gated: it 404s on every request
- * unless `ALCHEMIST_TEMPLATE_KEY=mcp-server`, so the mount is inert for
- * every other recipe.
+ * `app.ts` mounts this router at `/.well-known` for every recipe built from
+ * this monorepo. Here it is empty, so the mount is inert.
  *
- * SEPARATE from `router.ts` in this same directory (which owns `/api/mcp`)
- * because RFC 8414 (`/.well-known/oauth-authorization-server`) and RFC 9728
- * (`/.well-known/oauth-protected-resource`) require these documents at the
- * origin ROOT -- nesting them under `/api/mcp` would break OAuth discovery
- * for every remote MCP client (claude.ai connectors, ChatGPT, Claude Code),
- * which probe the root `.well-known` path directly.
- *
- * This is the ONLY thing the `mcp-protocol-surface` pack's composed
- * overlay is allowed to TOUCH for OAuth discovery (never `app.ts` itself).
+ * The `mcp-protocol-surface` pack (chipp-deno
+ * src/alchemist/services/template-packs/) replaces this whole file in
+ * `mcp-server` projects with the router that serves
+ * `/.well-known/oauth-authorization-server` (RFC 8414) and
+ * `/.well-known/oauth-protected-resource` (RFC 9728). Remote MCP clients
+ * probe these at the origin root, so they cannot live under `/api/mcp`. Keep
+ * the export name `mcpWellKnownRouter`, since `app.ts` imports it.
  */
 import { Hono } from "hono";
 
 export const mcpWellKnownRouter = new Hono();
-
-mcpWellKnownRouter.use("*", async (c, next) => {
-  if (Deno.env.get("ALCHEMIST_TEMPLATE_KEY") !== "mcp-server") return c.notFound();
-  return next();
-});
-
-// mcp-protocol-surface pack-owned route registrations (wellKnownRoutes) are
-// appended below this line by that pack's composed overlay commit.

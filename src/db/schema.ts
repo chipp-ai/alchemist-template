@@ -105,7 +105,12 @@ export interface ApiCredentialsTable {
   name: string;
   keyHash: string;
   keyPrefix: string;
-  scopes: string | null; // JSONB stored as string
+  /**
+   * JSONB string[] (NOT NULL DEFAULT '[]'). Pass an array on write, never a
+   * pre-stringified value. Reads may come back as an array or, for rows
+   * written by older code, a JSON string, so parse defensively.
+   */
+  scopes: ColumnType<unknown, string[] | undefined, string[] | undefined>;
   isActive: Generated<boolean>;
   lastUsedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
   createdAt: CreatedAt;

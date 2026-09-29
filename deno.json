@@ -33,6 +33,8 @@
     "hono/http-exception": "npm:hono@^4.6.0/http-exception",
     "@hono/zod-validator": "npm:@hono/zod-validator@^0.4.0",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.0.0",
+    "mppx": "npm:mppx@^0.8.5",
+    "mppx/server": "npm:mppx@^0.8.5/server",
     "zod": "npm:zod@^3.23.0",
     "zod-to-json-schema": "npm:zod-to-json-schema@^3.23.0",
     "xlsx": "npm:xlsx@^0.18.5",

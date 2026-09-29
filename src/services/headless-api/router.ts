@@ -1,31 +1,23 @@
 /**
- * headless-api-surface router stub (headless-monorepo-unification).
+ * Headless API router stub (the `api` recipe).
  *
- * Mounted unconditionally at `/api` in `app.ts` for EVERY recipe built from
- * this monorepo, but self-gated: it 404s on every request unless
- * `ALCHEMIST_TEMPLATE_KEY=api`, so the mount is inert for every other
- * recipe (web-app, cms, commerce, command-center, storefront,
- * landing-page). `ALCHEMIST_TEMPLATE_KEY` is a platform-injected runtime
- * env var (customer-deployment-manifest.ts), not something this repo
- * itself sets.
+ * `app.ts` mounts this router at `/api` for every recipe built from this
+ * monorepo. Here it is empty, so the mount is inert: it registers no route
+ * and no middleware, and every other `/api` route answers as if it were not
+ * there.
  *
- * This file is the ONLY thing the `headless-api-surface` pack's composed
- * overlay is allowed to TOUCH (never `app.ts` itself, see that pack's file
- * header in chipp-deno's src/alchemist/services/template-packs/ for why:
- * the composition engine's touched-path merge for a non-JSON path replaces
- * the whole file, which would delete this repo's real entrypoint if it
- * ever targeted app.ts directly). The pack's overlay appends its route
- * registrations below the marker comment; this stub is what makes that
- * append target exist in the first place.
+ * The `headless-api-surface` pack (chipp-deno
+ * src/alchemist/services/template-packs/) replaces this whole file in `api`
+ * projects with a router that registers the API-product routes
+ * (`/api/api-keys` and whatever the project adds). The `mcp-protocol-surface`
+ * pack does the same to mount `/api/api-keys` in `mcp-server` projects. The
+ * pack overlay writes the complete file: it never appends to this one. Keep
+ * the export name `headlessApiRouter`, since `app.ts` imports it.
+ *
+ * There is no middleware here on purpose. A `use("*")` on a router mounted at
+ * `/api` runs for every `/api` request that reaches it, so a gate here would
+ * 404 any `/api` route a recipe registers after this mount.
  */
 import { Hono } from "hono";
 
 export const headlessApiRouter = new Hono();
-
-headlessApiRouter.use("*", async (c, next) => {
-  if (Deno.env.get("ALCHEMIST_TEMPLATE_KEY") !== "api") return c.notFound();
-  return next();
-});
-
-// headless-api-surface pack-owned route registrations are appended below
-// this line by that pack's composed overlay commit.
