@@ -4,10 +4,11 @@
   import { orgStore } from "../stores/organization.svelte";
   import { can } from "../lib/permissions";
   import ThemeToggle from "./ThemeToggle.svelte";
+  import { recipeNavItems } from "../recipe-routes";
 
   // File review is admin-only. Hiding the link for everyone else is a UX
   // choice, not the control: the API gate is what enforces it.
-  const navItems = $derived([
+  const baseNavItems = $derived([
     { path: "/", label: "Dashboard", icon: "grid" },
     { path: "/inbound-emails", label: "Inbound Email", icon: "mail" },
     // Import is listed for everyone. The page itself says which imports
@@ -21,6 +22,20 @@
     // Design system sheet — builder tooling, dev builds only.
     ...(import.meta.env.DEV ? [{ path: "/design", label: "Design", icon: "palette" }] : []),
   ]);
+
+  // Recipe links (web/src/recipe-routes.ts) come first. A recipe link for
+  // a path the base also lists (usually "/") replaces the base link.
+  const navItems = $derived.by(() => {
+    const role = authStore.user?.role ?? "";
+    const recipe = recipeNavItems
+      .filter((item) => !item.visibleTo || item.visibleTo(role))
+      .map((item) => ({ path: item.path, label: item.label, icon: item.icon, testId: item.testId }));
+    const taken = new Set(recipeNavItems.map((item) => item.path));
+    const base = baseNavItems
+      .filter((item) => !taken.has(item.path))
+      .map((item) => ({ ...item, testId: item.icon }));
+    return [...recipe, ...base];
+  });
 
   function isActive(itemPath: string, currentPath: string): boolean {
     if (itemPath === "/") return currentPath === "/";
@@ -41,7 +56,7 @@
         href="#{item.path}"
         class="nav-link"
         class:active={isActive(item.path, $location)}
-        data-testid="sidebar-nav-{item.icon}"
+        data-testid="sidebar-nav-{item.testId}"
       >
         <span class="sidebar-icon">{@html getIcon(item.icon)}</span>
         <span>{item.label}</span>
@@ -73,6 +88,10 @@
 <script lang="ts" module>
   function getIcon(name: string): string {
     const icons: Record<string, string> = {
+      activity: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,
+      chart: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`,
+      users: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+      plug: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>`,
       palette:
         '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.6-.7 1.6-1.6 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6H16c3.3 0 6-2.7 6-6 0-4.9-4.5-8.6-10-8.6z"/></svg>',
       grid: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`,

@@ -12,6 +12,7 @@ import InviteAccept from "./routes/InviteAccept.svelte";
 import PortalHome from "./routes/portal/PortalHome.svelte";
 import PortalClaim from "./routes/portal/PortalClaim.svelte";
 import NotFound from "./routes/NotFound.svelte";
+import { recipeRoutes } from "./recipe-routes";
 
 // Type widened to `unknown` because Svelte 5's component types
 // (especially for components using $props() like InviteAccept)
@@ -54,6 +55,10 @@ const routes: Record<string, any> = {
   // is the landing page for an emailed link.
   "/portal": PortalHome,
   "/portal/claim/:token": PortalClaim,
+  // Recipe pages (web/src/recipe-routes.ts; empty in the base template).
+  // Spread last so a recipe can take over "/" with its own home page.
+  ...recipeRoutes,
+  // The catch-all stays last: svelte-spa-router matches in insertion order.
   "*": NotFound,
 };
 
