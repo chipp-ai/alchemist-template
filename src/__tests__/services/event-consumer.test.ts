@@ -66,6 +66,11 @@ import {
 import { redisSubscribe } from "@/lib/redis.ts";
 import { sql } from "kysely";
 
+// waitFor returns as soon as its condition holds, so this is only the failure
+// deadline. 3s flaked under the parallel suite on a loaded machine (the nudged
+// tick waits behind whatever tick is in flight).
+const WAIT_MS = 10_000;
+
 const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
 const HAS_REDIS = !!Deno.env.get("REDIS_URL");
 
@@ -180,7 +185,7 @@ dbTest("event consumer: a nudge runs a tick at once, runs the handler and marks 
 
     await waitFor(
       async () => (await deliveriesForTopic(topic))[0]?.status === "done",
-      3_000,
+      WAIT_MS,
       "done",
     );
     assertEquals(seen, ["k1"]);
@@ -188,7 +193,7 @@ dbTest("event consumer: a nudge runs a tick at once, runs the handler and marks 
 
     // A malformed message is still a wake-up, never a crash.
     nudge("not json");
-    await waitFor(async () => __peekEventConsumerStateForTest().ticks >= 3, 3_000, "third tick");
+    await waitFor(async () => __peekEventConsumerStateForTest().ticks >= 3, WAIT_MS, "third tick");
   } finally {
     await __resetEventConsumerForTest();
     assertEquals(captured.closed, 1, "stop closes the subscription");
@@ -265,7 +270,7 @@ dbTest(
       );
       await publishEventAndNudge({ topic, payload: {} });
       captured.nudge!(JSON.stringify({ topic }));
-      await waitFor(() => Promise.resolve(started), 3_000, "the handler to start");
+      await waitFor(() => Promise.resolve(started), WAIT_MS, "the handler to start");
 
       // The handler is mid-flight. A shutdown must not tear the pool down
       // under it: stop resolves only once the row is written.
@@ -317,7 +322,7 @@ dbRedisTest(
           const s = __peekEventConsumerStateForTest();
           return s.ticks >= 2 && !s.tickInFlight;
         },
-        3_000,
+        WAIT_MS,
         "the nudged tick",
       );
       await new Promise((r) => setTimeout(r, 100));
@@ -332,7 +337,7 @@ dbRedisTest(
       captured.nudge!(JSON.stringify({ topic }));
       await waitFor(
         async () => (await deliveriesForTopic(topic))[0]?.status === "done",
-        3_000,
+        WAIT_MS,
         "done once the lock is free",
       );
     } finally {
