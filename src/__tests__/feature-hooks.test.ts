@@ -11,10 +11,13 @@
  *   B. routes.ts spreads the feature routes before the "*" catch-all.
  *   C. Sidebar.svelte renders the feature nav items.
  *   D. app.ts mounts src/services/client-tickets-portal/router.ts at
- *      /api/tickets-and-billing, and the base router is empty.
+ *      /api/tickets-and-billing, and the file (stub or pack) exports
+ *      clientTicketsPortalRouter.
+ *
+ * Every check holds with the feature off or on, so this test stays green
+ * in a project where the portal is installed.
  */
-import { assert, assertEquals } from "@std/assert";
-import { app } from "../../app.ts";
+import { assert } from "@std/assert";
 import { clientTicketsPortalRouter } from "@/services/client-tickets-portal/router.ts";
 
 const read = (rel: string) => Deno.readTextFile(new URL("../../" + rel, import.meta.url));
@@ -45,11 +48,8 @@ Deno.test("feature hook: Sidebar.svelte renders the feature nav items", async ()
   assert(src.includes("...clientTicketsPortalNavItems"));
 });
 
-Deno.test("feature hook: app.ts mounts the client tickets portal router, which is empty in the base", async () => {
+Deno.test("feature hook: app.ts mounts the client tickets portal router", async () => {
   const src = await read("app.ts");
   assert(src.includes('app.route("/api/tickets-and-billing", clientTicketsPortalRouter);'));
-  assertEquals(clientTicketsPortalRouter.routes.length, 0);
-  const res = await app.request("/api/tickets-and-billing/summary");
-  assertEquals(res.status, 404);
-  await res.body?.cancel();
+  assert(typeof clientTicketsPortalRouter.fetch === "function");
 });
