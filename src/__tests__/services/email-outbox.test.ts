@@ -143,7 +143,6 @@ dbTest("outbox: a future sendAt is not claimed until the clock reaches it", asyn
 dbTest("outbox: a failed send is retried with backoff, then fails permanently", async () => {
   const { org, user, cleanup } = await createIsolatedUser("owner");
   try {
-    const now = new Date();
     const { row } = await enqueueEmail({
       to: user.email,
       subject: "Flaky",
@@ -151,6 +150,10 @@ dbTest("outbox: a failed send is retried with backoff, then fails permanently", 
       organizationId: org.id,
       maxAttempts: 2,
     });
+    // Read the clock AFTER enqueueing: sendAt defaults to the DB's now(), so
+    // a "now" taken before the insert can sit a few ms before sendAt and the
+    // row is not due yet (flaky under parallel load).
+    const now = new Date();
     const boom = async () => {
       throw new Error("SMTP 451 try later");
     };
@@ -219,13 +222,16 @@ dbTest("outbox: backoff table is 1m, 5m, 30m, 2h, 12h and clamps", () => {
 dbTest("outbox: a row stuck in 'sending' past the stale window is reclaimed", async () => {
   const { org, user, cleanup } = await createIsolatedUser("owner");
   try {
-    const now = new Date();
     const { row } = await enqueueEmail({
       to: user.email,
       subject: "Orphaned",
       text: "x",
       organizationId: org.id,
     });
+    // Read the clock AFTER enqueueing: sendAt defaults to the DB's now(), so
+    // a "now" taken before the insert can sit a few ms before sendAt and the
+    // row is not due yet (flaky under parallel load).
+    const now = new Date();
     // Simulate a runner that died mid-send 11 minutes ago.
     await db
       .updateTable("email_outbox")
