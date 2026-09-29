@@ -9,8 +9,9 @@
  * The `cms-admin-shell` pack (agency-cms recipe, or a CMS install into an
  * existing project) replaces this WHOLE FILE with a complete router: the
  * authenticated CMS API under `/api/cms` and the public client sites,
- * resolved by Host header or served at `/_sites/<slug>/`. Packs never write
- * `app.ts`: the composition engine would replace it wholesale.
+ * resolved by Host header or served at `/_sites/<slug>/`. Its SPA half is
+ * web/src/features/cms.ts. Packs never write `app.ts`: the composition
+ * engine would replace it wholesale.
  */
 import { Hono } from "hono";
 

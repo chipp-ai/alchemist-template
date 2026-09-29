@@ -6,6 +6,7 @@
   import ThemeToggle from "./ThemeToggle.svelte";
   import { recipeNavItems } from "../recipe-routes";
   import { clientTicketsPortalNavItems } from "../features/client-tickets-portal";
+  import { cmsNavItems } from "../features/cms";
 
   // File review is admin-only. Hiding the link for everyone else is a UX
   // choice, not the control: the API gate is what enforces it.
@@ -29,7 +30,7 @@
   // (usually "/") replaces the base link.
   const navItems = $derived.by(() => {
     const role = authStore.user?.role ?? "";
-    const added = [...recipeNavItems, ...clientTicketsPortalNavItems];
+    const added = [...recipeNavItems, ...clientTicketsPortalNavItems, ...cmsNavItems];
     const recipe = added
       .filter((item) => !item.visibleTo || item.visibleTo(role))
       .map((item) => ({ path: item.path, label: item.label, icon: item.icon, testId: item.testId }));

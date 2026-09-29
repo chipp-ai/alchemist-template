@@ -14,11 +14,16 @@
  *      /api/tickets-and-billing, and the file (stub or pack) exports
  *      clientTicketsPortalRouter.
  *
+ *   E. The agency CMS: web/src/features/cms.ts exports `cmsRoutes` and
+ *      `cmsNavItems`, routes.ts and Sidebar.svelte read them, and app.ts
+ *      mounts src/services/cms/router.ts at "/" before the landing page.
+ *
  * Every check holds with the feature off or on, so this test stays green
- * in a project where the portal is installed.
+ * in a project where the portal or the CMS is installed.
  */
 import { assert } from "@std/assert";
 import { clientTicketsPortalRouter } from "@/services/client-tickets-portal/router.ts";
+import { cmsRouter } from "@/services/cms/router.ts";
 
 const read = (rel: string) => Deno.readTextFile(new URL("../../" + rel, import.meta.url));
 
@@ -52,4 +57,21 @@ Deno.test("feature hook: app.ts mounts the client tickets portal router", async 
   const src = await read("app.ts");
   assert(src.includes('app.route("/api/tickets-and-billing", clientTicketsPortalRouter);'));
   assert(typeof clientTicketsPortalRouter.fetch === "function");
+});
+
+Deno.test("feature hook: the agency CMS stubs are exported and read", async () => {
+  const feature = await read("web/src/features/cms.ts");
+  assert(/export const cmsRoutes\b/.test(feature));
+  assert(/export const cmsNavItems\b/.test(feature));
+  const routes = await read("web/src/routes.ts");
+  assert(routes.includes('import { cmsRoutes } from "./features/cms";'));
+  const spread = routes.indexOf("...cmsRoutes,");
+  assert(spread !== -1 && spread < routes.indexOf('"*": NotFound'));
+  const sidebar = await read("web/src/components/Sidebar.svelte");
+  assert(sidebar.includes('import { cmsNavItems } from "../features/cms";'));
+  assert(sidebar.includes("...cmsNavItems"));
+  const app = await read("app.ts");
+  const mount = app.indexOf('app.route("/", cmsRouter);');
+  assert(mount !== -1 && mount < app.indexOf('app.route("/", landingPageRouter);'));
+  assert(typeof cmsRouter.fetch === "function");
 });

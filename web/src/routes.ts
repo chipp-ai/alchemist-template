@@ -14,6 +14,7 @@ import PortalClaim from "./routes/portal/PortalClaim.svelte";
 import NotFound from "./routes/NotFound.svelte";
 import { recipeRoutes } from "./recipe-routes";
 import { clientTicketsPortalRoutes } from "./features/client-tickets-portal";
+import { cmsRoutes } from "./features/cms";
 
 // Type widened to `unknown` because Svelte 5's component types
 // (especially for components using $props() like InviteAccept)
@@ -62,6 +63,7 @@ const routes: Record<string, any> = {
   // Feature pages a builder turns on later (web/src/features/*.ts; each
   // file is empty in the base template until its pack replaces it).
   ...clientTicketsPortalRoutes,
+  ...cmsRoutes,
   // The catch-all stays last: svelte-spa-router matches in insertion order.
   "*": NotFound,
 };
