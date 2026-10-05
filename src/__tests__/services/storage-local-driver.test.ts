@@ -21,7 +21,7 @@
  */
 
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { withLocalStorage, withTestServer } from "../helpers.ts";
+import { utf8Bytes, withLocalStorage, withTestServer } from "../helpers.ts";
 import { storageLocalRoutes } from "@/api/routes/storage-local/index.ts";
 import {
   deleteObject,
@@ -50,7 +50,7 @@ const app = withTestServer((a) => {
 });
 
 function bytes(text: string): Uint8Array<ArrayBuffer> {
-  return new TextEncoder().encode(text);
+  return utf8Bytes(text);
 }
 
 // ── Driver selection ───────────────────────────────────────────────────────

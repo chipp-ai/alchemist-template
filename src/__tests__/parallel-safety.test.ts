@@ -107,3 +107,16 @@ Deno.test("parallel-test isolation is wired: worker is pinned to its own schema"
     `schema must be a per-isolate test schema (test_p<pid>_<random>), got: ${testSchemaName}`,
   );
 });
+
+// ── 4. storage.test.ts releases its env lock only after its last test ──
+//
+// storage.test.ts mutates R2_* env vars that every isolate shares, so it holds
+// the storage-env advisory lock for its whole run and releases it in a test.
+// A test declared after that release runs unlocked and races withLocalStorage()
+// in another isolate (it saw the local driver and built a relative URL).
+Deno.test("storage.test.ts: the storage-env lock release is the last test in the file", async () => {
+  const src = await Deno.readTextFile(new URL("./storage.test.ts", import.meta.url));
+  const names = [...src.matchAll(/^Deno\.test\(\s*"([^"]+)"/gm)].map((m) => m[1]);
+  assert(names.length > 1, "expected storage.test.ts to declare tests");
+  assertEquals(names.at(-1), "release the storage-env lock");
+});

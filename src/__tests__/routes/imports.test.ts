@@ -22,7 +22,13 @@
  */
 
 import { assert, assertEquals } from "@std/assert";
-import { createIsolatedUser, getTestDb, withLocalStorage, withTestServer } from "../helpers.ts";
+import {
+  createIsolatedUser,
+  getTestDb,
+  utf8Bytes,
+  withLocalStorage,
+  withTestServer,
+} from "../helpers.ts";
 import { createSessionToken } from "@/api/middleware/auth.ts";
 import { fileRoutes } from "@/api/routes/files/index.ts";
 import { importRoutes } from "@/api/routes/imports/index.ts";
@@ -160,7 +166,12 @@ async function patchJson(person: Person, path: string, body: unknown): Promise<R
 // runtime-compatible; this cast bridges the purely nominal TS mismatch.
 async function uploadFile(
   person: Person,
-  opts: { definition: string; filename: string; contentType: string; body: Uint8Array<ArrayBuffer> },
+  opts: {
+    definition: string;
+    filename: string;
+    contentType: string;
+    body: Uint8Array<ArrayBuffer>;
+  },
 ): Promise<Response> {
   const form = new FormData();
   form.set("file", new File([opts.body], opts.filename, { type: opts.contentType }));
@@ -181,7 +192,12 @@ async function json(res: Response): Promise<any> {
 /** Upload, accept the proposed mapping, and hand back the session id. */
 async function startSession(
   person: Person,
-  opts: { definition: string; filename: string; contentType: string; body: Uint8Array<ArrayBuffer> },
+  opts: {
+    definition: string;
+    filename: string;
+    contentType: string;
+    body: Uint8Array<ArrayBuffer>;
+  },
 ): Promise<{ id: string; proposal: Array<{ columnIndex: number; fieldKey: string | null }> }> {
   const res = await uploadFile(person, opts);
   assertEquals(res.status, 201, await res.clone().text());
@@ -409,7 +425,7 @@ dbTest("a write that fails rolls the whole import back and says so on every row"
         filename: "people-simple.csv",
         contentType: "text/csv",
         // Three good rows, and the definition throws on the third.
-        body: new TextEncoder().encode(
+        body: utf8Bytes(
           "firstName,lastName,email\n" +
             "Ana,Ruiz,ana@example.com\n" +
             "Bo,Lindqvist,bo@example.com\n" +
@@ -506,7 +522,7 @@ dbTest("a column can be kept as custom data and reaches the handler as an extra"
         definition: "test-extras",
         filename: "extras.csv",
         contentType: "text/csv",
-        body: new TextEncoder().encode(
+        body: utf8Bytes(
           "firstName,email,Cost centre\nAna,ana@example.com,CC-9\n",
         ),
       });
@@ -595,7 +611,7 @@ dbTest("a stored file of the wrong type is refused by the definition's narrowing
       const uploadedFileId = await uploadThroughPavedRoad(owner, {
         filename: "scan.pdf",
         contentType: "application/pdf",
-        body: new TextEncoder().encode("%PDF-1.7 sample"),
+        body: utf8Bytes("%PDF-1.7 sample"),
       });
 
       const res = await postJson(owner, "/api/imports/sessions", {

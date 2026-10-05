@@ -211,7 +211,11 @@ Deno.test("getSignedDownloadUrl: a space in the key encodes ONCE (%20, never %25
   // SignatureDoesNotMatch on any key containing a space.
   const url = storage.getSignedDownloadUrl("uploads/Jane Doe/BLS card.pdf", 300);
   const parsed = new URL(url);
-  assertEquals(parsed.pathname.includes("%2520"), false, `double-encoded space in ${parsed.pathname}`);
+  assertEquals(
+    parsed.pathname.includes("%2520"),
+    false,
+    `double-encoded space in ${parsed.pathname}`,
+  );
   assertEquals(parsed.pathname.includes("Jane%20Doe"), true, parsed.pathname);
   // The signer must sign the same bytes it sends: re-parsing the URL is a fixed
   // point (no further encoding drift).
@@ -272,14 +276,6 @@ Deno.test("getSignedDownloadUrl: clamps non-positive TTL to 1s", () => {
   assertEquals(parsed.searchParams.get("X-Amz-Expires"), "1");
 });
 
-// Must stay the LAST test in this file: releases the advisory lock taken
-// above so other isolates' `withLocalStorage` calls can proceed. Deno runs a
-// file's tests sequentially in declaration order (and runs every test
-// regardless of an earlier one's failure), so this always fires last.
-Deno.test("release the storage-env lock", async () => {
-  await releaseStorageEnvLock?.();
-});
-
 // ── Temporary credential: the session token rides on every request ────────
 //
 // Per-project storage hands the pod a TEMPORARY, bucket-scoped credential
@@ -323,9 +319,15 @@ async function captureFetch(status: number, fn: () => Promise<unknown>): Promise
 }
 
 Deno.test("presign: a session token is a signed query parameter, and it changes the signature", () => {
-  const plain = new URL(withSessionToken(null, null, () => storage.getSignedDownloadUrl("a/b.txt", 600)));
-  const withA = new URL(withSessionToken("tok-A", null, () => storage.getSignedDownloadUrl("a/b.txt", 600)));
-  const withB = new URL(withSessionToken("tok-B", null, () => storage.getSignedDownloadUrl("a/b.txt", 600)));
+  const plain = new URL(
+    withSessionToken(null, null, () => storage.getSignedDownloadUrl("a/b.txt", 600)),
+  );
+  const withA = new URL(
+    withSessionToken("tok-A", null, () => storage.getSignedDownloadUrl("a/b.txt", 600)),
+  );
+  const withB = new URL(
+    withSessionToken("tok-B", null, () => storage.getSignedDownloadUrl("a/b.txt", 600)),
+  );
   assertEquals(plain.searchParams.has("X-Amz-Security-Token"), false);
   assertEquals(withA.searchParams.get("X-Amz-Security-Token"), "tok-A");
   assertEquals(withB.searchParams.get("X-Amz-Security-Token"), "tok-B");
@@ -334,45 +336,76 @@ Deno.test("presign: a session token is a signed query parameter, and it changes 
     false,
     "the token is inside the canonical request, so a different token signs differently",
   );
-  assertEquals(withA.searchParams.get("X-Amz-Expires"), "600", "no expiry in the env means no clamp");
+  assertEquals(
+    withA.searchParams.get("X-Amz-Expires"),
+    "600",
+    "no expiry in the env means no clamp",
+  );
 });
 
 Deno.test("presign: the URL never outlives the temporary credential", () => {
   const soon = new Date(Date.now() + 120_000).toISOString();
-  const url = new URL(withSessionToken("tok", soon, () => storage.getSignedUploadUrl("a/b.txt", "text/plain", 3600)));
+  const url = new URL(
+    withSessionToken("tok", soon, () => storage.getSignedUploadUrl("a/b.txt", "text/plain", 3600)),
+  );
   const expires = Number(url.searchParams.get("X-Amz-Expires"));
   assertEquals(expires <= 120 && expires >= 100, true, `clamped to the credential: ${expires}`);
-  const legacy = new URL(withSessionToken(null, soon, () => storage.getSignedUploadUrl("a/b.txt", "text/plain", 3600)));
+  const legacy = new URL(
+    withSessionToken(null, soon, () => storage.getSignedUploadUrl("a/b.txt", "text/plain", 3600)),
+  );
   assertEquals(legacy.searchParams.get("X-Amz-Expires"), "3600", "no token, no clamp");
 });
 
 Deno.test("putObject: the session token is sent and named in SignedHeaders; absent, the signature is unchanged", async () => {
   const body = new TextEncoder().encode("hello");
-  const withTok = await withSessionToken("tok-put", null, () =>
-    captureFetch(200, () => storage.putObject({ key: "t/hello.txt", body, contentType: "text/plain" })));
+  const withTok = await withSessionToken(
+    "tok-put",
+    null,
+    () =>
+      captureFetch(
+        200,
+        () => storage.putObject({ key: "t/hello.txt", body, contentType: "text/plain" }),
+      ),
+  );
   assertEquals(withTok.headers.get("X-Amz-Security-Token"), "tok-put");
   assertEquals(
-    /SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token,/.test(withTok.headers.get("Authorization") ?? ""),
+    /SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token,/.test(
+      withTok.headers.get("Authorization") ?? "",
+    ),
     true,
     withTok.headers.get("Authorization") ?? "",
   );
-  const without = await withSessionToken(null, null, () =>
-    captureFetch(200, () => storage.putObject({ key: "t/hello.txt", body, contentType: "text/plain" })));
+  const without = await withSessionToken(
+    null,
+    null,
+    () =>
+      captureFetch(
+        200,
+        () => storage.putObject({ key: "t/hello.txt", body, contentType: "text/plain" }),
+      ),
+  );
   assertEquals(without.headers.has("X-Amz-Security-Token"), false);
   assertEquals(
-    /SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date,/.test(without.headers.get("Authorization") ?? ""),
+    /SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date,/.test(
+      without.headers.get("Authorization") ?? "",
+    ),
     true,
     without.headers.get("Authorization") ?? "",
   );
 });
 
 Deno.test("deleteObject: the session token is sent and named in SignedHeaders", async () => {
-  const req = await withSessionToken("tok-del", null, () =>
-    captureFetch(204, () => storage.deleteObject("t/hello.txt")));
+  const req = await withSessionToken(
+    "tok-del",
+    null,
+    () => captureFetch(204, () => storage.deleteObject("t/hello.txt")),
+  );
   assertEquals(req.method, "DELETE");
   assertEquals(req.headers.get("X-Amz-Security-Token"), "tok-del");
   assertEquals(
-    /SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token,/.test(req.headers.get("Authorization") ?? ""),
+    /SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token,/.test(
+      req.headers.get("Authorization") ?? "",
+    ),
     true,
     req.headers.get("Authorization") ?? "",
   );
@@ -384,4 +417,12 @@ Deno.test("describeStorageConfig: reports whether a session token is in use, nev
   assertEquals(on.sessionToken, true);
   assertEquals(off.sessionToken, false);
   assertEquals(JSON.stringify(on).includes("tok-secret"), false);
+});
+
+// Must stay the LAST test in this file: releases the advisory lock taken
+// above so other isolates' `withLocalStorage` calls can proceed. Deno runs a
+// file's tests sequentially in declaration order (and runs every test
+// regardless of an earlier one's failure), so this always fires last.
+Deno.test("release the storage-env lock", async () => {
+  await releaseStorageEnvLock?.();
 });

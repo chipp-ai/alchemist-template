@@ -9,7 +9,7 @@
  */
 
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import { createIsolatedUser, getTestDb } from "../helpers.ts";
+import { createIsolatedUser, dbTest, getTestDb } from "../helpers.ts";
 import { defineJob, isJobKindRegistered, type JobContext } from "@/jobs/registry.ts";
 import { nextRunAfter } from "@/jobs/cron.ts";
 import {
@@ -54,7 +54,7 @@ async function cleanupHistory(orgId: string): Promise<void> {
 
 const NOW = new Date("2026-09-22T12:00:00Z");
 
-Deno.test("jobs: create validates kind, cron, timezone and minimum interval", async () => {
+dbTest("jobs: create validates kind, cron, timezone and minimum interval", async () => {
   const { org, cleanup } = await createIsolatedUser("owner");
   try {
     await assertRejects(
@@ -105,7 +105,7 @@ Deno.test("jobs: create validates kind, cron, timezone and minimum interval", as
   }
 });
 
-Deno.test("jobs: a due job runs once, records history, and advances", async () => {
+dbTest("jobs: a due job runs once, records history, and advances", async () => {
   const { org, cleanup } = await createIsolatedUser("owner");
   received.length = 0;
   try {
@@ -162,7 +162,7 @@ Deno.test("jobs: a due job runs once, records history, and advances", async () =
   }
 });
 
-Deno.test("jobs: a throwing handler is recorded as failed and still advances", async () => {
+dbTest("jobs: a throwing handler is recorded as failed and still advances", async () => {
   const { org, cleanup } = await createIsolatedUser("owner");
   try {
     const job = await createScheduledJob({
@@ -195,7 +195,7 @@ Deno.test("jobs: a throwing handler is recorded as failed and still advances", a
   }
 });
 
-Deno.test("jobs: disabled jobs are never claimed", async () => {
+dbTest("jobs: disabled jobs are never claimed", async () => {
   const { org, cleanup } = await createIsolatedUser("owner");
   try {
     const job = await createScheduledJob({
@@ -212,43 +212,46 @@ Deno.test("jobs: disabled jobs are never claimed", async () => {
   }
 });
 
-Deno.test("jobs: handler email fan-out is idempotent across a re-run of the same fire time", async () => {
-  const { org, user, cleanup } = await createIsolatedUser("owner");
-  try {
-    const job = await createScheduledJob({
-      kind: "test_echo",
-      cron: "0 9 * * 1",
-      organizationId: org.id,
-      payload: { emailTo: user.email },
-      now: NOW,
-    });
-    const tickAt = new Date(job.nextRunAt.getTime() + 1000);
-    await runDueScheduledJobs({ now: tickAt });
+dbTest(
+  "jobs: handler email fan-out is idempotent across a re-run of the same fire time",
+  async () => {
+    const { org, user, cleanup } = await createIsolatedUser("owner");
+    try {
+      const job = await createScheduledJob({
+        kind: "test_echo",
+        cron: "0 9 * * 1",
+        organizationId: org.id,
+        payload: { emailTo: user.email },
+        now: NOW,
+      });
+      const tickAt = new Date(job.nextRunAt.getTime() + 1000);
+      await runDueScheduledJobs({ now: tickAt });
 
-    let rows = await listOutbox({ organizationId: org.id });
-    assertEquals(rows.length, 1);
-    assertEquals(rows[0].source, "job:test_echo");
-    assertEquals(rows[0].toEmail, user.email);
-    assert(rows[0].idempotencyKey!.startsWith(`job:test_echo:${job.id}:`));
+      let rows = await listOutbox({ organizationId: org.id });
+      assertEquals(rows.length, 1);
+      assertEquals(rows[0].source, "job:test_echo");
+      assertEquals(rows[0].toEmail, user.email);
+      assert(rows[0].idempotencyKey!.startsWith(`job:test_echo:${job.id}:`));
 
-    // Simulate the stale-lock re-run case: reset next_run_at to the same
-    // fire time and run again. The handler runs, but its enqueue dedupes.
-    await db
-      .updateTable("scheduled_jobs")
-      .set({ nextRunAt: job.nextRunAt })
-      .where("id", "=", job.id)
-      .execute();
-    const rerun = await runDueScheduledJobs({ now: tickAt });
-    assertEquals(rerun.ok, 1);
-    rows = await listOutbox({ organizationId: org.id });
-    assertEquals(rows.length, 1);
-  } finally {
-    await cleanupHistory(org.id);
-    await cleanup();
-  }
-});
+      // Simulate the stale-lock re-run case: reset next_run_at to the same
+      // fire time and run again. The handler runs, but its enqueue dedupes.
+      await db
+        .updateTable("scheduled_jobs")
+        .set({ nextRunAt: job.nextRunAt })
+        .where("id", "=", job.id)
+        .execute();
+      const rerun = await runDueScheduledJobs({ now: tickAt });
+      assertEquals(rerun.ok, 1);
+      rows = await listOutbox({ organizationId: org.id });
+      assertEquals(rows.length, 1);
+    } finally {
+      await cleanupHistory(org.id);
+      await cleanup();
+    }
+  },
+);
 
-Deno.test("jobs: update recomputes next_run_at on cadence change and re-enable", async () => {
+dbTest("jobs: update recomputes next_run_at on cadence change and re-enable", async () => {
   const { org, cleanup } = await createIsolatedUser("owner");
   try {
     const job = await createScheduledJob({
@@ -280,7 +283,7 @@ Deno.test("jobs: update recomputes next_run_at on cadence change and re-enable",
   }
 });
 
-Deno.test("jobs: list scopes by org and delete removes the row", async () => {
+dbTest("jobs: list scopes by org and delete removes the row", async () => {
   const { org, cleanup } = await createIsolatedUser("owner");
   try {
     const job = await createScheduledJob({

@@ -324,3 +324,32 @@ export function withTestServer(
   setup(app);
   return app;
 }
+
+/**
+ * UTF-8 bytes backed by a plain `ArrayBuffer`, ready for `new File([...])` or
+ * `new Blob([...])`.
+ *
+ * Do not return `new TextEncoder().encode(text)` directly where the type is
+ * `Uint8Array<ArrayBuffer>`. Its declared return type depends on the Deno
+ * version: Deno 2.3 (TypeScript 5.8) says `Uint8Array<ArrayBufferLike>`, newer
+ * Deno says `Uint8Array<ArrayBuffer>`. Code that type-checks on a newer local
+ * Deno then fails `deno test` in CI, which pins Deno 2.3.1. The copy below is
+ * `Uint8Array<ArrayBuffer>` on every version.
+ */
+export function utf8Bytes(text: string): Uint8Array<ArrayBuffer> {
+  return new Uint8Array(new TextEncoder().encode(text));
+}
+
+const HAS_TEST_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+
+/**
+ * `Deno.test` for a case that touches the shared Postgres pool.
+ *
+ * postgres.js opens pool connections lazily, so the first query in a test
+ * can open a socket (plus its read loop and timers) that outlives the test
+ * by design. Deno's resource and op sanitizers report that as a leak, so a
+ * DB test needs them off. The case is skipped when no database is set.
+ */
+export function dbTest(name: string, fn: () => void | Promise<void>): void {
+  Deno.test({ name, ignore: !HAS_TEST_DB, sanitizeResources: false, sanitizeOps: false, fn });
+}
