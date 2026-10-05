@@ -332,9 +332,9 @@ export function withTestServer(
  * Do not return `new TextEncoder().encode(text)` directly where the type is
  * `Uint8Array<ArrayBuffer>`. Its declared return type depends on the Deno
  * version: Deno 2.3 (TypeScript 5.8) says `Uint8Array<ArrayBufferLike>`, newer
- * Deno says `Uint8Array<ArrayBuffer>`. Code that type-checks on a newer local
- * Deno then fails `deno test` in CI, which pins Deno 2.3.1. The copy below is
- * `Uint8Array<ArrayBuffer>` on every version.
+ * Deno says `Uint8Array<ArrayBuffer>`. A project still on an older Deno (one
+ * not yet moved to the `.dvmrc` version) would fail `deno test` in CI. The
+ * copy below is `Uint8Array<ArrayBuffer>` on every version.
  */
 export function utf8Bytes(text: string): Uint8Array<ArrayBuffer> {
   return new Uint8Array(new TextEncoder().encode(text));

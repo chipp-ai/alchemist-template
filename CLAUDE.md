@@ -1868,7 +1868,12 @@ been registered. Don't remove this guard — the routes bypass auth.
 
 Every dependency below is pinned to a major version where the API changed in a way that LLM training data still gets wrong by default. Read this section *before* reaching for muscle memory on any of these libraries. When training data and this section disagree, **this section wins** — the build will fail at deploy time if you guess wrong.
 
-### Deno 2 (`denoland/deno:2.3.1` runtime)
+### Deno 2 (`denoland/deno:2.9.7` runtime)
+
+The Deno version lives in `.dvmrc`, and only there. CI reads it; the
+Dockerfile must match it (`scripts/check-deno-version.sh`). It is the Chipp
+platform's one Deno version, the same one the build sandbox and the runtime
+image use. Never pin a different Deno anywhere in this repo.
 
 `Deno.run` was REMOVED in Deno 2. Most training data is Deno 1.x.
 

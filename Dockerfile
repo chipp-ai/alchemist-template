@@ -17,7 +17,7 @@ COPY web/ ./
 RUN npm run build
 
 # ── Build stage: cache Deno dependencies ──
-FROM denoland/deno:2.3.1 AS builder
+FROM denoland/deno:2.9.7 AS builder
 
 WORKDIR /app
 
@@ -40,13 +40,15 @@ COPY --from=web-builder /web/dist ./web/dist
 RUN deno check main.ts src/services/storefront/
 
 # ── Runtime stage ──
-FROM denoland/deno:2.3.1
+FROM denoland/deno:2.9.7
 
 WORKDIR /app
 
-# Avoid running as root
-RUN addgroup --system --gid 1001 deno-app && \
-    adduser --system --uid 1001 --ingroup deno-app deno-app
+# Avoid running as root. groupadd/useradd, not addgroup/adduser: the Deno 2.7
+# base image is Debian trixie, which no longer ships the adduser wrappers.
+RUN groupadd --system --gid 1001 deno-app && \
+    useradd --system --uid 1001 --gid deno-app --home-dir /home/deno-app \
+      --create-home --shell /usr/sbin/nologin deno-app
 
 # Copy compiled application (includes web/dist/ from the SPA build stage,
 # folded in during the Deno builder stage above).
