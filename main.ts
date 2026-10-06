@@ -6,6 +6,7 @@
 
 import { app } from "./app.ts";
 import { closeDatabase, initDatabase } from "@/db/client.ts";
+import { migrateOnDevBoot } from "@/lib/dev-migrate.ts";
 import { reindexDocs } from "@/services/docs/reindex.ts";
 import { startInboundEmailReaper, stopInboundEmailReaper } from "@/jobs/inbound-email-reaper.ts";
 import { startDemoReseedLoop, stopDemoReseedLoop } from "@/jobs/demo-reseed-loop.ts";
@@ -59,6 +60,10 @@ registerPeopleImport();
 registerEventHandlers();
 
 // ── Database connection ──
+
+// Dev only: a migration added since the preview started applies on this
+// restart (src/lib/dev-migrate.ts). Production migrates in the image CMD.
+await migrateOnDevBoot();
 
 try {
   await initDatabase();

@@ -331,9 +331,11 @@ async function applyPendingMigrations(
       if (useTransaction) {
         await sql.begin(async (tx) => {
           await tx.unsafe(content);
-          await tx`
-              INSERT INTO schema_migrations (version) VALUES (${migration.version})
-            `;
+          // `unsafe` with a bound parameter: postgres.js types a
+          // transaction handle without the tagged-template call signature.
+          await tx.unsafe("INSERT INTO schema_migrations (version) VALUES ($1)", [
+            migration.version,
+          ]);
         });
       } else {
         // No outer transaction. CRITICAL: split the migration text
