@@ -48,9 +48,34 @@ export interface ObsEvent {
   data: Record<string, unknown>;
 }
 
-// Per-process server session id. Stable across all server events for
-// this dev server's lifetime; resets on restart.
-const SERVER_SID = `srv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+/**
+ * What kind of process this is, from its entry module. Only `main.ts` is the
+ * dev server. A test run or a script imports the same logger and writes to
+ * the same file, and must not read as a server restart: an agent saw a test's
+ * "DATABASE_URL not set" under a fresh `srv-` id and chased a restart that
+ * never happened.
+ */
+export function processSidPrefix(mainModule: string): "srv" | "test" | "script" {
+  const path = mainModule.split(/[?#]/)[0];
+  if (/\/main\.ts$/.test(path)) return "srv";
+  if (/[._]test\.(ts|tsx|js|mjs)$/.test(path) || path.includes("/__tests__/")) return "test";
+  return "script";
+}
+
+function entryModule(): string {
+  try {
+    return Deno.mainModule;
+  } catch {
+    return "";
+  }
+}
+
+// Per-process session id. Stable for this process's lifetime; a new `srv-`
+// id means the dev server really restarted. `test-` and `script-` ids are
+// other processes sharing the log.
+const SERVER_SID = `${processSidPrefix(entryModule())}-${Date.now()}-${
+  Math.random().toString(36).slice(2, 8)
+}`;
 
 const IS_DEV = (() => {
   try {
