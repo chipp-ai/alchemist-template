@@ -22,6 +22,14 @@
  * that predate the injection): they return a `configured: false` /
  * `production_authentication_unavailable`-shaped result instead of throwing.
  *
+ * Data (2026-10-06): most tools now have a structured form. When
+ * `listHostedIntegrations({ provider })` marks a tool `returnsData: true`,
+ * `invokeHostedIntegration` puts the provider's records in `data` (whole,
+ * never truncated) and the tool's `outputSchema` describes their shape. For
+ * anything no tool covers, `requestIntegrationApi` calls the provider's own
+ * API with this app's connection (any method; the platform adds the
+ * credential). Read `data`, never parse `summary`.
+ *
  * Flow for a feature like "show the customer's Google Calendar":
  *   1. `listHostedIntegrations({ provider: "google-calendar" })` -- is a
  *      connection live on one of the org's agent applications?
@@ -164,4 +172,46 @@ export async function createIntegrationConnectLink(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ applicationId, provider }),
   });
+}
+
+/** A raw call to a provider's own API through the platform (the passthrough). */
+export interface IntegrationApiRequest {
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  /** Path on the provider's main API origin, starting with "/". */
+  path?: string;
+  /** Or a full URL on one of the provider's API origins (paging links). */
+  url?: string;
+  query?: Record<string, string | number | boolean | Array<string | number>>;
+  body?: unknown;
+  /** Extra headers the provider allows (API version pins); never credentials. */
+  headers?: Record<string, string>;
+}
+
+/** The provider's response, as `data` on a successful envelope. */
+export interface IntegrationApiResponse {
+  status: number;
+  ok: boolean;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
+/**
+ * Call any endpoint of a connected provider's own API, for example
+ * `requestIntegrationApi(appId, "hubspot", { method: "GET", path: "/crm/v3/objects/contacts", query: { limit: 100 } })`.
+ * Full read, write, update and delete. The platform adds the stored
+ * credential, refreshes it on a 401, and only allows the provider's own API
+ * hosts. The provider's status and body come back in `envelope.data` even
+ * for a 4xx, so check `data.ok`. Not every provider supports this:
+ * `listHostedIntegrations({ provider })` lists a `<provider>_api_request`
+ * tool when it does.
+ */
+export async function requestIntegrationApi(
+  applicationId: string,
+  provider: string,
+  request: IntegrationApiRequest,
+): Promise<ChippIntegrationEnvelope & { data?: IntegrationApiResponse }> {
+  const toolName = `${provider.replace(/[^a-zA-Z0-9_-]/g, "_")}_api_request`;
+  return await invokeHostedIntegration(applicationId, toolName, request as unknown as Record<string, unknown>) as
+    & ChippIntegrationEnvelope
+    & { data?: IntegrationApiResponse };
 }
