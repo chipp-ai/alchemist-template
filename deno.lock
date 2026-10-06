@@ -910,7 +910,7 @@
     "https://deno.land/x/redis@v0.32.4/vendor/https/deno.land/std/bytes/concat.ts": "095fe22eb3c52354b4d276be54e9326c751d70a5f8a8d072e5d761cb6f2cc092",
     "https://deno.land/x/redis@v0.32.4/vendor/https/deno.land/std/io/buf_reader.ts": "1f69be7812696545786985c22301d992c3f3ff10c551697a33894509156c1647",
     "https://deno.land/x/redis@v0.32.4/vendor/https/deno.land/std/io/buf_writer.ts": "6825a21ef8eeca1a1d30e29f6278d512c47eeac7086fbe9a93d0618acbd3f47b",
-    "https://raw.githubusercontent.com/chipp-ai/alchemist-template/staging/db/_runner.ts": "54e5c4bb47cc54e12cfabdc67e227b43cf55da97fbf8bbcccbafa6175fe46132"
+    "https://raw.githubusercontent.com/chipp-ai/alchemist-template/staging/db/_runner.ts": "f25881339576f3baf2a7ca12a2534208417ae37499637ce0fc8a8390981ddc55"
   },
   "workspace": {
     "dependencies": [
