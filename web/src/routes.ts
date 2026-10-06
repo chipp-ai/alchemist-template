@@ -15,6 +15,8 @@ import NotFound from "./routes/NotFound.svelte";
 import { recipeRoutes } from "./recipe-routes";
 import { clientTicketsPortalRoutes } from "./features/client-tickets-portal";
 import { cmsRoutes } from "./features/cms";
+import { appConfig } from "./lib/app-config";
+import { withoutOffModules } from "./lib/app-modules";
 
 // Type widened to `unknown` because Svelte 5's component types
 // (especially for components using $props() like InviteAccept)
@@ -22,7 +24,7 @@ import { cmsRoutes } from "./features/cms";
 // build is the load-bearing check; svelte-spa-router accepts
 // any callable component reference at runtime.
 // deno-lint-ignore no-explicit-any
-const routes: Record<string, any> = {
+const allRoutes: Record<string, any> = {
   "/": Dashboard,
   "/login": Login,
   "/signup": Signup,
@@ -67,6 +69,11 @@ const routes: Record<string, any> = {
   // The catch-all stays last: svelte-spa-router matches in insertion order.
   "*": NotFound,
 };
+
+// Built-in sections the app has switched off in web/src/chipp-app.json
+// (lib/app-modules.ts) lose their routes, so their URLs fall to NotFound.
+// deno-lint-ignore no-explicit-any
+const routes: Record<string, any> = withoutOffModules(appConfig, allRoutes);
 
 /**
  * Routes that don't require authentication.

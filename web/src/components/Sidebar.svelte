@@ -7,17 +7,20 @@
   import { recipeNavItems } from "../recipe-routes";
   import { clientTicketsPortalNavItems } from "../features/client-tickets-portal";
   import { cmsNavItems } from "../features/cms";
+  import { moduleOn } from "../lib/app-config";
 
   // File review is admin-only. Hiding the link for everyone else is a UX
   // choice, not the control: the API gate is what enforces it.
   const baseNavItems = $derived([
     { path: "/", label: "Dashboard", icon: "grid" },
-    { path: "/inbound-emails", label: "Inbound Email", icon: "mail" },
+    // Built-in sections the app keeps are switched in web/src/chipp-app.json
+    // (lib/app-modules.ts); an off section has no link and no routes.
+    ...(moduleOn("inboundEmail") ? [{ path: "/inbound-emails", label: "Inbound Email", icon: "mail" }] : []),
     // Import is listed for everyone. The page itself says which imports
     // this person may run, which is more useful than a link that
     // silently is not there.
-    { path: "/import", label: "Import", icon: "upload" },
-    ...(can(authStore.user?.role ?? "", "files.review")
+    ...(moduleOn("import") ? [{ path: "/import", label: "Import", icon: "upload" }] : []),
+    ...(moduleOn("fileReview") && can(authStore.user?.role ?? "", "files.review")
       ? [{ path: "/files/review", label: "File review", icon: "folder" }]
       : []),
     { path: "/settings", label: "Settings", icon: "settings" },

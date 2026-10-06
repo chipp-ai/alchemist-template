@@ -907,6 +907,25 @@ exported PDFs), reach for `BRAND.*` first. If you find yourself
 typing the literal "Alchemist" anywhere in this repo's customer-
 facing code, stop — that's the bug this module exists to prevent.
 
+## Built-in sections — `web/src/chipp-app.json` switches them
+
+The base template ships five built-in sections: Inbound Email, Import, File
+review, Docs and the end-user Portal. `web/src/chipp-app.json` says which ones
+this app keeps:
+
+```json
+{ "version": 1, "modules": { "inboundEmail": false, "import": true, "fileReview": true, "docs": true, "portal": false } }
+```
+
+A section set to `false` loses its sidebar link and its routes
+(`web/src/lib/app-modules.ts`; the Sidebar and `web/src/routes.ts` read it), so
+its URLs fall to NotFound. A missing file or key keeps the section on.
+
+The Chipp Builder writes this file when the person approves a plan: the
+planner decides which sections the app needs. **To add or remove a built-in
+section, edit `chipp-app.json`. Never hide one by editing the sidebar or the
+route table.** The server routes stay mounted (cheap and inert when unused).
+
 ## Design system — the FIRST step of every new project
 
 Every project used to ship looking exactly like this template. That is the

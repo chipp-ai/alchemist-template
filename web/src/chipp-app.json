@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "modules": {
+    "inboundEmail": true,
+    "import": true,
+    "fileReview": true,
+    "docs": true,
+    "portal": true
+  }
+}
