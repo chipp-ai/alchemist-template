@@ -275,7 +275,11 @@ fi
 RUNNER_URL="https://raw.githubusercontent.com/chipp-ai/alchemist-template/staging/db/_runner.ts"
 echo "Refreshing migration runner from template..."
 cd "$PROJECT_ROOT"
-deno cache --reload="$RUNNER_URL" db/migrate.ts > /dev/null 2>&1 || true
+# --reload alone does NOT heal a stale pin (Deno raises the integrity error
+# against it first), so drop the one _runner.ts pin, then cache. Same fix as
+# alchemist-infra/customer-build/Dockerfile.template and the CI step.
+deno eval 'const p="deno.lock";try{const l=JSON.parse(Deno.readTextFileSync(p));let ch=false;if(l.remote){for(const k of Object.keys(l.remote)){if(k.endsWith("/db/_runner.ts")){delete l.remote[k];ch=true;}}if(ch)Deno.writeTextFileSync(p,JSON.stringify(l,null,2)+"\n");}}catch(_){}'
+deno cache db/migrate.ts > /dev/null 2>&1 || true
 
 echo "Running database migrations..."
 deno task db:migrate

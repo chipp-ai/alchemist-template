@@ -78,6 +78,17 @@ jobs:
         with:
           deno-version-file: .dvmrc
 
+      - name: Unpin the template migration runner
+        # db/migrate.ts imports db/_runner.ts from the template's MUTABLE
+        # staging branch, but deno.lock pins its content hash. Every template
+        # change to _runner.ts makes that pin stale, and "Run migrations" then
+        # fails with "Integrity check failed for remote specifier". --reload
+        # does not heal it. Drop only that one pin; Deno re-fetches the runner
+        # and every other pin stays. Same fix as the production image:
+        # alchemist-infra/customer-build/Dockerfile.template ("Re-pinning
+        # _runner.ts in the lock is LOAD-BEARING").
+        run: deno eval 'const p="deno.lock";try{const l=JSON.parse(Deno.readTextFileSync(p));let ch=false;if(l.remote){for(const k of Object.keys(l.remote)){if(k.endsWith("/db/_runner.ts")){delete l.remote[k];ch=true;}}if(ch)Deno.writeTextFileSync(p,JSON.stringify(l,null,2)+"\n");}}catch(_){}'
+
       - name: Run migrations
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
