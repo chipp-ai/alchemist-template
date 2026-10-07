@@ -34,6 +34,16 @@ export function envObject(): Record<string, string> {
   return out;
 }
 
+/**
+ * A drop-in for code that takes an env reader object (`env = Deno.env`): the
+ * same get/has/toObject shape, seen through this test file's overrides.
+ */
+export const envReader = {
+  get: getEnv,
+  has: (key: string): boolean => getEnv(key) !== undefined,
+  toObject: envObject,
+};
+
 /** Test only: set `key` for this test file, without touching the process env. */
 export function __setEnvForTest(key: string, value: string): void {
   overrides.set(key, value);

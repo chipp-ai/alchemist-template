@@ -36,6 +36,7 @@ const FIX: Record<string, string> = {
   "Deno.env.has(": 'getEnv(KEY) !== undefined   (import { getEnv } from "@/lib/env.ts")',
   "Deno.env.set(": '__setEnvForTest(   (import { __setEnvForTest } from "@/lib/env.ts")',
   "Deno.env.delete(": '__deleteEnvForTest(   (import { __deleteEnvForTest } from "@/lib/env.ts")',
+  "Deno.env": 'envReader   (import { envReader } from "@/lib/env.ts"; same get/has/toObject)',
 };
 
 async function offenders(files: string[], pattern: RegExp): Promise<string[]> {
@@ -66,7 +67,7 @@ Deno.test("server code reads env through getEnv()/envObject()", async () => {
   const files = (await tsFiles(SRC)).filter((f) =>
     !f.startsWith(TESTS.pathname) && !f.endsWith("/lib/env.ts")
   );
-  const bad = await offenders(files, /Deno\.env\.(?:get|toObject|has|set|delete)\(/g);
+  const bad = await offenders(files, /Deno\.env\.(?:get|toObject|has|set|delete)\(|Deno\.env(?![.\w])/g);
   assertEquals(
     bad,
     [],
