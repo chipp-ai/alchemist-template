@@ -24,8 +24,9 @@
       ? [{ path: "/files/review", label: "File review", icon: "folder" }]
       : []),
     { path: "/settings", label: "Settings", icon: "settings" },
-    // Design system sheet — builder tooling, dev builds only.
-    ...(import.meta.env.DEV ? [{ path: "/design", label: "Design", icon: "palette" }] : []),
+    // No "Design" link: the design system sheet (/#/design) is Builder
+    // tooling. The Builder opens it by URL as a new project's first step,
+    // so the app's own users never need it in their sidebar (2026-10-07).
   ]);
 
   // Recipe links (web/src/recipe-routes.ts) come first, then feature links
