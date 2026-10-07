@@ -13,9 +13,10 @@ import {
   type SsrSessionVariables,
   VISITOR_COOKIE,
 } from "@/api/middleware/optional-session.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 
 function buildApp() {
   const app = new Hono<{ Variables: SsrSessionVariables }>();

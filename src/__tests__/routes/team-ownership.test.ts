@@ -25,8 +25,9 @@ import { createIsolatedUser, getTestDb, withTestServer } from "../helpers.ts";
 import { createSessionToken } from "@/api/middleware/auth.ts";
 import { orgRoutes } from "@/api/routes/org/index.ts";
 import { authRoutes } from "@/api/routes/auth/index.ts";
+import { getEnv } from "@/lib/env.ts";
 
-const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 
 function deno(name: string, fn: () => Promise<void>) {
   Deno.test({

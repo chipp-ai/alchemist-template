@@ -21,8 +21,9 @@ import { creditService } from "@/services/credit.service.ts";
 import { listMcpTools, registerMcpTool } from "@/mcp/registry.ts";
 // The example tools register themselves when server.ts imports them.
 import "@/mcp/server.ts";
+import { getEnv } from "@/lib/env.ts";
 
-const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 
 function dbTest(name: string, fn: () => Promise<void>) {
   Deno.test({

@@ -23,6 +23,7 @@ import { __setSpaIndexPathForTests, renderSpaShellHtml, serveSpaShell } from "@/
 import { appPath } from "@/config/site.ts";
 import { appOrigin, originFrom } from "@/services/app-links.ts";
 import { escapeHtml as baseEscapeHtml, sanitizeHref as baseSanitizeHref } from "@/lib/safe-html.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const SPA_FIXTURE = new URL("../fixtures/spa-shell-index.html", import.meta.url);
 
@@ -192,5 +193,5 @@ Deno.test("the origin is APP_URL without a trailing slash, or the dev origin", (
   assertEquals(originFrom("https://shop.example.com//"), "https://shop.example.com");
   assertEquals(originFrom("  "), "http://localhost:8000");
   assertEquals(originFrom(undefined), "http://localhost:8000");
-  assertEquals(appOrigin(), originFrom(Deno.env.get("APP_URL")));
+  assertEquals(appOrigin(), originFrom(getEnv("APP_URL")));
 });

@@ -11,6 +11,7 @@
 import { assert, assertEquals } from "@std/assert";
 import { findParallelHazards } from "./parallel-safety.ts";
 import { isDatabaseConfigured, testSchemaName } from "@/db/client.ts";
+import { getEnv } from "@/lib/env.ts";
 
 // ── 1. Rule-set unit tests ──
 
@@ -92,7 +93,7 @@ Deno.test("no test file contains a parallel-unsafe destructive SQL pattern", asy
 Deno.test("parallel-test isolation is wired: worker is pinned to its own schema", () => {
   // Only meaningful under the `test*` tasks (which set TEST_PARALLEL_ISOLATION=1).
   // A direct `deno test` without the flag legitimately runs un-isolated.
-  if (Deno.env.get("TEST_PARALLEL_ISOLATION") !== "1") return;
+  if (getEnv("TEST_PARALLEL_ISOLATION") !== "1") return;
   if (!isDatabaseConfigured()) return; // no DB configured → nothing to isolate
   assert(
     testSchemaName !== null,

@@ -30,8 +30,9 @@ import {
   setOrgCommunicationsEnabled,
   setUserCommunicationsEnabled,
 } from "@/services/email.ts";
+import { getEnv } from "@/lib/env.ts";
 
-const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 
 function dbTest(name: string, fn: () => Promise<void>) {
   Deno.test({ name, ignore: !HAS_DB, sanitizeResources: false, sanitizeOps: false, fn });

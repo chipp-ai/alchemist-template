@@ -23,8 +23,9 @@ import {
 } from "@/services/uploaded-file.service.ts";
 import { getObject, objectExists } from "@/services/storage.service.ts";
 import { MAX_UPLOAD_BYTES } from "@/utils/upload-types.ts";
+import { getEnv } from "@/lib/env.ts";
 
-const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 
 /**
  * Same wrapper the other database-backed service tests use. The op

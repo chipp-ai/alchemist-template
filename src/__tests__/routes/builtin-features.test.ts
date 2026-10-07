@@ -13,6 +13,7 @@
 import { assert, assertEquals } from "@std/assert";
 import { app } from "../../../app.ts";
 import { setFeatureForTests } from "@/lib/features.ts";
+import { getEnv } from "@/lib/env.ts";
 
 function test(name: string, fn: () => Promise<void>) {
   Deno.test({ name, sanitizeResources: false, sanitizeOps: false, fn });
@@ -124,7 +125,7 @@ test("the env vars are the switch: exactly \"1\" or \"true\" turns a feature on"
   // This worker's module-level overrides are clear here, so env decides.
   // Deno.env is shared across parallel test workers, so only READ it.
   for (const feature of ["api", "mcp"] as const) {
-    const v = Deno.env.get(FEATURE_ENV_VARS[feature]);
+    const v = getEnv(FEATURE_ENV_VARS[feature]);
     assertEquals(featureEnabled(feature), v === "1" || v === "true");
   }
   assertEquals(FEATURE_ENV_VARS, { api: "ALCHEMIST_FEATURE_API", mcp: "ALCHEMIST_FEATURE_MCP" });

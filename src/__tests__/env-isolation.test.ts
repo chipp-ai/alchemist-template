@@ -74,7 +74,9 @@ Deno.test("server code reads env through getEnv()/envObject()", async () => {
       files.push(path);
     } catch { /* this project has no root ${root} */ }
   }
-  const bad = await offenders(files, /Deno\.env\.(?:get|toObject|has|set|delete)\(|Deno\.env(?![.\w])/g);
+  // Reads only. A server-side write (a .env loader at boot) is process setup,
+  // not a test override, so Deno.env.set/delete stay allowed here.
+  const bad = await offenders(files, /Deno\.env\.(?:get|toObject|has)\(|Deno\.env(?![.\w])/g);
   assertEquals(
     bad,
     [],

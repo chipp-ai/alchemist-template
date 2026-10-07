@@ -21,10 +21,11 @@ import {
 } from "@/services/email-outbox.service.ts";
 import type { SendEmailOptions } from "@/services/email.ts";
 import { BadRequestError } from "@/utils/errors.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const db = getTestDb();
 
-const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 
 /** DB tests here touch the shared pool; sanitizer noise fails them otherwise. */
 function dbTest(name: string, fn: () => void | Promise<void>) {
