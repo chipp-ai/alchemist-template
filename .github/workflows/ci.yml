@@ -3,8 +3,23 @@ name: CI
 on:
   push:
     branches: [main, staging]
+    # Docs-only changes do not run CI (Hunter, 2026-10-07). No platform gate
+    # waits for a CI status on a customer sha, so a skipped run stalls nothing.
+    # A push that touches any other file still runs the whole workflow.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".claude/**"
+      - "CLAUDE.md"
+      - "AGENTS.md"
   pull_request:
     branches: [main, staging]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".claude/**"
+      - "CLAUDE.md"
+      - "AGENTS.md"
 
 jobs:
   deno-version:
