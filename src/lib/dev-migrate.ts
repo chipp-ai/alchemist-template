@@ -13,11 +13,27 @@ import { log } from "@/lib/logger.ts";
 
 type RunMigrations = (options: { migrationsDir: string }) => Promise<void>;
 
+/**
+ * What the boot decision reads. Tests pass it explicitly instead of setting
+ * env vars: `deno test --parallel` shares one process environment across test
+ * files, so a test that set DATABASE_URL to a fake URL made another file's DB
+ * client connect with it ("password authentication failed for user x").
+ */
+export interface DevBootEnv {
+  devRoutes: boolean;
+  databaseUrl: string | undefined;
+}
+
+function processDevBootEnv(): DevBootEnv {
+  return { devRoutes: devRoutesEnabled(), databaseUrl: Deno.env.get("DATABASE_URL") };
+}
+
 export async function migrateOnDevBoot(
   run: RunMigrations = async (options) =>
     (await import("../../db/_runner.ts")).runMigrations(options),
+  env: DevBootEnv = processDevBootEnv(),
 ): Promise<"skipped" | "applied" | "failed"> {
-  if (!devRoutesEnabled() || !Deno.env.get("DATABASE_URL")) return "skipped";
+  if (!env.devRoutes || !env.databaseUrl) return "skipped";
   try {
     await run({ migrationsDir: new URL("../../db/migrations/", import.meta.url).pathname });
     return "applied";

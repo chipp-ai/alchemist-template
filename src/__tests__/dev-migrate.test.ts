@@ -4,61 +4,42 @@
  * is missing a table an agent just added.
  */
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { migrateOnDevBoot } from "../lib/dev-migrate.ts";
+import { type DevBootEnv, migrateOnDevBoot } from "../lib/dev-migrate.ts";
 
-async function withEnv(env: Record<string, string | null>, fn: () => Promise<void>) {
-  const prev = Object.fromEntries(Object.keys(env).map((k) => [k, Deno.env.get(k) ?? null]));
-  const set = (vals: Record<string, string | null>) => {
-    for (const [k, v] of Object.entries(vals)) v === null ? Deno.env.delete(k) : Deno.env.set(k, v);
-  };
-  set(env);
-  try {
-    await fn();
-  } finally {
-    set(prev);
-  }
-}
+// Never set DATABASE_URL or ALCHEMIST_DEV_ROUTES here: `deno test --parallel`
+// shares one process environment, so a fake DATABASE_URL leaks into other test
+// files' DB connections. Pass the boot env explicitly instead.
+const DEV: DevBootEnv = { devRoutes: true, databaseUrl: "postgres://x@localhost/db" };
 
 Deno.test("dev boot runs the migrations from db/migrations/", async () => {
-  await withEnv(
-    { ALCHEMIST_DEV_ROUTES: "1", DATABASE_URL: "postgres://x@localhost/db" },
-    async () => {
-      const dirs: string[] = [];
-      assertEquals(
-        await migrateOnDevBoot(async ({ migrationsDir }) => void dirs.push(migrationsDir)),
-        "applied",
-      );
-      assertEquals(dirs.length, 1);
-      assertEquals(dirs[0].endsWith("/db/migrations/"), true);
-    },
+  const dirs: string[] = [];
+  assertEquals(
+    await migrateOnDevBoot(async ({ migrationsDir }) => void dirs.push(migrationsDir), DEV),
+    "applied",
   );
+  assertEquals(dirs.length, 1);
+  assertEquals(dirs[0].endsWith("/db/migrations/"), true);
 });
 
 Deno.test("production (no dev routes) and a missing database skip it", async () => {
   let ran = 0;
   const run = async () => void ran++;
-  await withEnv(
-    { ALCHEMIST_DEV_ROUTES: null, DATABASE_URL: "postgres://x@localhost/db" },
-    async () => {
-      assertEquals(await migrateOnDevBoot(run), "skipped");
-    },
-  );
-  await withEnv({ ALCHEMIST_DEV_ROUTES: "1", DATABASE_URL: null }, async () => {
-    assertEquals(await migrateOnDevBoot(run), "skipped");
-  });
+  assertEquals(await migrateOnDevBoot(run, { ...DEV, devRoutes: false }), "skipped");
+  assertEquals(await migrateOnDevBoot(run, { ...DEV, databaseUrl: undefined }), "skipped");
   assertEquals(ran, 0);
 });
 
 Deno.test("a failed migration does not stop the server from booting", async () => {
-  await withEnv(
-    { ALCHEMIST_DEV_ROUTES: "1", DATABASE_URL: "postgres://x@localhost/db" },
-    async () => {
-      assertEquals(
-        await migrateOnDevBoot(() => Promise.reject(new Error("syntax error"))),
-        "failed",
-      );
-    },
+  assertEquals(
+    await migrateOnDevBoot(() => Promise.reject(new Error("syntax error")), DEV),
+    "failed",
   );
+});
+
+Deno.test("dev-migrate tests never touch the shared process environment (source pin)", async () => {
+  const self = await Deno.readTextFile(new URL(import.meta.url));
+  assertEquals(self.includes("Deno.env." + "set("), false);
+  assertEquals(self.includes("Deno.env." + "delete("), false);
 });
 
 Deno.test("main.ts migrates before connecting, and dev restarts on new migrations (source pin)", async () => {
