@@ -4,8 +4,8 @@
  * Copies the multi-replica-safe loop shape from
  * `src/jobs/inbound-email-reaper.ts` (module-level `running` /
  * `shuttingDown` / `timerId` flags, `setTimeout(tick, 0)` kick-off so
- * ticks never overlap, a `pg_try_advisory_lock` on ONE dedicated
- * connection so only one replica re-seeds per cycle, `NODE_ENV=test`
+ * ticks never overlap, the job lock (`withJobLock`, src/lib/job-lock.ts)
+ * so only one replica re-seeds per cycle, `NODE_ENV=test`
  * immediate no-op, never-throw-at-boot).
  *
  * Differences from the reaper, both deliberate:
@@ -20,27 +20,25 @@
  *     seeded right away rather than waiting up to a full day. Subsequent
  *     ticks are spaced `DEMO_RESEED_INTERVAL_MS` apart (default 24h).
  *
- * The lock (`DEMO_RESEED_LOCK_ID`) is a budget optimization, not a
+ * The lock (`DEMO_RESEED_LOCK_NAME`) is a budget optimization, not a
  * correctness requirement -- `seedDemo()` is itself idempotent (upserts by
  * stable key, scoped deletes) -- but taking it means N replicas booting at
  * once only pay the seed cost (and the wipe of accumulated public writes)
  * once per cycle instead of N times racing each other.
  */
 
-import { sql } from "kysely";
-import { db, isDatabaseConfigured } from "@/db/client.ts";
+import { isDatabaseConfigured } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
+import { withJobLock } from "@/lib/job-lock.ts";
 import { isDemoMode } from "@/config/demo-mode.ts";
 import { seedDemo, type SeedDemoResult } from "../../scripts/seed-demo.ts";
 
 const LOG_SOURCE = "demo-reseed-loop";
 
-/**
- * Stable advisory-lock id for the demo nightly re-seed. Distinct from the
- * docs reindex lock (472026011), the inbound-email reaper lock
- * (749217530011), and the test-schema provisioning lock (494494).
- */
-const DEMO_RESEED_LOCK_ID = 838291740022;
+/** Job-lock name for the demo nightly re-seed (`withJobLock`, Redis, per project). */
+const DEMO_RESEED_LOCK_NAME = "demo-reseed";
+/** A crashed holder blocks peers for at most this long. Refreshed while seeding. */
+const DEMO_RESEED_LOCK_TTL_S = 600;
 
 /** Re-seed cadence default -- once a day. */
 const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
@@ -125,8 +123,8 @@ export function stopDemoReseedLoop(): void {
 }
 
 /**
- * Run exactly one re-seed cycle: try the advisory lock on a dedicated
- * connection, and if acquired, run `seedDemo()` while holding it. Returns
+ * Run exactly one re-seed cycle: try the job lock, and if acquired, run
+ * `seedDemo()` while holding it. Returns
  * `{ ran: false }` when the lock was held by a peer (another replica is
  * already re-seeding this cycle) or when DEMO_MODE is off. Exported so
  * tests can exercise the locking behavior directly without a background
@@ -137,22 +135,13 @@ export async function runDemoReseedCycle(): Promise<
 > {
   if (!isDemoMode()) return { ran: false };
 
-  return await db.connection().execute(async (conn) => {
-    const lockRes = await sql<{ locked: boolean }>`
-      select pg_try_advisory_lock(${DEMO_RESEED_LOCK_ID}) as locked
-    `.execute(conn);
-    if (!lockRes.rows[0]?.locked) {
-      log.debug("demo reseed cycle skipped (lock held by peer)", { source: LOG_SOURCE });
-      return { ran: false };
-    }
-    try {
-      const result = await seedDemo();
-      log.info("demo reseed cycle complete", { source: LOG_SOURCE, ...result });
-      return { ran: true, result };
-    } finally {
-      await sql`select pg_advisory_unlock(${DEMO_RESEED_LOCK_ID})`.execute(conn);
-    }
-  });
+  const outcome = await withJobLock(DEMO_RESEED_LOCK_NAME, DEMO_RESEED_LOCK_TTL_S, seedDemo);
+  if (!outcome.ran) {
+    log.debug("demo reseed cycle skipped (lock held by peer)", { source: LOG_SOURCE });
+    return { ran: false };
+  }
+  log.info("demo reseed cycle complete", { source: LOG_SOURCE, ...outcome.value });
+  return { ran: true, result: outcome.value };
 }
 
 async function tick(): Promise<void> {

@@ -295,7 +295,12 @@ The rules:
   runs again on any replica. This happened in production (a carrier-sync
   scheduler jammed for hours, 2026-08-01) and the same bug existed in 22
   other schedulers in that project. `acquireLock` (Redis `SET NX EX` with a
-  TTL) is the cross-pod lock. A dead holder's lock expires on its own.
+  TTL) is the cross-pod lock. A dead holder's lock expires on its own. For a
+  job tick, wrap the work in `withJobLock(name, ttlSeconds, fn)` from
+  `src/lib/job-lock.ts`: it takes the Redis lock, refreshes it while `fn`
+  runs, releases it, and guards same-process overlap. A source scan
+  (`src/__tests__/no-session-advisory-lock.test.ts`) fails the build on any
+  `pg_try_advisory_lock(` / `pg_advisory_lock(` outside test provisioning.
 - **`SCAN`/`KEYS` are denied by the ACL** (they would leak other tenants' key
   names). If you need to enumerate your own keys, track them explicitly in a
   Redis SET or in Postgres.

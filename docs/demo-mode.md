@@ -21,8 +21,9 @@ public landing page, the curated demo seed, and the nightly re-seed loop.
   Run directly: `deno run --env --allow-all scripts/seed-demo.ts`.
 - `src/jobs/demo-reseed-loop.ts` copies the `inbound-email-reaper.ts`
   loop shape exactly (module flags, `setTimeout(tick,0)` kick-off,
-  `pg_try_advisory_lock` on a dedicated connection -- new lock id
-  `838291740022` -- `NODE_ENV=test` no-op, never-throw). Gated on
+  the job lock `withJobLock("demo-reseed", ...)` from
+  `src/lib/job-lock.ts` (Redis; it replaced a session advisory lock that
+  leaked behind pgbouncer), `NODE_ENV=test` no-op, never-throw). Gated on
   `isDemoMode()` (checked live, every tick) rather than a static
   "configured" flag, so a normal customer deploy starts the loop, takes
   one look, and stays dormant forever. First tick fires almost

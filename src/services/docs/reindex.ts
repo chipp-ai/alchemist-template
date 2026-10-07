@@ -31,15 +31,17 @@
  */
 
 import { db, isDatabaseConfigured } from "@/db/client.ts";
-import { sql } from "kysely";
 import { log } from "@/lib/logger.ts";
+import { withJobLock } from "@/lib/job-lock.ts";
 import { LLM_CONFIG } from "@/config/llm.ts";
 import { DOCS_PAGES } from "./registry.ts";
 import { chunkMarkdown, contentHash } from "./chunk.ts";
 
 const EMBED_BATCH = 96;
-/** Arbitrary, stable advisory-lock id for the docs reindex (one per app). */
-const REINDEX_LOCK_KEY = 472026011;
+/** Job-lock name for the docs reindex (`withJobLock`, Redis, per project). */
+const REINDEX_LOCK_NAME = "docs-reindex";
+/** A crashed holder blocks peers for at most this long. Refreshed while running. */
+const REINDEX_LOCK_TTL_S = 300;
 
 export interface ReindexResult {
   embedded: number;
@@ -77,36 +79,24 @@ async function buildDesired(): Promise<DesiredChunk[]> {
 const hasEmbedding = (e?: string) => !!e && e !== "" && e !== "[]";
 
 /**
- * Reindex the docs corpus. Safe to call on every boot. Holds a session
- * advisory lock so only one replica works per rollout. Never throws.
+ * Reindex the docs corpus. Safe to call on every boot. Holds the job lock
+ * (`src/lib/job-lock.ts`) so only one replica works per rollout. Never throws.
  */
 export async function reindexDocs(): Promise<ReindexResult> {
   if (!isDatabaseConfigured()) {
     return { embedded: 0, deleted: 0, skipped: 0, reason: "no-database" };
   }
   try {
-    // Run the whole reindex on ONE connection so the session advisory
-    // lock we take is held + released on the same connection (pooling safe).
-    return await db.connection().execute(async (conn) => {
-      const lockRes = await sql<{ locked: boolean }>`
-        select pg_try_advisory_lock(${REINDEX_LOCK_KEY}) as locked
-      `.execute(conn);
-      if (!lockRes.rows[0]?.locked) {
-        return { embedded: 0, deleted: 0, skipped: 0, reason: "lock-held" };
-      }
-      try {
-        return await runReindex(conn);
-      } finally {
-        await sql`select pg_advisory_unlock(${REINDEX_LOCK_KEY})`.execute(conn);
-      }
-    });
+    const outcome = await withJobLock(REINDEX_LOCK_NAME, REINDEX_LOCK_TTL_S, () => runReindex(db));
+    if (!outcome.ran) return { embedded: 0, deleted: 0, skipped: 0, reason: "lock-held" };
+    return outcome.value;
   } catch (err) {
     log.warn("docs reindex failed (non-fatal)", { source: "docs-reindex" }, err);
     return { embedded: 0, deleted: 0, skipped: 0, reason: "error" };
   }
 }
 
-/** The actual diff + embed + upsert + prune, on a single held connection. */
+/** The actual diff + embed + upsert + prune. */
 async function runReindex(conn: typeof db): Promise<ReindexResult> {
   const desired = await buildDesired();
 

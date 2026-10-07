@@ -15,7 +15,7 @@
  *   - Never throws at boot.
  *
  * Loop shape: `setTimeout`, not `setInterval`, so ticks cannot overlap.
- * Each tick takes a `pg_try_advisory_lock` on ONE dedicated connection, so
+ * Each tick takes the job lock (`withJobLock`, src/lib/job-lock.ts), so
  * only one pod sends when a project runs several. The lock matters more
  * here than for an idempotent drain: without it, N pods means N copies of
  * the same digest in someone's inbox.
@@ -29,9 +29,9 @@
  *   EXPIRATION_DIGEST_WITHIN_DAYS  (default 30, clamp 1..365)
  */
 
-import { sql } from "kysely";
-import { db, isDatabaseConfigured } from "@/db/client.ts";
+import { isDatabaseConfigured } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
+import { withJobLock } from "@/lib/job-lock.ts";
 import {
   DEFAULT_WITHIN_DAYS,
   hasExpiringRecordsProvider,
@@ -40,12 +40,10 @@ import {
 
 const LOG_SOURCE = "expiration-digest-job";
 
-/**
- * Stable advisory-lock id for this job. Distinct from the inbound-email
- * reaper (749217530011), the docs reindex (472026011), and test-schema
- * provisioning (494494). Fits in a Postgres bigint.
- */
-const DIGEST_LOCK_ID = 749217530012;
+/** Job-lock name for this job (`withJobLock`, Redis, per project). */
+const DIGEST_LOCK_NAME = "expiration-digest";
+/** A crashed holder blocks peers for at most this long. Refreshed while sending. */
+const DIGEST_LOCK_TTL_S = 900;
 
 const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -134,9 +132,17 @@ function schedule(delayMs: number): void {
 async function tick(): Promise<void> {
   if (shuttingDown) return;
   try {
-    await withAdvisoryLock(async () => {
-      await runExpirationDigest({ withinDays: withinDays() });
-    });
+    const outcome = await withJobLock(
+      DIGEST_LOCK_NAME,
+      DIGEST_LOCK_TTL_S,
+      () => runExpirationDigest({ withinDays: withinDays() }),
+    );
+    if (!outcome.ran) {
+      log.info("expiration digest tick skipped -- another pod holds the lock", {
+        source: LOG_SOURCE,
+        feature: "tick",
+      });
+    }
   } catch (err) {
     // The loop NEVER dies. A failed tick logs and reschedules; the service
     // itself already emits ONE aggregate error for per-org failures.
@@ -144,34 +150,4 @@ async function tick(): Promise<void> {
   } finally {
     schedule(intervalMs());
   }
-}
-
-/**
- * Run `fn` while holding the job's SESSION advisory lock on ONE dedicated
- * connection (taken, held, and released on that same connection -- pooling
- * safe; session locks are per-connection). A pod that loses the race skips
- * this tick.
- *
- * A session lock on a dedicated connection, NOT a transaction lock: the
- * work inside sends email, and holding an open transaction across a
- * network round-trip is how a periodic job ends up blocking a migration.
- */
-async function withAdvisoryLock(fn: () => Promise<void>): Promise<void> {
-  await db.connection().execute(async (conn) => {
-    const got = await sql<{ locked: boolean }>`
-      select pg_try_advisory_lock(${DIGEST_LOCK_ID}) as locked
-    `.execute(conn);
-    if (!got.rows[0]?.locked) {
-      log.info("expiration digest tick skipped -- another pod holds the lock", {
-        source: LOG_SOURCE,
-        feature: "tick",
-      });
-      return;
-    }
-    try {
-      await fn();
-    } finally {
-      await sql`select pg_advisory_unlock(${DIGEST_LOCK_ID})`.execute(conn);
-    }
-  });
 }

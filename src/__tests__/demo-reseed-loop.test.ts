@@ -10,7 +10,7 @@
  *     is dormant when DEMO_MODE is off: it never touches the database.
  *   - Multi-replica safety: two concurrent cycles (simulating two pods
  *     racing the same tick) under DEMO_MODE=1 only let ONE of them
- *     actually run the seed -- the advisory lock skips the other.
+ *     actually run the seed -- the job lock skips the other.
  */
 
 import { assert, assertEquals } from "@std/assert";
@@ -103,7 +103,7 @@ test("runDemoReseedCycle: dormant (no DB write) when DEMO_MODE is off", async ()
   });
 });
 
-test("runDemoReseedCycle: two concurrent cycles under DEMO_MODE=1 -- only one actually seeds (advisory lock)", async () => {
+test("runDemoReseedCycle: two concurrent cycles under DEMO_MODE=1 -- only one actually seeds (job lock)", async () => {
   await withDemoMode("1", async () => {
     await cleanupDemoOrg();
     try {
@@ -113,7 +113,7 @@ test("runDemoReseedCycle: two concurrent cycles under DEMO_MODE=1 -- only one ac
       assertEquals(
         ranCount,
         1,
-        "exactly one concurrent cycle should win the advisory lock and run the seed",
+        "exactly one concurrent cycle should win the job lock and run the seed",
       );
 
       // The demo org must exist exactly once regardless of which cycle won.
