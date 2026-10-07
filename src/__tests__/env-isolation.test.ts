@@ -4,6 +4,7 @@
  *   `deno test --parallel` shares it across every test file;
  * - server code reads env through getEnv()/envObject(), so a test's
  *   __setEnvForTest() override actually reaches it.
+ * A failure lists each file:line and the exact replacement.
  */
 import { assertEquals } from "@std/assert";
 import { __deleteEnvForTest, __setEnvForTest, envObject, getEnv } from "@/lib/env.ts";
@@ -15,31 +16,63 @@ async function tsFiles(dir: URL): Promise<string[]> {
     if (e.isDirectory) out.push(...await tsFiles(u));
     else if (e.name.endsWith(".ts")) out.push(u.pathname);
   }
-  return out;
+  return out.sort();
+}
+
+/** Blank out comments (keeping line numbers) so prose that names Deno.env is fine. */
+function code(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "))
+    .replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
 }
 
 const SRC = new URL("../", import.meta.url);
 const TESTS = new URL("./", import.meta.url);
 const SELF = new URL(import.meta.url).pathname;
 
-Deno.test("no test file mutates the shared process environment", async () => {
-  const bad: string[] = [];
-  for (const f of await tsFiles(TESTS)) {
-    if (f === SELF) continue;
-    const s = await Deno.readTextFile(f);
-    if (/Deno\.env\.(set|delete)\(/.test(s)) bad.push(f.slice(SRC.pathname.length));
+const FIX: Record<string, string> = {
+  "Deno.env.get(": 'getEnv(   (import { getEnv } from "@/lib/env.ts")',
+  "Deno.env.toObject(": 'envObject(   (import { envObject } from "@/lib/env.ts")',
+  "Deno.env.has(": 'getEnv(KEY) !== undefined   (import { getEnv } from "@/lib/env.ts")',
+  "Deno.env.set(": '__setEnvForTest(   (import { __setEnvForTest } from "@/lib/env.ts")',
+  "Deno.env.delete(": '__deleteEnvForTest(   (import { __deleteEnvForTest } from "@/lib/env.ts")',
+};
+
+async function offenders(files: string[], pattern: RegExp): Promise<string[]> {
+  const out: string[] = [];
+  for (const f of files) {
+    const lines = code(await Deno.readTextFile(f)).split("\n");
+    lines.forEach((line, i) => {
+      for (const m of line.matchAll(pattern)) {
+        out.push(`src/${f.slice(SRC.pathname.length)}:${i + 1}: replace ${m[0]} with ${FIX[m[0]]}`);
+      }
+    });
   }
-  assertEquals(bad, [], "use __setEnvForTest/__deleteEnvForTest from src/lib/env.ts");
+  return out;
+}
+
+Deno.test("no test file mutates the shared process environment", async () => {
+  const files = (await tsFiles(TESTS)).filter((f) => f !== SELF);
+  const bad = await offenders(files, /Deno\.env\.(?:set|delete)\(/g);
+  assertEquals(
+    bad,
+    [],
+    "deno test --parallel shares one process env across test files; override env per file instead:\n" +
+      bad.join("\n"),
+  );
 });
 
 Deno.test("server code reads env through getEnv()/envObject()", async () => {
-  const bad: string[] = [];
-  for (const f of await tsFiles(SRC)) {
-    if (f.startsWith(TESTS.pathname) || f.endsWith("/lib/env.ts")) continue;
-    const s = await Deno.readTextFile(f);
-    if (/Deno\.env\.(get|toObject|has|set|delete)\(/.test(s)) bad.push(f.slice(SRC.pathname.length));
-  }
-  assertEquals(bad, [], "read env with getEnv()/envObject() from src/lib/env.ts");
+  const files = (await tsFiles(SRC)).filter((f) =>
+    !f.startsWith(TESTS.pathname) && !f.endsWith("/lib/env.ts")
+  );
+  const bad = await offenders(files, /Deno\.env\.(?:get|toObject|has|set|delete)\(/g);
+  assertEquals(
+    bad,
+    [],
+    "server code must read env through src/lib/env.ts so test overrides reach it:\n" +
+      bad.join("\n"),
+  );
 });
 
 Deno.test("an override is visible through getEnv and envObject, and a delete hides the key", () => {
