@@ -45,7 +45,7 @@ async function offenders(files: string[], pattern: RegExp): Promise<string[]> {
     const lines = code(await Deno.readTextFile(f)).split("\n");
     lines.forEach((line, i) => {
       for (const m of line.matchAll(pattern)) {
-        out.push(`src/${f.slice(SRC.pathname.length)}:${i + 1}: replace ${m[0]} with ${FIX[m[0]]}`);
+        out.push(`${f.startsWith(SRC.pathname) ? "src/" + f.slice(SRC.pathname.length) : f.split("/").pop()}:${i + 1}: replace ${m[0]} with ${FIX[m[0]]}`);
       }
     });
   }
@@ -67,6 +67,13 @@ Deno.test("server code reads env through getEnv()/envObject()", async () => {
   const files = (await tsFiles(SRC)).filter((f) =>
     !f.startsWith(TESTS.pathname) && !f.endsWith("/lib/env.ts")
   );
+  for (const root of ["main.ts", "app.ts"]) {
+    const path = new URL(`../${root}`, SRC).pathname;
+    try {
+      await Deno.stat(path);
+      files.push(path);
+    } catch { /* this project has no root ${root} */ }
+  }
   const bad = await offenders(files, /Deno\.env\.(?:get|toObject|has|set|delete)\(|Deno\.env(?![.\w])/g);
   assertEquals(
     bad,
