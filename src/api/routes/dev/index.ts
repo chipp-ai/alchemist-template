@@ -840,7 +840,7 @@ devRoutes.delete("/mailbox", (c) => {
 devRoutes.get("/info", (c) => {
   return c.json({
     enabled: devRoutesEnabled(),
-    nodeEnv: Deno.env.get("NODE_ENV") ?? "development",
+    nodeEnv: getEnv("NODE_ENV") ?? "development",
     // The effective sender identity: which From address this deploy
     // composes mail with, and what the auth-critical fallback has to
     // work with.
@@ -940,6 +940,7 @@ import {
   getRecentErrors,
   getRecentRequests,
 } from "@/lib/dev-activity.ts";
+import { getEnv } from "@/lib/env.ts";
 
 interface ClientSnapshotShape {
   timestamp: string;
@@ -1037,8 +1038,8 @@ async function collectServerSnapshot(): Promise<ServerSnapshot> {
   return {
     timestamp: new Date().toISOString(),
     env: {
-      nodeEnv: Deno.env.get("NODE_ENV") ?? "development",
-      hostname: Deno.env.get("HOSTNAME") ?? "unknown",
+      nodeEnv: getEnv("NODE_ENV") ?? "development",
+      hostname: getEnv("HOSTNAME") ?? "unknown",
       denoVersion: Deno.version.deno,
     },
     recentRequests: getRecentRequests(),

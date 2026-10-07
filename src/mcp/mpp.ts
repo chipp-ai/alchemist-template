@@ -34,6 +34,7 @@ import Stripe from "stripe";
 import { Mppx, stripe as mppStripe, tempo, Transport } from "mppx/server";
 import type { McpError } from "@modelcontextprotocol/sdk/types.js";
 import { log } from "@/lib/logger.ts";
+import { getEnv } from "@/lib/env.ts";
 
 // Tempo USDC token contract addresses (from the Stripe MPP guide).
 const TEMPO_USDC_MAINNET = "0x20c000000000000000000000b9537d11c60e8b50";
@@ -64,14 +65,14 @@ interface MppConfig {
 }
 
 function readConfig(): MppConfig | null {
-  const secretKey = Deno.env.get("MPP_SECRET_KEY") ?? "";
+  const secretKey = getEnv("MPP_SECRET_KEY") ?? "";
   if (!secretKey) return null;
   return {
     secretKey,
-    stripeSecretKey: Deno.env.get("STRIPE_SECRET_KEY") || null,
-    stripeProfileId: Deno.env.get("STRIPE_PROFILE_ID") || null,
-    cryptoEnabled: Deno.env.get("MPP_CRYPTO_ENABLED") === "1",
-    cryptoTestnet: Deno.env.get("MPP_CRYPTO_TESTNET") === "1",
+    stripeSecretKey: getEnv("STRIPE_SECRET_KEY") || null,
+    stripeProfileId: getEnv("STRIPE_PROFILE_ID") || null,
+    cryptoEnabled: getEnv("MPP_CRYPTO_ENABLED") === "1",
+    cryptoTestnet: getEnv("MPP_CRYPTO_TESTNET") === "1",
   };
 }
 

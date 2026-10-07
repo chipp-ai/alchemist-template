@@ -7,12 +7,13 @@
 
 import { Hono } from "hono";
 import { checkDatabaseHealth } from "@/db/client.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const startTime = Date.now();
 
 const VERSION = (() => {
   try {
-    return Deno.env.get("GIT_SHA")?.slice(0, 7) ?? "dev";
+    return getEnv("GIT_SHA")?.slice(0, 7) ?? "dev";
   } catch {
     return "dev";
   }

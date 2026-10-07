@@ -19,11 +19,12 @@ import {
   redisPublish,
   releaseLock,
 } from "@/lib/redis.ts";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 Deno.test("redis helpers: unconfigured env is a silent no-op", async () => {
-  const saved = Deno.env.get("REDIS_URL");
+  const saved = getEnv("REDIS_URL");
   try {
-    Deno.env.delete("REDIS_URL");
+    __deleteEnvForTest("REDIS_URL");
     _resetRedisForTest();
 
     assertEquals(isRedisConfigured(), false);
@@ -40,7 +41,7 @@ Deno.test("redis helpers: unconfigured env is a silent no-op", async () => {
     assertEquals(rl.allowed, true);
     assertEquals(await redisPublish("events", { hello: true }), null);
   } finally {
-    if (saved !== undefined) Deno.env.set("REDIS_URL", saved);
+    if (saved !== undefined) __setEnvForTest("REDIS_URL", saved);
     _resetRedisForTest();
   }
 });
@@ -54,12 +55,12 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
 }, async () => {
-  const saved = Deno.env.get("REDIS_URL");
+  const saved = getEnv("REDIS_URL");
   try {
     // TEST-NET-1 address: connect attempts fail fast or time out at the
     // helper's 3s connect bound; every call after the first failure
     // short-circuits on the retry cooldown.
-    Deno.env.set("REDIS_URL", "redis://192.0.2.1:6379");
+    __setEnvForTest("REDIS_URL", "redis://192.0.2.1:6379");
     _resetRedisForTest();
 
     assertEquals(isRedisConfigured(), true);
@@ -71,8 +72,8 @@ Deno.test({
     // cooldown short-circuit. Generous bound so slow CI never flakes.
     assert(Date.now() - started < 10_000);
   } finally {
-    if (saved !== undefined) Deno.env.set("REDIS_URL", saved);
-    else Deno.env.delete("REDIS_URL");
+    if (saved !== undefined) __setEnvForTest("REDIS_URL", saved);
+    else __deleteEnvForTest("REDIS_URL");
     _resetRedisForTest();
   }
 });

@@ -33,6 +33,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { createMcpServer } from "@/mcp/server.ts";
 import { getMcpAuth, mcpAuthMiddleware } from "@/api/middleware/mcp-auth.ts";
 import { requestBaseUrl } from "@/api/routes/well-known.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const mcpRoutes = new Hono();
 
@@ -42,7 +43,7 @@ const mcpRoutes = new Hono();
  * see it without a process restart.
  */
 function allowedOrigins(): Set<string> {
-  const raw = Deno.env.get("MCP_ALLOWED_ORIGINS") ?? "";
+  const raw = getEnv("MCP_ALLOWED_ORIGINS") ?? "";
   return new Set(
     raw
       .split(",")

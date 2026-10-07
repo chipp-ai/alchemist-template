@@ -25,6 +25,7 @@
 import { createMiddleware } from "hono/factory";
 import { getCookie, setCookie } from "hono/cookie";
 import { isDemoMode } from "@/config/demo-mode.ts";
+import { getEnv } from "@/lib/env.ts";
 
 export const DEMO_BANNER_DISMISS_COOKIE = "demo_banner_dismissed";
 export const DEMO_BANNER_DISMISS_PATH = "/demo/dismiss-banner";
@@ -38,7 +39,7 @@ export const DEMO_BANNER_DISMISS_PATH = "/demo/dismiss-banner";
  */
 const TEMPLATE_LABEL = "SaaS Starter";
 
-const IS_PROD = Deno.env.get("NODE_ENV") === "production";
+const IS_PROD = getEnv("NODE_ENV") === "production";
 
 function escapeHtml(input: string): string {
   return input

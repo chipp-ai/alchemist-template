@@ -32,6 +32,7 @@
 
 import { connect, type Redis } from "redis";
 import { log } from "@/lib/logger.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const SOURCE = "redis";
 const OP_TIMEOUT_MS = 500;
@@ -42,11 +43,11 @@ let connPromise: Promise<Redis | null> | null = null;
 let lastConnectFailAt = 0;
 
 export function isRedisConfigured(): boolean {
-  return Boolean(Deno.env.get("REDIS_URL"));
+  return Boolean(getEnv("REDIS_URL"));
 }
 
 function keyPrefix(): string {
-  return Deno.env.get("REDIS_KEY_PREFIX") ?? "";
+  return getEnv("REDIS_KEY_PREFIX") ?? "";
 }
 
 /** Prefix a logical key into the tenant-scoped keyspace. */
@@ -96,7 +97,7 @@ async function doConnect(url: string): Promise<Redis | null> {
 }
 
 async function getClient(): Promise<Redis | null> {
-  const url = Deno.env.get("REDIS_URL");
+  const url = getEnv("REDIS_URL");
   if (!url) return null;
   if (!connPromise) {
     // Cooldown stops a dead Redis from adding CONNECT_TIMEOUT_MS of
@@ -372,7 +373,7 @@ export function redisSubscribe(
   channel: string,
   onMessage: (message: string) => void,
 ): RedisSubscriptionHandle {
-  const url = Deno.env.get("REDIS_URL");
+  const url = getEnv("REDIS_URL");
   if (!url) return { close() {} };
 
   let closed = false;

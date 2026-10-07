@@ -11,6 +11,7 @@
 import { assertEquals } from "@std/assert";
 import { withJobLock } from "@/lib/job-lock.ts";
 import { _heldLockTokenForTest, _resetRedisForTest } from "@/lib/redis.ts";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 Deno.test("withJobLock: an overlapping call in the same process is skipped, not run", async () => {
   let release!: () => void;
@@ -39,7 +40,7 @@ Deno.test("withJobLock: the lock is free again after the tick, even when it thro
   });
 });
 
-const redisUrl = Deno.env.get("JOB_LOCK_TEST_REDIS_URL");
+const redisUrl = getEnv("JOB_LOCK_TEST_REDIS_URL");
 
 Deno.test({
   name: "withJobLock: a peer is refused while the Redis lock is held, admitted after release",
@@ -47,10 +48,10 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   async fn() {
-    const prevUrl = Deno.env.get("REDIS_URL");
-    const prevPrefix = Deno.env.get("REDIS_KEY_PREFIX");
-    Deno.env.set("REDIS_URL", redisUrl!);
-    Deno.env.set("REDIS_KEY_PREFIX", `job-lock-test-${crypto.randomUUID()}:`);
+    const prevUrl = getEnv("REDIS_URL");
+    const prevPrefix = getEnv("REDIS_KEY_PREFIX");
+    __setEnvForTest("REDIS_URL", redisUrl!);
+    __setEnvForTest("REDIS_KEY_PREFIX", `job-lock-test-${crypto.randomUUID()}:`);
     _resetRedisForTest();
     try {
       const name = "job-lock-test-peer";
@@ -73,10 +74,10 @@ Deno.test({
       });
     } finally {
       _resetRedisForTest();
-      if (prevUrl === undefined) Deno.env.delete("REDIS_URL");
-      else Deno.env.set("REDIS_URL", prevUrl);
-      if (prevPrefix === undefined) Deno.env.delete("REDIS_KEY_PREFIX");
-      else Deno.env.set("REDIS_KEY_PREFIX", prevPrefix);
+      if (prevUrl === undefined) __deleteEnvForTest("REDIS_URL");
+      else __setEnvForTest("REDIS_URL", prevUrl);
+      if (prevPrefix === undefined) __deleteEnvForTest("REDIS_KEY_PREFIX");
+      else __setEnvForTest("REDIS_KEY_PREFIX", prevPrefix);
     }
   },
 });

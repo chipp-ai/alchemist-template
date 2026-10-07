@@ -27,14 +27,15 @@ import {
 } from "@/jobs/cron.ts";
 import { getJobHandler, isJobKindRegistered, type JobContext } from "@/jobs/registry.ts";
 import { enqueueEmail } from "@/services/email-outbox.service.ts";
+import { getEnv } from "@/lib/env.ts";
 
 export type { ScheduledJob };
 
 /** Tightest cadence a schedule may have. Override with JOBS_MIN_INTERVAL_SECONDS. */
-export const MIN_INTERVAL_SECONDS = Number(Deno.env.get("JOBS_MIN_INTERVAL_SECONDS")) || 300;
+export const MIN_INTERVAL_SECONDS = Number(getEnv("JOBS_MIN_INTERVAL_SECONDS")) || 300;
 
 /** A handler that runs longer than this is abandoned and the run marked failed. */
-export const HANDLER_TIMEOUT_MS = Number(Deno.env.get("JOBS_HANDLER_TIMEOUT_MS")) || 60_000;
+export const HANDLER_TIMEOUT_MS = Number(getEnv("JOBS_HANDLER_TIMEOUT_MS")) || 60_000;
 
 /** A row locked longer than this is treated as orphaned and re-claimable. */
 export const STALE_JOB_LOCK_MS = 15 * 60 * 1000;

@@ -47,6 +47,7 @@ import {
   updateProduct,
 } from "@/services/product.service.ts";
 import { can } from "@/lib/roles.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const billingRoutes = new Hono();
 
@@ -163,7 +164,7 @@ billingRoutes.post(
       throw new BadRequestError("No billing account found. Please subscribe to a plan first.");
     }
 
-    const defaultReturnUrl = Deno.env.get("WEB_APP_URL") ?? "http://localhost:5173";
+    const defaultReturnUrl = getEnv("WEB_APP_URL") ?? "http://localhost:5173";
 
     try {
       const session = await stripe.billingPortal.sessions.create({
@@ -199,7 +200,7 @@ billingRoutes.post(
       throw new BadRequestError("Stripe not configured");
     }
 
-    const defaultWebUrl = Deno.env.get("WEB_APP_URL") ?? "http://localhost:5173";
+    const defaultWebUrl = getEnv("WEB_APP_URL") ?? "http://localhost:5173";
 
     try {
       const customerId = await ensureStripeCustomer(
@@ -346,7 +347,7 @@ billingRoutes.post("/webhook", async (c) => {
     return c.json({ error: "Stripe not configured" }, 500);
   }
 
-  const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
+  const webhookSecret = getEnv("STRIPE_WEBHOOK_SECRET");
   if (!webhookSecret) {
     log.warn("STRIPE_WEBHOOK_SECRET not set, skipping signature verification", {
       source: "billing",
@@ -531,8 +532,8 @@ export function mapSubscriptionToTier(subscription: Stripe.Subscription): string
 
   // Default mapping by price ID
   const priceId = subscription.items?.data?.[0]?.price?.id;
-  const monthlyPriceId = Deno.env.get("STRIPE_PRICE_MONTHLY");
-  const yearlyPriceId = Deno.env.get("STRIPE_PRICE_YEARLY");
+  const monthlyPriceId = getEnv("STRIPE_PRICE_MONTHLY");
+  const yearlyPriceId = getEnv("STRIPE_PRICE_YEARLY");
 
   if (priceId === monthlyPriceId || priceId === yearlyPriceId) {
     return "PRO";

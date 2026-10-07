@@ -49,6 +49,7 @@ import { Buffer } from "node:buffer";
 import { withTimeout } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
 import { isStorageConfigured, putObject } from "@/services/storage.service.ts";
+import { getEnv } from "@/lib/env.ts";
 
 // ── Postmark inbound payload shape ──────────────────────────────────────────
 // Only the fields we read are typed; the route's zod schema is
@@ -144,7 +145,7 @@ let warnedInvalidIngestOrgId = false;
 export function resolveIngestOrgId(): string | null {
   let raw = "";
   try {
-    raw = (Deno.env.get("INGEST_ORG_ID") ?? "").trim();
+    raw = (getEnv("INGEST_ORG_ID") ?? "").trim();
   } catch {
     return null;
   }

@@ -23,6 +23,7 @@ import {
   startDemoReseedLoop,
   stopDemoReseedLoop,
 } from "@/jobs/demo-reseed-loop.ts";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 await ensureTestSchema();
 
@@ -32,11 +33,11 @@ async function withEnv(
   fn: () => Promise<void>,
 ): Promise<void> {
   const prev: Record<string, string | undefined> = {};
-  for (const key of Object.keys(overrides)) prev[key] = Deno.env.get(key);
+  for (const key of Object.keys(overrides)) prev[key] = getEnv(key);
   const apply = (values: Record<string, string | undefined>) => {
     for (const [key, value] of Object.entries(values)) {
-      if (value === undefined) Deno.env.delete(key);
-      else Deno.env.set(key, value);
+      if (value === undefined) __deleteEnvForTest(key);
+      else __setEnvForTest(key, value);
     }
   };
   apply(overrides);

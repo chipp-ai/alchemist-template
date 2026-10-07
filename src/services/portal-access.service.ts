@@ -33,6 +33,7 @@ import { db } from "@/db/client.ts";
 import { ForbiddenError, NotFoundError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
 import { sendEmailKind } from "@/services/email-kinds.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const LOG_SOURCE = "portal-access";
 const TOKEN_BYTES = 32;
@@ -453,7 +454,7 @@ export async function hashToken(token: string): Promise<string> {
 }
 
 export function buildPortalUrl(token: string): string {
-  const base = Deno.env.get("APP_URL") ?? "http://localhost:8000";
+  const base = getEnv("APP_URL") ?? "http://localhost:8000";
   // Hash route -- matches web/src/routes.ts.
   return `${base}/#/portal/claim/${token}`;
 }

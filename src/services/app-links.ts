@@ -7,13 +7,15 @@
  * internal host.
  */
 
+import { getEnv } from "@/lib/env.ts";
+
 const DEV_ORIGIN = "http://localhost:8000";
 
 /** `APP_URL` with no trailing slash, or the local dev origin when unset. */
 export function appOrigin(): string {
   let raw: string | undefined;
   try {
-    raw = Deno.env.get("APP_URL");
+    raw = getEnv("APP_URL");
   } catch {
     // No env permission (a sandboxed script): fall back like an unset var.
     raw = undefined;

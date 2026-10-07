@@ -15,6 +15,7 @@ import { assertEquals, assertExists, assertNotEquals } from "@std/assert";
 import { db } from "@/db/client.ts";
 import { withTestServer } from "../helpers.ts";
 import { ingestEmailRoutes } from "@/api/routes/ingest-email/index.ts";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 const ROUTE = "/api/ingest/email";
 const TEST_TOKEN = "test-ingest-token-1234567890";
@@ -27,17 +28,17 @@ function buildApp() {
 
 /** Save + set INGEST_EMAIL_TOKEN; returns a restore function for finally. */
 function setToken(value: string | null): () => void {
-  const prev = Deno.env.get("INGEST_EMAIL_TOKEN");
+  const prev = getEnv("INGEST_EMAIL_TOKEN");
   if (value === null) {
-    Deno.env.delete("INGEST_EMAIL_TOKEN");
+    __deleteEnvForTest("INGEST_EMAIL_TOKEN");
   } else {
-    Deno.env.set("INGEST_EMAIL_TOKEN", value);
+    __setEnvForTest("INGEST_EMAIL_TOKEN", value);
   }
   return () => {
     if (prev === undefined) {
-      Deno.env.delete("INGEST_EMAIL_TOKEN");
+      __deleteEnvForTest("INGEST_EMAIL_TOKEN");
     } else {
-      Deno.env.set("INGEST_EMAIL_TOKEN", prev);
+      __setEnvForTest("INGEST_EMAIL_TOKEN", prev);
     }
   };
 }

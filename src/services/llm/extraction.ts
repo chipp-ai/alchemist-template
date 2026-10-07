@@ -27,6 +27,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { AppError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
 import { LLM_CONFIG } from "@/config/llm.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const LOG_SOURCE = "llm-extraction";
 const MESSAGES_PATH = "/api/llm/messages";
@@ -47,7 +48,7 @@ export const DEFAULT_LLM_MAX_TOKENS = 4096;
 /** Env read that never throws (some test contexts run without --allow-env). */
 function safeEnv(key: string): string | undefined {
   try {
-    return Deno.env.get(key);
+    return getEnv(key);
   } catch {
     return undefined;
   }

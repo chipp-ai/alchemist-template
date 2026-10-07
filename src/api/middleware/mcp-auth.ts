@@ -29,11 +29,12 @@ import { oauthTokenService } from "@/services/mcp-oauth/service.ts";
 import { mcpApiKeyService } from "@/services/mcp-oauth/api-key.service.ts";
 import { requestBaseUrl } from "@/api/routes/well-known.ts";
 import { log } from "@/lib/logger.ts";
+import { getEnv } from "@/lib/env.ts";
 
 export type McpAuthMode = "public" | "oauth";
 
 export function mcpAuthMode(): McpAuthMode {
-  const raw = (Deno.env.get("MCP_AUTH_MODE") ?? "public").toLowerCase();
+  const raw = (getEnv("MCP_AUTH_MODE") ?? "public").toLowerCase();
   return raw === "oauth" ? "oauth" : "public";
 }
 

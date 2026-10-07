@@ -33,6 +33,7 @@ import { timingSafeEqual } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { log } from "@/lib/logger.ts";
 import { UnauthorizedError } from "@/utils/errors.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const BEARER_PREFIX = "Bearer ";
 
@@ -73,7 +74,7 @@ function reject(reason: string, severity: "warn" | "info" = "info"): never {
 export const requireIngestEmailToken = createMiddleware(async (c, next) => {
   let expected = "";
   try {
-    expected = Deno.env.get("INGEST_EMAIL_TOKEN") ?? "";
+    expected = getEnv("INGEST_EMAIL_TOKEN") ?? "";
   } catch {
     // No --allow-env: treat as unset (fail closed below).
   }

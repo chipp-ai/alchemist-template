@@ -36,6 +36,7 @@ import {
   storageDriver,
 } from "@/services/storage.service.ts";
 import { buildLocalSignedUrl, LOCAL_SIGNED_URL_PATH } from "@/services/storage-local.ts";
+import { __setEnvForTest } from "@/lib/env.ts";
 
 /** The shared helper, with the tenant prefix as a positional argument. */
 function withLocalDriver(
@@ -369,10 +370,10 @@ Deno.test("route: the local object route 404s once R2 is configured", async () =
 
     // Wire up R2. Nothing points at the local route any more, so it must
     // stop answering rather than sit there as a second read path.
-    Deno.env.set("R2_ENDPOINT", "https://example.invalid");
-    Deno.env.set("R2_BUCKET", "b");
-    Deno.env.set("R2_ACCESS_KEY_ID", "k");
-    Deno.env.set("R2_SECRET_ACCESS_KEY", "s");
+    __setEnvForTest("R2_ENDPOINT", "https://example.invalid");
+    __setEnvForTest("R2_BUCKET", "b");
+    __setEnvForTest("R2_ACCESS_KEY_ID", "k");
+    __setEnvForTest("R2_SECRET_ACCESS_KEY", "s");
 
     const res = await app.request(url);
     assertEquals(res.status, 404);

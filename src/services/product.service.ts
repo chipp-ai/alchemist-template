@@ -39,6 +39,7 @@ import {
   ExternalServiceError,
   NotFoundError,
 } from "@/utils/errors.ts";
+import { getEnv } from "@/lib/env.ts";
 
 // ── Types ──
 
@@ -358,7 +359,7 @@ export async function createProductCheckout(
     stripe,
   );
 
-  const defaultWebUrl = Deno.env.get("WEB_APP_URL") ?? "http://localhost:5173";
+  const defaultWebUrl = getEnv("WEB_APP_URL") ?? "http://localhost:5173";
   const metadata = {
     organizationId: input.organizationId,
     productId: product.id,

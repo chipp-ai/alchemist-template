@@ -6,14 +6,15 @@
 
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { sendEmail } from "@/services/email.ts";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 function withDemoMode(value: string | undefined, fn: () => Promise<void>): Promise<void> {
-  const prev = Deno.env.get("DEMO_MODE");
-  if (value === undefined) Deno.env.delete("DEMO_MODE");
-  else Deno.env.set("DEMO_MODE", value);
+  const prev = getEnv("DEMO_MODE");
+  if (value === undefined) __deleteEnvForTest("DEMO_MODE");
+  else __setEnvForTest("DEMO_MODE", value);
   return fn().finally(() => {
-    if (prev === undefined) Deno.env.delete("DEMO_MODE");
-    else Deno.env.set("DEMO_MODE", prev);
+    if (prev === undefined) __deleteEnvForTest("DEMO_MODE");
+    else __setEnvForTest("DEMO_MODE", prev);
   });
 }
 

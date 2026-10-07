@@ -26,13 +26,14 @@ import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 import { captureEmail } from "@/services/email-mailbox.ts";
 import { checkCommunicationsSuppression } from "@/services/communications.service.ts";
 import { appOrigin } from "@/services/app-links.ts";
+import { getEnv } from "@/lib/env.ts";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-const SMTP_HOST = Deno.env.get("SMTP_HOST");
-const SMTP_PORT = parseInt(Deno.env.get("SMTP_PORT") ?? "465", 10);
-const SMTP_USERNAME = Deno.env.get("SMTP_USERNAME");
-const SMTP_PASSWORD = Deno.env.get("SMTP_PASSWORD");
+const SMTP_HOST = getEnv("SMTP_HOST");
+const SMTP_PORT = parseInt(getEnv("SMTP_PORT") ?? "465", 10);
+const SMTP_USERNAME = getEnv("SMTP_USERNAME");
+const SMTP_PASSWORD = getEnv("SMTP_PASSWORD");
 // Branded "from" -- `${BRAND.name} <${BRAND.fromEmail}>`. Read from
 // the central brand module, NOT from env directly. See
 // src/config/brand.ts for why.
@@ -65,7 +66,7 @@ export function mailboxCaptureEnabled(): boolean {
 
 function safeEnv(key: string): string | undefined {
   try {
-    return Deno.env.get(key);
+    return getEnv(key);
   } catch {
     return undefined;
   }
@@ -108,7 +109,7 @@ if (smtpConfigured) {
  * sender (local dev), in which case the fallback is skipped and the original
  * error propagates unchanged.
  */
-const PLATFORM_EMAIL_FROM = Deno.env.get("PLATFORM_EMAIL_FROM") ?? "";
+const PLATFORM_EMAIL_FROM = getEnv("PLATFORM_EMAIL_FROM") ?? "";
 
 /**
  * Matches the mail provider's permanent refusal to send as an unverified

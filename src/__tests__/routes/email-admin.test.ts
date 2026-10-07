@@ -19,8 +19,9 @@ import {
   lastCapturedEmail,
   TEST_EMAIL_SUBJECT_PREFIX,
 } from "@/services/email.ts";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
-const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 
 function dbTest(name: string, fn: () => Promise<void>) {
   Deno.test({ name, ignore: !HAS_DB, sanitizeResources: false, sanitizeOps: false, fn });
@@ -45,12 +46,12 @@ async function cookieFor(user: {
 
 /** Dev flag OFF for every test here, so admin gating is what is measured. */
 function setDevRoutes(value: string | null): () => void {
-  const prev = Deno.env.get("ALCHEMIST_DEV_ROUTES");
-  if (value === null) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
-  else Deno.env.set("ALCHEMIST_DEV_ROUTES", value);
+  const prev = getEnv("ALCHEMIST_DEV_ROUTES");
+  if (value === null) __deleteEnvForTest("ALCHEMIST_DEV_ROUTES");
+  else __setEnvForTest("ALCHEMIST_DEV_ROUTES", value);
   return () => {
-    if (prev === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
-    else Deno.env.set("ALCHEMIST_DEV_ROUTES", prev);
+    if (prev === undefined) __deleteEnvForTest("ALCHEMIST_DEV_ROUTES");
+    else __setEnvForTest("ALCHEMIST_DEV_ROUTES", prev);
   };
 }
 

@@ -21,8 +21,9 @@ import {
   signEventBody,
 } from "@/lib/event-signing.ts";
 import { uuidv7 } from "@/lib/uuidv7.ts";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
-const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 const ROUTE = "/api/events";
 const SECRET = "inbox-test-secret-0123456789";
 
@@ -37,12 +38,12 @@ function buildApp() {
 }
 
 function setSecret(value: string | null): () => void {
-  const prev = Deno.env.get("EVENTS_INBOX_SECRET");
-  if (value === null) Deno.env.delete("EVENTS_INBOX_SECRET");
-  else Deno.env.set("EVENTS_INBOX_SECRET", value);
+  const prev = getEnv("EVENTS_INBOX_SECRET");
+  if (value === null) __deleteEnvForTest("EVENTS_INBOX_SECRET");
+  else __setEnvForTest("EVENTS_INBOX_SECRET", value);
   return () => {
-    if (prev === undefined) Deno.env.delete("EVENTS_INBOX_SECRET");
-    else Deno.env.set("EVENTS_INBOX_SECRET", prev);
+    if (prev === undefined) __deleteEnvForTest("EVENTS_INBOX_SECRET");
+    else __setEnvForTest("EVENTS_INBOX_SECRET", prev);
   };
 }
 

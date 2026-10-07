@@ -11,6 +11,7 @@ import { assertEquals, assertStringIncludes } from "@std/assert";
 import { withTestServer } from "../helpers.ts";
 import { devRoutes } from "@/api/routes/dev/index.ts";
 import { clearCapturedEmails, sendEmail } from "@/services/email.ts";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 function deno(name: string, fn: () => void | Promise<void>) {
   Deno.test({ name, sanitizeResources: false, sanitizeOps: false, fn });
@@ -24,12 +25,12 @@ function buildApp() {
 
 /** Set ALCHEMIST_DEV_ROUTES; returns a restore function for finally. */
 function setDevRoutes(value: string | null): () => void {
-  const prev = Deno.env.get("ALCHEMIST_DEV_ROUTES");
-  if (value === null) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
-  else Deno.env.set("ALCHEMIST_DEV_ROUTES", value);
+  const prev = getEnv("ALCHEMIST_DEV_ROUTES");
+  if (value === null) __deleteEnvForTest("ALCHEMIST_DEV_ROUTES");
+  else __setEnvForTest("ALCHEMIST_DEV_ROUTES", value);
   return () => {
-    if (prev === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
-    else Deno.env.set("ALCHEMIST_DEV_ROUTES", prev);
+    if (prev === undefined) __deleteEnvForTest("ALCHEMIST_DEV_ROUTES");
+    else __setEnvForTest("ALCHEMIST_DEV_ROUTES", prev);
   };
 }
 

@@ -37,6 +37,7 @@
  */
 
 import { appendLineSync } from "./jsonl-writer.ts";
+import { getEnv } from "@/lib/env.ts";
 
 export type ObsSource = "client" | "server";
 
@@ -79,7 +80,7 @@ const SERVER_SID = `${processSidPrefix(entryModule())}-${Date.now()}-${
 
 const IS_DEV = (() => {
   try {
-    return (Deno.env.get("NODE_ENV") ?? "development") !== "production";
+    return (getEnv("NODE_ENV") ?? "development") !== "production";
   } catch {
     return true;
   }

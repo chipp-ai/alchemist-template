@@ -51,6 +51,7 @@ import {
 } from "@/lib/event-signing.ts";
 import type { ClaimedDelivery } from "@/lib/events.ts";
 import { BadRequestError, NotFoundError } from "@/utils/errors.ts";
+import { getEnv } from "@/lib/env.ts";
 
 export const EVENT_DELIVERY_HEADER = "X-Event-Delivery";
 export const EVENT_ATTEMPT_HEADER = "X-Event-Attempt";
@@ -265,7 +266,7 @@ export async function deactivateWebhookSubscription(
 
 function readSecret(ref: string): string | undefined {
   try {
-    const v = Deno.env.get(ref);
+    const v = getEnv(ref);
     return v && v.length > 0 ? v : undefined;
   } catch {
     return undefined;

@@ -10,11 +10,12 @@ import { CamelCasePlugin, Kysely, sql as kyselySql } from "kysely";
 import { PostgresJSDialect } from "kysely-postgres-js";
 import postgres from "postgres";
 import type { Database } from "./schema.ts";
+import { getEnv } from "@/lib/env.ts";
 
 // ── Connection setup ──
 
-const connectionString = Deno.env.get("TEST_DATABASE_URL") ||
-  Deno.env.get("DATABASE_URL");
+const connectionString = getEnv("TEST_DATABASE_URL") ||
+  getEnv("DATABASE_URL");
 
 // ── Per-worker test-schema isolation (deterministic parallel tests) ──
 //
@@ -39,7 +40,7 @@ const connectionString = Deno.env.get("TEST_DATABASE_URL") ||
 // `test*` tasks in deno.json) so production — where DATABASE_URL is set but the
 // flag is NOT — can never accidentally route real queries into a test schema.
 // (VALORV-494)
-const TEST_SCHEMA = Deno.env.get("TEST_PARALLEL_ISOLATION") === "1" && connectionString
+const TEST_SCHEMA = getEnv("TEST_PARALLEL_ISOLATION") === "1" && connectionString
   ? `test_p${Deno.pid}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`
   : null;
 
@@ -68,7 +69,7 @@ function createDatabaseClient(): {
 
   const connUrl = new URL(connectionString);
   const isLocalDb = connUrl.hostname === "localhost" || connUrl.hostname === "127.0.0.1";
-  const poolMax = isLocalDb ? 5 : Number(Deno.env.get("DB_POOL_MAX")) || 10;
+  const poolMax = isLocalDb ? 5 : Number(getEnv("DB_POOL_MAX")) || 10;
 
   // Idle-connection reaping. In production the pod is long-lived, so reaping
   // idle connections (idle_timeout=20s) is correct — it frees server-side slots
@@ -138,7 +139,7 @@ const { sql, db, configured: dbConfigured } = createDatabaseClient();
 // (exact `TypeError` message) so no genuine error is ever masked, and it is
 // scoped to non-production only — the live pod is long-lived and never hits a
 // `deno test` worker-teardown race. (VALORV-494, ported from Valor Victoria.)
-if (Deno.env.get("NODE_ENV") !== "production") {
+if (getEnv("NODE_ENV") !== "production") {
   const isPostgresTeardownNullWrite = (reason: unknown): boolean =>
     reason instanceof TypeError &&
     reason.message.includes("May not write null values to stream");

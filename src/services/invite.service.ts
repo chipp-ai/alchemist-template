@@ -24,6 +24,7 @@ import { BadRequestError, ForbiddenError, NotFoundError } from "@/utils/errors.t
 import { sendInviteEmail } from "@/services/email.ts";
 import { ASSIGNABLE_ROLES, type AssignableRole, roleLabel } from "@/lib/roles.ts";
 import { log } from "@/lib/logger.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const INVITE_TTL_DAYS = 7;
 const TOKEN_BYTES = 32;
@@ -483,7 +484,7 @@ function generateInviteToken(): string {
 }
 
 function buildAcceptUrl(token: string): string {
-  const base = Deno.env.get("APP_URL") ?? "http://localhost:8000";
+  const base = getEnv("APP_URL") ?? "http://localhost:8000";
   // Hash route — matches web/src/routes.ts.
   return `${base}/#/invite/${token}`;
 }

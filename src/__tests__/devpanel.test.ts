@@ -34,6 +34,7 @@ import {
   recordError,
   recordRequest,
 } from "@/lib/dev-activity.ts";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 function deno(name: string, fn: () => void | Promise<void>) {
   Deno.test({ name, sanitizeResources: false, sanitizeOps: false, fn });
@@ -352,8 +353,8 @@ deno("e2e: GET /api/dev/app-state returns server context even with no client pus
   __resetDevActivityForTests();
   // The dev routes are fail-CLOSED behind devRoutesEnabled() (ALCHEMIST_DEV_ROUTES),
   // so enable them for the request (the guard is evaluated per-request).
-  const prevDevRoutes = Deno.env.get("ALCHEMIST_DEV_ROUTES");
-  Deno.env.set("ALCHEMIST_DEV_ROUTES", "1");
+  const prevDevRoutes = getEnv("ALCHEMIST_DEV_ROUTES");
+  __setEnvForTest("ALCHEMIST_DEV_ROUTES", "1");
 
   const { devRoutes } = await import("@/api/routes/dev/index.ts");
 
@@ -378,14 +379,14 @@ deno("e2e: GET /api/dev/app-state returns server context even with no client pus
   assertStringIncludes(body.markdown as string, "No client snapshot received yet");
 
   // Restore env.
-  if (prevDevRoutes === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
-  else Deno.env.set("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
+  if (prevDevRoutes === undefined) __deleteEnvForTest("ALCHEMIST_DEV_ROUTES");
+  else __setEnvForTest("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
 });
 
 deno("e2e: GET /api/dev/app-state includes a design summary read from design.json", async () => {
   __resetDevActivityForTests();
-  const prevDevRoutes = Deno.env.get("ALCHEMIST_DEV_ROUTES");
-  Deno.env.set("ALCHEMIST_DEV_ROUTES", "1");
+  const prevDevRoutes = getEnv("ALCHEMIST_DEV_ROUTES");
+  __setEnvForTest("ALCHEMIST_DEV_ROUTES", "1");
 
   const { devRoutes } = await import("@/api/routes/dev/index.ts");
   const { readDesign } = await import("@/services/design.service.ts");
@@ -413,16 +414,16 @@ deno("e2e: GET /api/dev/app-state includes a design summary read from design.jso
   assertStringIncludes(body.markdown as string, "**Design:**");
   assertStringIncludes(body.markdown as string, live.fonts.heading);
 
-  if (prevDevRoutes === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
-  else Deno.env.set("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
+  if (prevDevRoutes === undefined) __deleteEnvForTest("ALCHEMIST_DEV_ROUTES");
+  else __setEnvForTest("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
 });
 
 deno("e2e: POST /api/dev/app-state persists the client snapshot for subsequent GETs", async () => {
   __resetDevActivityForTests();
   // The dev routes are fail-CLOSED behind devRoutesEnabled() (ALCHEMIST_DEV_ROUTES),
   // so enable them for the request (the guard is evaluated per-request).
-  const prevDevRoutes = Deno.env.get("ALCHEMIST_DEV_ROUTES");
-  Deno.env.set("ALCHEMIST_DEV_ROUTES", "1");
+  const prevDevRoutes = getEnv("ALCHEMIST_DEV_ROUTES");
+  __setEnvForTest("ALCHEMIST_DEV_ROUTES", "1");
 
   const { devRoutes } = await import("@/api/routes/dev/index.ts");
 
@@ -454,15 +455,15 @@ deno("e2e: POST /api/dev/app-state persists the client snapshot for subsequent G
   assertEquals(client.timestamp, snapshot.timestamp);
   assertStringIncludes(body.markdown as string, "fake markdown");
 
-  if (prevDevRoutes === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
-  else Deno.env.set("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
+  if (prevDevRoutes === undefined) __deleteEnvForTest("ALCHEMIST_DEV_ROUTES");
+  else __setEnvForTest("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
 });
 
 deno("e2e: GET /api/dev/app-state?format=markdown returns text/markdown", async () => {
   // The dev routes are fail-CLOSED behind devRoutesEnabled() (ALCHEMIST_DEV_ROUTES),
   // so enable them for the request (the guard is evaluated per-request).
-  const prevDevRoutes = Deno.env.get("ALCHEMIST_DEV_ROUTES");
-  Deno.env.set("ALCHEMIST_DEV_ROUTES", "1");
+  const prevDevRoutes = getEnv("ALCHEMIST_DEV_ROUTES");
+  __setEnvForTest("ALCHEMIST_DEV_ROUTES", "1");
 
   const { devRoutes } = await import("@/api/routes/dev/index.ts");
 
@@ -477,8 +478,8 @@ deno("e2e: GET /api/dev/app-state?format=markdown returns text/markdown", async 
   const text = await res.text();
   assertStringIncludes(text, "Server Context");
 
-  if (prevDevRoutes === undefined) Deno.env.delete("ALCHEMIST_DEV_ROUTES");
-  else Deno.env.set("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
+  if (prevDevRoutes === undefined) __deleteEnvForTest("ALCHEMIST_DEV_ROUTES");
+  else __setEnvForTest("ALCHEMIST_DEV_ROUTES", prevDevRoutes);
 });
 
 deno("source: lib/query.svelte.ts exists with the SWR contract intact", async () => {

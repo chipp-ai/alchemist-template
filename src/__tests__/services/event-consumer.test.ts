@@ -65,6 +65,7 @@ import {
 } from "@/jobs/event-consumer.ts";
 import { redisSubscribe } from "@/lib/redis.ts";
 import { sql } from "kysely";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 // waitFor returns as soon as its condition holds, so this is only the failure
 // deadline. NOTE: the consumer's tick lock lives in Redis under an unprefixed
@@ -75,8 +76,8 @@ import { sql } from "kysely";
 // same REDIS_URL, or give each a REDIS_KEY_PREFIX.
 const WAIT_MS = 10_000;
 
-const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
-const HAS_REDIS = !!Deno.env.get("REDIS_URL");
+const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
+const HAS_REDIS = !!getEnv("REDIS_URL");
 
 function dbTest(name: string, fn: () => Promise<void>) {
   Deno.test({ name, ignore: !HAS_DB, sanitizeResources: false, sanitizeOps: false, fn });
@@ -355,28 +356,28 @@ dbRedisTest(
 
 Deno.test("event consumer: NODE_ENV=test stays dormant unless asked", async () => {
   // Forced explicitly: the local .env says development, CI says test.
-  const prev = Deno.env.get("NODE_ENV");
+  const prev = getEnv("NODE_ENV");
   await __resetEventConsumerForTest();
   try {
-    Deno.env.set("NODE_ENV", "test");
+    __setEnvForTest("NODE_ENV", "test");
     startEventConsumer({ subscribe: () => ({ close() {} }) });
     assertEquals(__peekEventConsumerStateForTest().running, false);
   } finally {
-    if (prev === undefined) Deno.env.delete("NODE_ENV");
-    else Deno.env.set("NODE_ENV", prev);
+    if (prev === undefined) __deleteEnvForTest("NODE_ENV");
+    else __setEnvForTest("NODE_ENV", prev);
     await __resetEventConsumerForTest();
   }
 });
 
 Deno.test("redisSubscribe: without REDIS_URL the handle is a no-op", () => {
-  const saved = Deno.env.get("REDIS_URL");
+  const saved = getEnv("REDIS_URL");
   try {
-    Deno.env.delete("REDIS_URL");
+    __deleteEnvForTest("REDIS_URL");
     const h = redisSubscribe("events", () => {});
     h.close();
     h.close(); // idempotent
   } finally {
-    if (saved !== undefined) Deno.env.set("REDIS_URL", saved);
+    if (saved !== undefined) __setEnvForTest("REDIS_URL", saved);
   }
 });
 
@@ -385,11 +386,11 @@ Deno.test("redisSubscribe: without REDIS_URL the handle is a no-op", () => {
 const WEBHOOK_SECRET_REF = "EVENTS_TEST_WEBHOOK_SECRET";
 
 function withWebhookSecret(value: string): () => void {
-  const prev = Deno.env.get(WEBHOOK_SECRET_REF);
-  Deno.env.set(WEBHOOK_SECRET_REF, value);
+  const prev = getEnv(WEBHOOK_SECRET_REF);
+  __setEnvForTest(WEBHOOK_SECRET_REF, value);
   return () => {
-    if (prev === undefined) Deno.env.delete(WEBHOOK_SECRET_REF);
-    else Deno.env.set(WEBHOOK_SECRET_REF, prev);
+    if (prev === undefined) __deleteEnvForTest(WEBHOOK_SECRET_REF);
+    else __setEnvForTest(WEBHOOK_SECRET_REF, prev);
   };
 }
 
@@ -591,7 +592,7 @@ dbTest("webhook delivery: a missing secret env var or a redirect is a failed att
     assertEquals(called, false, "no POST without a secret to sign with");
     assert((await deliveriesForTopic(topic))[0].lastError?.includes(WEBHOOK_SECRET_REF));
   } finally {
-    Deno.env.delete(WEBHOOK_SECRET_REF);
+    __deleteEnvForTest(WEBHOOK_SECRET_REF);
     await cleanupTopic(topic);
     await org.cleanup();
   }

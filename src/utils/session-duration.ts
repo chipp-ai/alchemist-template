@@ -21,6 +21,8 @@
  *   activity tracking + the warning modal.
  */
 
+import { getEnv } from "@/lib/env.ts";
+
 /** 4-hour HIPAA-compliant session timeout. */
 export const HIPAA_SESSION_DURATION_MS = 4 * 60 * 60 * 1000;
 
@@ -29,7 +31,7 @@ export const DEFAULT_SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** True if this customer pod was provisioned with HIPAA mode on. */
 export function isHipaaEnabled(): boolean {
-  const v = Deno.env.get("HIPAA_ENABLED");
+  const v = getEnv("HIPAA_ENABLED");
   return v === "true" || v === "1";
 }
 

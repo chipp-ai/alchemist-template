@@ -19,10 +19,11 @@ import { assertNoLiveStripeKeyInDemoMode } from "@/lib/stripe.ts";
 import { isDemoMode } from "@/config/demo-mode.ts";
 import { getWorkerRole, roleRunsBackgroundWork } from "@/lib/worker-role.ts";
 import { registerPeopleImport } from "@/services/import/examples/people.ts";
+import { getEnv } from "@/lib/env.ts";
 
-const port = parseInt(Deno.env.get("PORT") ?? "8000");
-const nodeEnv = Deno.env.get("NODE_ENV") ?? "development";
-const version = Deno.env.get("GIT_SHA")?.slice(0, 7) ?? "dev";
+const port = parseInt(getEnv("PORT") ?? "8000");
+const nodeEnv = getEnv("NODE_ENV") ?? "development";
+const version = getEnv("GIT_SHA")?.slice(0, 7) ?? "dev";
 
 // ── DEMO_MODE boot guard ──
 // Refuse to start if this public demo could charge real money via a

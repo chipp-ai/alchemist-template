@@ -12,6 +12,7 @@
  */
 
 import { log } from "@/lib/logger.ts";
+import { envObject, getEnv } from "@/lib/env.ts";
 
 export interface OAuthProvider {
   /** URL slug — `/auth/<id>` and `/auth/<id>/callback`. */
@@ -111,8 +112,8 @@ export const PROVIDERS: OAuthProvider[] = [
       providerUserId: String(raw.id),
     }),
   },
-  buildSalesforceProvider(Deno.env.get("SALESFORCE_LOGIN_URL")),
-  ...oidcProviderEntries(Deno.env.toObject()),
+  buildSalesforceProvider(getEnv("SALESFORCE_LOGIN_URL")),
+  ...oidcProviderEntries(envObject()),
 ];
 
 /**
@@ -204,8 +205,8 @@ export function oidcProviderEntries(
  */
 export function getConfiguredProviders(): OAuthProvider[] {
   return PROVIDERS.filter((p) => {
-    const id = Deno.env.get(p.clientIdEnv);
-    const secret = Deno.env.get(p.clientSecretEnv);
+    const id = getEnv(p.clientIdEnv);
+    const secret = getEnv(p.clientSecretEnv);
     return !!(id && secret);
   });
 }
@@ -215,7 +216,7 @@ export function findProvider(id: string): OAuthProvider | undefined {
 }
 
 export function isProviderConfigured(p: OAuthProvider): boolean {
-  return !!(Deno.env.get(p.clientIdEnv) && Deno.env.get(p.clientSecretEnv));
+  return !!(getEnv(p.clientIdEnv) && getEnv(p.clientSecretEnv));
 }
 
 /**

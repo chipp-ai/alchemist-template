@@ -37,6 +37,7 @@ import { creditService } from "@/services/credit.service.ts";
 import type { CreditPackProduct } from "@/db/credit-tables.ts";
 import { formatRoutePrice, gatePaidRequest, type RoutePrice } from "@/services/mpp.service.ts";
 import { log } from "@/lib/logger.ts";
+import { getEnv } from "@/lib/env.ts";
 
 /** Public base URL for checkout return pages (mirrors well-known derivation). */
 function requestBaseUrl(c: Context): string {
@@ -46,7 +47,7 @@ function requestBaseUrl(c: Context): string {
       (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
     return `${proto}://${host}`;
   }
-  return Deno.env.get("APP_URL") ?? "http://localhost:8000";
+  return getEnv("APP_URL") ?? "http://localhost:8000";
 }
 
 /** Mint a checkout URL for a product, or null. Never throws. */

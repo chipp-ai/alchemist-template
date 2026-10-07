@@ -18,20 +18,21 @@ import {
 } from "@/api/middleware/demo-banner.ts";
 import { demoLandingRoute } from "@/api/routes/demo-landing.ts";
 import { demoNoindexHeaderMiddleware } from "@/api/middleware/demo-noindex.ts";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 /** Runs `fn` with DEMO_MODE temporarily overridden, restoring it after. */
 async function withDemoMode(
   value: string | undefined,
   fn: () => void | Promise<void>,
 ): Promise<void> {
-  const prev = Deno.env.get("DEMO_MODE");
-  if (value === undefined) Deno.env.delete("DEMO_MODE");
-  else Deno.env.set("DEMO_MODE", value);
+  const prev = getEnv("DEMO_MODE");
+  if (value === undefined) __deleteEnvForTest("DEMO_MODE");
+  else __setEnvForTest("DEMO_MODE", value);
   try {
     await fn();
   } finally {
-    if (prev === undefined) Deno.env.delete("DEMO_MODE");
-    else Deno.env.set("DEMO_MODE", prev);
+    if (prev === undefined) __deleteEnvForTest("DEMO_MODE");
+    else __setEnvForTest("DEMO_MODE", prev);
   }
 }
 

@@ -20,6 +20,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { ALL_MCP_SCOPES } from "@/services/mcp-oauth/permissions.ts";
+import { getEnv } from "@/lib/env.ts";
 
 /** Public base URL as the CLIENT sees it, e.g. "https://myapp.example.com". */
 export function requestBaseUrl(c: Context): string {
@@ -30,7 +31,7 @@ export function requestBaseUrl(c: Context): string {
       (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
     return `${proto}://${host}`;
   }
-  return Deno.env.get("APP_URL") ?? "http://localhost:8000";
+  return getEnv("APP_URL") ?? "http://localhost:8000";
 }
 
 /** RFC 8414 authorization-server metadata. */

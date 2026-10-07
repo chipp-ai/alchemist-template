@@ -22,6 +22,7 @@ import { isTransientDbError } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
 import { deliverDueEmails, type DeliverDueResult } from "@/services/email-outbox.service.ts";
 import { type RunDueResult, runDueScheduledJobs } from "@/services/scheduled-jobs.service.ts";
+import { getEnv } from "@/lib/env.ts";
 
 export const DEFAULT_TICK_MS = 30_000;
 
@@ -38,12 +39,12 @@ export interface TickResult {
 }
 
 export function jobsEnabled(): boolean {
-  const v = (Deno.env.get("JOBS_ENABLED") ?? "1").toLowerCase();
+  const v = (getEnv("JOBS_ENABLED") ?? "1").toLowerCase();
   return v !== "0" && v !== "false";
 }
 
 export function tickIntervalMs(): number {
-  const v = Number(Deno.env.get("JOBS_TICK_MS"));
+  const v = Number(getEnv("JOBS_TICK_MS"));
   return Number.isFinite(v) && v >= 1000 ? v : DEFAULT_TICK_MS;
 }
 

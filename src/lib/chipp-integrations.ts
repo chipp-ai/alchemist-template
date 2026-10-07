@@ -41,6 +41,8 @@
  *      envelope's result.
  */
 
+import { getEnv } from "@/lib/env.ts";
+
 const BROKER_BASE = "/api/internal/hosted-integration-broker";
 const CALL_TIMEOUT_MS = 20_000;
 
@@ -70,11 +72,11 @@ function brokerConfig(): {
   origin: string;
   headers: Record<string, string>;
 } {
-  const origin = (Deno.env.get("CHIPP_INTEGRATION_BROKER_URL") ?? "").trim()
+  const origin = (getEnv("CHIPP_INTEGRATION_BROKER_URL") ?? "").trim()
     .replace(/\/+$/, "");
-  const token = Deno.env.get("CHIPP_INTEGRATION_BROKER_TOKEN") ?? "";
-  const projectId = Deno.env.get("PROJECT_ID") ?? "";
-  const orgId = Deno.env.get("CHIPP_ORG_ID") ?? "";
+  const token = getEnv("CHIPP_INTEGRATION_BROKER_TOKEN") ?? "";
+  const projectId = getEnv("PROJECT_ID") ?? "";
+  const orgId = getEnv("CHIPP_ORG_ID") ?? "";
   return {
     configured: Boolean(origin && token && projectId && orgId),
     origin,

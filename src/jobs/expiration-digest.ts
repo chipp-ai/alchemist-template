@@ -37,6 +37,7 @@ import {
   hasExpiringRecordsProvider,
   runExpirationDigest,
 } from "@/services/expiration-digest.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const LOG_SOURCE = "expiration-digest-job";
 
@@ -54,7 +55,7 @@ let shuttingDown = false;
 /** Env read that never throws (some test contexts run without --allow-env). */
 function safeEnv(key: string): string | undefined {
   try {
-    return Deno.env.get(key);
+    return getEnv(key);
   } catch {
     return undefined;
   }

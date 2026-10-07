@@ -20,6 +20,7 @@ import { log } from "@/lib/logger.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 import { escapeHtml } from "./render-html.ts";
 import { safeJsonAttr } from "./safe-json.ts";
+import { getEnv } from "@/lib/env.ts";
 
 /**
  * The islands entry's path relative to the Vite root. Vite uses exactly
@@ -66,7 +67,7 @@ function manifestPath(): string | URL {
 }
 
 function devScriptTag(): string {
-  const base = (Deno.env.get("VITE_DEV_SERVER_URL") ?? DEFAULT_DEV_SERVER_URL).replace(/\/+$/, "");
+  const base = (getEnv("VITE_DEV_SERVER_URL") ?? DEFAULT_DEV_SERVER_URL).replace(/\/+$/, "");
   return `<script type="module" src="${escapeHtml(base)}/@vite/client"></script>\n` +
     `<script type="module" src="${escapeHtml(base)}/${ISLANDS_ENTRY_SRC}"></script>`;
 }
@@ -79,7 +80,7 @@ function resolveProdTag(): string {
   } catch (err) {
     // Expected in a checkout that has not run the web build yet. In
     // production the image always builds web/dist, so a miss is a bug.
-    const logFn = Deno.env.get("NODE_ENV") === "production" ? log.error : log.warn;
+    const logFn = getEnv("NODE_ENV") === "production" ? log.error : log.warn;
     logFn(
       "Islands manifest missing; pages render without the islands script. Run the web build.",
       { source: "ssr", feature: "islands" },

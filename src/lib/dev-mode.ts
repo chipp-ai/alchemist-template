@@ -1,3 +1,4 @@
+import { getEnv } from "@/lib/env.ts";
 /**
  * Dev-only surface gate — FAIL CLOSED.
  *
@@ -17,6 +18,6 @@
  * in the customer deploy path sets it, so production is dead-by-default.
  */
 export function devRoutesEnabled(): boolean {
-  const v = Deno.env.get("ALCHEMIST_DEV_ROUTES");
+  const v = getEnv("ALCHEMIST_DEV_ROUTES");
   return v === "1" || v === "true";
 }

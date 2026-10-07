@@ -54,6 +54,7 @@ import {
   readLocalObject,
   writeLocalObject,
 } from "@/services/storage-local.ts";
+import { getEnv } from "@/lib/env.ts";
 
 // Re-exported so `@/services/storage.service.ts` stays the one import
 // application code needs. The definitions live in storage-keys.ts because
@@ -66,7 +67,7 @@ export { assertOwnedKey, keyPrefix, relativeKeyOf, scopedKey };
  * would freeze whatever happened to be set when the first test file in a
  * worker imported this module.
  */
-const env = (name: string): string => Deno.env.get(name) ?? "";
+const env = (name: string): string => getEnv(name) ?? "";
 /**
  * Present only on a pod holding a TEMPORARY, bucket-scoped R2 credential
  * (per-project storage). A temporary credential is a key pair PLUS this

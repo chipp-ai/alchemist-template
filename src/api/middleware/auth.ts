@@ -11,6 +11,7 @@ import { log } from "@/lib/logger.ts";
 import { ForbiddenError, UnauthorizedError } from "@/utils/errors.ts";
 import { can, type Capability } from "@/lib/roles.ts";
 import { getSessionDurationMs } from "@/utils/session-duration.ts";
+import { getEnv } from "@/lib/env.ts";
 
 // ── Types ──
 
@@ -29,7 +30,7 @@ export interface AuthVariables {
 
 // ── JWT ──
 
-const JWT_SECRET_RAW = Deno.env.get("JWT_SECRET") ?? "development-secret";
+const JWT_SECRET_RAW = getEnv("JWT_SECRET") ?? "development-secret";
 const JWT_SECRET = new TextEncoder().encode(JWT_SECRET_RAW);
 const SESSION_COOKIE = "session_id";
 

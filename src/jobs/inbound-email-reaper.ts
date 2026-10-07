@@ -60,6 +60,7 @@ import {
   DEFAULT_RETRY_AFTER_MS,
   processInboundEmailBatch,
 } from "@/services/inbound-email/extract.service.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const LOG_SOURCE = "inbound-email-reaper";
 
@@ -79,7 +80,7 @@ let shuttingDown = false;
 /** Env read that never throws (some test contexts run without --allow-env). */
 function safeEnv(key: string): string | undefined {
   try {
-    return Deno.env.get(key);
+    return getEnv(key);
   } catch {
     return undefined;
   }

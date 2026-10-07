@@ -16,9 +16,11 @@
  * consumer; the in-app docs search indexer uses it.
  */
 
-const baseUrl = Deno.env.get("LLM_PROXY_BASE_URL") ?? "";
-const proxyToken = Deno.env.get("WORKER_LLM_PROXY_TOKEN") ?? "";
-const tenantId = Deno.env.get("LLM_PROXY_TENANT_ID") ?? "";
+import { getEnv } from "@/lib/env.ts";
+
+const baseUrl = getEnv("LLM_PROXY_BASE_URL") ?? "";
+const proxyToken = getEnv("WORKER_LLM_PROXY_TOKEN") ?? "";
+const tenantId = getEnv("LLM_PROXY_TENANT_ID") ?? "";
 
 export interface LlmConfig {
   readonly baseUrl: string;
@@ -34,6 +36,6 @@ export const LLM_CONFIG: LlmConfig = Object.freeze({
   baseUrl: baseUrl.replace(/\/+$/, ""),
   proxyToken,
   tenantId,
-  embedModel: Deno.env.get("LLM_EMBED_MODEL") ?? "text-embedding-3-small",
+  embedModel: getEnv("LLM_EMBED_MODEL") ?? "text-embedding-3-small",
   configured: !!(baseUrl && proxyToken && tenantId),
 });

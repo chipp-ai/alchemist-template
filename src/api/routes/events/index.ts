@@ -42,6 +42,7 @@ import {
 import { publishEventAndNudge } from "@/lib/events.ts";
 import { log } from "@/lib/logger.ts";
 import { BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const LOG_SOURCE = "events-inbox";
 
@@ -61,7 +62,7 @@ const inboxEventSchema = z.object({
 
 function safeEnv(key: string): string | undefined {
   try {
-    return Deno.env.get(key);
+    return getEnv(key);
   } catch {
     return undefined;
   }

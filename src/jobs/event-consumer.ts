@@ -83,6 +83,7 @@ import {
   refreshLock,
   releaseLock,
 } from "@/lib/redis.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const LOG_SOURCE = "event-consumer";
 
@@ -135,7 +136,7 @@ let consumerId = "";
 /** Env read that never throws (some test contexts run without --allow-env). */
 function safeEnv(key: string): string | undefined {
   try {
-    return Deno.env.get(key);
+    return getEnv(key);
   } catch {
     return undefined;
   }

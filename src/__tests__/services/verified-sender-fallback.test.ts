@@ -62,7 +62,7 @@ Deno.test("the registry forwards a kind's authCritical flag into the transport",
 
 Deno.test("the fallback reads the platform sender from env, never a literal", () => {
   assert(
-    /Deno\.env\.get\("PLATFORM_EMAIL_FROM"\)/.test(TRANSPORT),
+    /getEnv\("PLATFORM_EMAIL_FROM"\)/.test(TRANSPORT),
     "the verified sender must come from PLATFORM_EMAIL_FROM",
   );
   // A hardcoded platform address would be wrong the moment the platform's

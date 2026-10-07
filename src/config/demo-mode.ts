@@ -1,3 +1,4 @@
+import { getEnv } from "@/lib/env.ts";
 /**
  * DEMO_MODE — shared contract for Alchemist template live demos.
  *
@@ -7,7 +8,7 @@
  * gets zero behavior change anywhere DEMO_MODE is consulted.
  *
  * Read LIVE (not cached at module load, unlike `src/config/brand.ts`) so
- * tests can flip `Deno.env.set("DEMO_MODE", ...)` per-case without a
+ * tests can flip `__setEnvForTest("DEMO_MODE", ...)` per-case without a
  * module-reload dance — same pattern as `devRoutesEnabled()` in
  * `src/lib/dev-mode.ts`.
  *
@@ -22,5 +23,5 @@
  *    slice).
  */
 export function isDemoMode(): boolean {
-  return Deno.env.get("DEMO_MODE") === "1";
+  return getEnv("DEMO_MODE") === "1";
 }

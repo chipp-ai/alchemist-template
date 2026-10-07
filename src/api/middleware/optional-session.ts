@@ -23,6 +23,7 @@ import { createMiddleware } from "hono/factory";
 import { getCookie, setCookie } from "hono/cookie";
 import { type AuthUser, resolveOptionalUser } from "./auth.ts";
 import { log } from "@/lib/logger.ts";
+import { getEnv } from "@/lib/env.ts";
 
 export interface SsrSession {
   /** The signed-in user, or null for an anonymous visitor. */
@@ -39,7 +40,7 @@ const VISITOR_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isProduction(): boolean {
-  return Deno.env.get("NODE_ENV") === "production";
+  return getEnv("NODE_ENV") === "production";
 }
 
 export const optionalSession = createMiddleware<{ Variables: SsrSessionVariables }>(

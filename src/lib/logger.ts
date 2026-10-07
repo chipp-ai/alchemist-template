@@ -14,6 +14,7 @@
  */
 
 import { recordServerEvent } from "@/observability/envelope.ts";
+import { getEnv } from "@/lib/env.ts";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -21,7 +22,7 @@ type LogLevel = "debug" | "info" | "warn" | "error";
 
 const VERSION = (() => {
   try {
-    return Deno.env.get("GIT_SHA")?.slice(0, 7) ?? "dev";
+    return getEnv("GIT_SHA")?.slice(0, 7) ?? "dev";
   } catch {
     return "dev";
   }
@@ -29,7 +30,7 @@ const VERSION = (() => {
 
 const ENVIRONMENT = (() => {
   try {
-    return Deno.env.get("NODE_ENV") ?? "development";
+    return getEnv("NODE_ENV") ?? "development";
   } catch {
     return "development";
   }
@@ -41,7 +42,7 @@ const IS_DEV = ENVIRONMENT === "development";
 // Present in all deployed customer apps; absent in local dev.
 const TENANT_ID = (() => {
   try {
-    return Deno.env.get("ALCHEMIST_TENANT_ID") ?? null;
+    return getEnv("ALCHEMIST_TENANT_ID") ?? null;
   } catch {
     return null;
   }
@@ -50,7 +51,7 @@ const TENANT_ID = (() => {
 // App slug — human-readable project identifier set at provisioning time.
 const APP_SLUG = (() => {
   try {
-    return Deno.env.get("ALCHEMIST_APP_SLUG") ?? null;
+    return getEnv("ALCHEMIST_APP_SLUG") ?? null;
   } catch {
     return null;
   }

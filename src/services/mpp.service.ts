@@ -40,6 +40,7 @@ import Stripe from "stripe";
 import { Credential } from "mppx";
 import { evm, Mppx, stripe as mppStripe, tempo } from "mppx/server";
 import { log } from "@/lib/logger.ts";
+import { getEnv } from "@/lib/env.ts";
 
 // Tempo USDC token contract addresses (from the Stripe MPP guide).
 const TEMPO_USDC_MAINNET = "0x20c000000000000000000000b9537d11c60e8b50";
@@ -75,17 +76,17 @@ interface MppConfig {
 }
 
 function readConfig(): MppConfig | null {
-  const secretKey = Deno.env.get("MPP_SECRET_KEY") ?? "";
+  const secretKey = getEnv("MPP_SECRET_KEY") ?? "";
   if (!secretKey) return null;
   return {
     secretKey,
-    stripeSecretKey: Deno.env.get("STRIPE_SECRET_KEY") || null,
-    stripeProfileId: Deno.env.get("STRIPE_PROFILE_ID") || null,
-    cryptoEnabled: Deno.env.get("MPP_CRYPTO_ENABLED") === "1",
-    cryptoTestnet: Deno.env.get("MPP_CRYPTO_TESTNET") === "1",
-    x402Recipient: Deno.env.get("MPP_X402_RECIPIENT") || null,
-    x402Facilitator: Deno.env.get("MPP_X402_FACILITATOR") || null,
-    x402Testnet: Deno.env.get("MPP_X402_TESTNET") === "1",
+    stripeSecretKey: getEnv("STRIPE_SECRET_KEY") || null,
+    stripeProfileId: getEnv("STRIPE_PROFILE_ID") || null,
+    cryptoEnabled: getEnv("MPP_CRYPTO_ENABLED") === "1",
+    cryptoTestnet: getEnv("MPP_CRYPTO_TESTNET") === "1",
+    x402Recipient: getEnv("MPP_X402_RECIPIENT") || null,
+    x402Facilitator: getEnv("MPP_X402_FACILITATOR") || null,
+    x402Testnet: getEnv("MPP_X402_TESTNET") === "1",
   };
 }
 

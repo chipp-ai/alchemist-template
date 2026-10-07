@@ -19,6 +19,7 @@
  */
 
 import { BadRequestError, ForbiddenError } from "@/utils/errors.ts";
+import { getEnv } from "@/lib/env.ts";
 
 /**
  * Per-project key prefix. Empty outside the platform (local dev, the
@@ -26,7 +27,7 @@ import { BadRequestError, ForbiddenError } from "@/utils/errors.ts";
  * storage directory.
  */
 export function keyPrefix(): string {
-  return Deno.env.get("R2_KEY_PREFIX") ?? "";
+  return getEnv("R2_KEY_PREFIX") ?? "";
 }
 
 /**

@@ -46,8 +46,9 @@ import {
 } from "@/lib/events.ts";
 import { uuidv7, uuidv7Time } from "@/lib/uuidv7.ts";
 import { sql } from "kysely";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
-const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 
 function dbTest(name: string, fn: () => Promise<void>) {
   Deno.test({ name, ignore: !HAS_DB, sanitizeResources: false, sanitizeOps: false, fn });
@@ -669,8 +670,8 @@ dbTest(
 dbTest("processDelivery: a webhook whose fetch never resolves is a timed-out attempt", async () => {
   const topic = uniqueTopic();
   const a = await createIsolatedUser();
-  const prev = Deno.env.get("HUNG_HOOK_SECRET");
-  Deno.env.set("HUNG_HOOK_SECRET", "s");
+  const prev = getEnv("HUNG_HOOK_SECRET");
+  __setEnvForTest("HUNG_HOOK_SECRET", "s");
   try {
     await db.insertInto("event_subscriptions")
       .values({
@@ -694,8 +695,8 @@ dbTest("processDelivery: a webhook whose fetch never resolves is a timed-out att
     const [row] = await deliveriesForTopic(topic);
     assert(row.lastError?.includes("timed out"), row.lastError ?? "");
   } finally {
-    if (prev === undefined) Deno.env.delete("HUNG_HOOK_SECRET");
-    else Deno.env.set("HUNG_HOOK_SECRET", prev);
+    if (prev === undefined) __deleteEnvForTest("HUNG_HOOK_SECRET");
+    else __setEnvForTest("HUNG_HOOK_SECRET", prev);
     await cleanupTopic(topic);
     await a.cleanup();
   }

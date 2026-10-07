@@ -33,11 +33,13 @@
  *
  * # Why a module, not just env reads at the call site
  *
- * Scattered `Deno.env.get("APP_NAME") ?? "Alchemist"` calls are
+ * Scattered `getEnv("APP_NAME") ?? "Alchemist"` calls are
  * exactly how the leak escaped review. Centralizing forces a single
  * audit point: every "where does the product name come from?"
  * answer points HERE, no matter which file the question started in.
  */
+
+import { getEnv } from "@/lib/env.ts";
 
 export interface Brand {
   /**
@@ -86,11 +88,11 @@ export interface Brand {
 }
 
 export const BRAND: Brand = Object.freeze({
-  name: Deno.env.get("APP_NAME") ?? "Your App",
-  fromEmail: Deno.env.get("EMAIL_FROM") ?? "noreply@example.com",
-  fromName: Deno.env.get("APP_NAME") ?? "Your App",
-  primaryColor: Deno.env.get("BRAND_PRIMARY") ?? "#4f46e5",
-  accentColor: Deno.env.get("BRAND_ACCENT") ?? "#0ea5e9",
-  neutralColor: Deno.env.get("BRAND_NEUTRAL") ?? "#1f2937",
-  logoUrl: Deno.env.get("BRAND_LOGO_URL") ?? "",
+  name: getEnv("APP_NAME") ?? "Your App",
+  fromEmail: getEnv("EMAIL_FROM") ?? "noreply@example.com",
+  fromName: getEnv("APP_NAME") ?? "Your App",
+  primaryColor: getEnv("BRAND_PRIMARY") ?? "#4f46e5",
+  accentColor: getEnv("BRAND_ACCENT") ?? "#0ea5e9",
+  neutralColor: getEnv("BRAND_NEUTRAL") ?? "#1f2937",
+  logoUrl: getEnv("BRAND_LOGO_URL") ?? "",
 });

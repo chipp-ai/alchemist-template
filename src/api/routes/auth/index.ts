@@ -40,11 +40,12 @@ import {
   isProviderConfigured,
   type OAuthProvider,
 } from "@/lib/oauth-providers.ts";
+import { getEnv } from "@/lib/env.ts";
 
 const authRoutes = new Hono();
 
 const SESSION_COOKIE = "session_id";
-const IS_PROD = Deno.env.get("NODE_ENV") === "production";
+const IS_PROD = getEnv("NODE_ENV") === "production";
 
 // ── Config (public, no auth) ──
 // Reports which OAuth providers are configured at runtime so the SPA
@@ -834,9 +835,9 @@ authRoutes.get("/ws-token", requireAuth, async (c) => {
 
 function buildAuthorizeUrl(provider: OAuthProvider, state: string): string {
   const params = new URLSearchParams({
-    client_id: Deno.env.get(provider.clientIdEnv)!,
+    client_id: getEnv(provider.clientIdEnv)!,
     redirect_uri: `${
-      Deno.env.get("APP_URL") ?? "http://localhost:8000"
+      getEnv("APP_URL") ?? "http://localhost:8000"
     }/api/auth/${provider.id}/callback`,
     response_type: "code",
     scope: provider.scopes,
@@ -902,10 +903,10 @@ authRoutes.get("/:provider/callback", async (c) => {
   }
   deleteCookie(c, `oauth_state_${provider.id}`, { path: "/" });
 
-  const clientId = Deno.env.get(provider.clientIdEnv)!;
-  const clientSecret = Deno.env.get(provider.clientSecretEnv)!;
+  const clientId = getEnv(provider.clientIdEnv)!;
+  const clientSecret = getEnv(provider.clientSecretEnv)!;
   const redirectUri = `${
-    Deno.env.get("APP_URL") ?? "http://localhost:8000"
+    getEnv("APP_URL") ?? "http://localhost:8000"
   }/api/auth/${provider.id}/callback`;
 
   // ── Exchange code for tokens ─────────────────────────────────────────
@@ -1057,7 +1058,7 @@ authRoutes.get("/:provider/callback", async (c) => {
     email: user.email,
   });
 
-  const webUrl = Deno.env.get("WEB_APP_URL") ?? "http://localhost:5173";
+  const webUrl = getEnv("WEB_APP_URL") ?? "http://localhost:5173";
   return c.redirect(webUrl);
 });
 

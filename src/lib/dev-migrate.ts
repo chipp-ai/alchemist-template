@@ -10,6 +10,7 @@
  */
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 import { log } from "@/lib/logger.ts";
+import { getEnv } from "@/lib/env.ts";
 
 type RunMigrations = (options: { migrationsDir: string }) => Promise<void>;
 
@@ -25,7 +26,7 @@ export interface DevBootEnv {
 }
 
 function processDevBootEnv(): DevBootEnv {
-  return { devRoutes: devRoutesEnabled(), databaseUrl: Deno.env.get("DATABASE_URL") };
+  return { devRoutes: devRoutesEnabled(), databaseUrl: getEnv("DATABASE_URL") };
 }
 
 export async function migrateOnDevBoot(

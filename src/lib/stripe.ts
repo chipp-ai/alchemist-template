@@ -16,12 +16,13 @@
 import Stripe from "stripe";
 import { BadRequestError } from "@/utils/errors.ts";
 import { isDemoMode } from "@/config/demo-mode.ts";
+import { getEnv } from "@/lib/env.ts";
 
 let cached: Stripe | null = null;
 let cachedKey: string | null = null;
 
 export function getStripe(): Stripe | null {
-  const key = Deno.env.get("STRIPE_SECRET_KEY");
+  const key = getEnv("STRIPE_SECRET_KEY");
   if (!key) return null;
   if (!cached || cachedKey !== key) {
     cached = new Stripe(key, {
@@ -33,7 +34,7 @@ export function getStripe(): Stripe | null {
 }
 
 export function isStripeConfigured(): boolean {
-  return Boolean(Deno.env.get("STRIPE_SECRET_KEY"));
+  return Boolean(getEnv("STRIPE_SECRET_KEY"));
 }
 
 export function requireStripe(): Stripe {
@@ -61,7 +62,7 @@ export function requireStripe(): Stripe {
 export function assertNoLiveStripeKeyInDemoMode(): void {
   if (!isDemoMode()) return;
 
-  const key = Deno.env.get("STRIPE_SECRET_KEY");
+  const key = getEnv("STRIPE_SECRET_KEY");
   if (!key) return;
 
   if (!key.startsWith("sk_test_")) {

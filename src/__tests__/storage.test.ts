@@ -19,6 +19,7 @@
  */
 
 import { assertEquals, assertThrows } from "@std/assert";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 // We import inside an env-setup wrapper so the module-level R2_*
 // constants pick up our test values rather than whatever's in the
@@ -36,7 +37,7 @@ const TEST_PREFIX = "customer-test-project/";
 // interleave. Skipped when there's no DB to lock against (e.g. running this
 // single file standalone without TEST_DATABASE_URL/DATABASE_URL set) --
 // with no DB there's also no `--parallel` fleet to race against.
-const HAS_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 let releaseStorageEnvLock: (() => Promise<void>) | null = null;
 if (HAS_DB) {
   const [{ sql }, { STORAGE_ENV_LOCK_KEY }] = await Promise.all([
@@ -56,11 +57,11 @@ if (HAS_DB) {
   };
 }
 
-Deno.env.set("R2_ENDPOINT", "https://test.r2.cloudflarestorage.com");
-Deno.env.set("R2_BUCKET", "alchemist-customer-storage-test");
-Deno.env.set("R2_ACCESS_KEY_ID", "test-access-key");
-Deno.env.set("R2_SECRET_ACCESS_KEY", "test-secret");
-Deno.env.set("R2_KEY_PREFIX", TEST_PREFIX);
+__setEnvForTest("R2_ENDPOINT", "https://test.r2.cloudflarestorage.com");
+__setEnvForTest("R2_BUCKET", "alchemist-customer-storage-test");
+__setEnvForTest("R2_ACCESS_KEY_ID", "test-access-key");
+__setEnvForTest("R2_SECRET_ACCESS_KEY", "test-secret");
+__setEnvForTest("R2_KEY_PREFIX", TEST_PREFIX);
 
 const storage = await import("@/services/storage.service.ts");
 
@@ -285,19 +286,19 @@ Deno.test("getSignedDownloadUrl: clamps non-positive TTL to 1s", () => {
 // signature must be byte-identical to today's, so a legacy pod is untouched.
 
 function withSessionToken<T>(token: string | null, expiresAt: string | null, fn: () => T): T {
-  const prevToken = Deno.env.get("R2_SESSION_TOKEN");
-  const prevExp = Deno.env.get("R2_SESSION_EXPIRES_AT");
-  if (token === null) Deno.env.delete("R2_SESSION_TOKEN");
-  else Deno.env.set("R2_SESSION_TOKEN", token);
-  if (expiresAt === null) Deno.env.delete("R2_SESSION_EXPIRES_AT");
-  else Deno.env.set("R2_SESSION_EXPIRES_AT", expiresAt);
+  const prevToken = getEnv("R2_SESSION_TOKEN");
+  const prevExp = getEnv("R2_SESSION_EXPIRES_AT");
+  if (token === null) __deleteEnvForTest("R2_SESSION_TOKEN");
+  else __setEnvForTest("R2_SESSION_TOKEN", token);
+  if (expiresAt === null) __deleteEnvForTest("R2_SESSION_EXPIRES_AT");
+  else __setEnvForTest("R2_SESSION_EXPIRES_AT", expiresAt);
   try {
     return fn();
   } finally {
-    if (prevToken === undefined) Deno.env.delete("R2_SESSION_TOKEN");
-    else Deno.env.set("R2_SESSION_TOKEN", prevToken);
-    if (prevExp === undefined) Deno.env.delete("R2_SESSION_EXPIRES_AT");
-    else Deno.env.set("R2_SESSION_EXPIRES_AT", prevExp);
+    if (prevToken === undefined) __deleteEnvForTest("R2_SESSION_TOKEN");
+    else __setEnvForTest("R2_SESSION_TOKEN", prevToken);
+    if (prevExp === undefined) __deleteEnvForTest("R2_SESSION_EXPIRES_AT");
+    else __setEnvForTest("R2_SESSION_EXPIRES_AT", prevExp);
   }
 }
 

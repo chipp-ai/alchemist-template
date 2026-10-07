@@ -39,11 +39,13 @@
  * different ways.
  */
 
+import { getEnv } from "@/lib/env.ts";
+
 export type WorkerRole = "all" | "api" | "worker";
 
 /** Raw env value, for logging what was actually seen (including a typo). */
 export function rawWorkerRoleEnv(): string | undefined {
-  return Deno.env.get("WORKER_ROLE") ?? undefined;
+  return getEnv("WORKER_ROLE") ?? undefined;
 }
 
 /**

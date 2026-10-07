@@ -25,6 +25,7 @@
  * without touching `Deno.env` (which parallel test workers share).
  */
 import { createMiddleware } from "hono/factory";
+import { getEnv } from "@/lib/env.ts";
 
 export type Feature = "api" | "mcp";
 
@@ -38,7 +39,7 @@ const testOverrides = new Map<Feature, boolean>();
 export function featureEnabled(feature: Feature): boolean {
   const override = testOverrides.get(feature);
   if (override !== undefined) return override;
-  const v = Deno.env.get(FEATURE_ENV_VARS[feature]);
+  const v = getEnv(FEATURE_ENV_VARS[feature]);
   return v === "1" || v === "true";
 }
 

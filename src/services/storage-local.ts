@@ -45,6 +45,7 @@ import { log } from "@/lib/logger.ts";
 import { ExternalServiceError, ForbiddenError, NotFoundError } from "@/utils/errors.ts";
 import { assertOwnedKey } from "@/services/storage-keys.ts";
 import { MAX_UPLOAD_BYTES } from "@/utils/upload-types.ts";
+import { getEnv } from "@/lib/env.ts";
 
 /** Where the public signed-URL route is mounted. Keep in step with app.ts. */
 export const LOCAL_SIGNED_URL_PATH = "/api/storage/local/o";
@@ -61,7 +62,7 @@ const MAX_TTL_SECONDS = 604_800;
 
 /** Root of the local object tree. Gitignored; safe to delete. */
 export function localStorageRoot(): string {
-  return Deno.env.get("LOCAL_STORAGE_DIR") ?? DEFAULT_ROOT;
+  return getEnv("LOCAL_STORAGE_DIR") ?? DEFAULT_ROOT;
 }
 
 function objectsRoot(): string {
@@ -213,8 +214,8 @@ function asStorageFailure(err: unknown, fullKey: string, op: string): Error {
  * the moment two processes served the same app.
  */
 function signingSecret(): string {
-  return Deno.env.get("LOCAL_STORAGE_SIGNING_SECRET") ??
-    Deno.env.get("JWT_SECRET") ??
+  return getEnv("LOCAL_STORAGE_SIGNING_SECRET") ??
+    getEnv("JWT_SECRET") ??
     "development-secret";
 }
 

@@ -20,6 +20,7 @@ import { Hono } from "hono";
 import { db, ensureTestSchema, isDatabaseConfigured, sql } from "@/db/client.ts";
 import type { Database } from "@/db/schema.ts";
 import type { Kysely } from "kysely";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 // Provision THIS worker's isolated test schema BEFORE any test in a file that
 // imports these helpers runs (top-level await blocks the importing module until
@@ -252,27 +253,27 @@ export async function withLocalStorage<T>(
   await lock`SELECT pg_advisory_lock(${LOCAL_STORAGE_LOCK_KEY})`;
   try {
     const saved = new Map<string, string | undefined>();
-    for (const name of STORAGE_ENV_VARS) saved.set(name, Deno.env.get(name));
+    for (const name of STORAGE_ENV_VARS) saved.set(name, getEnv(name));
 
     const root = await Deno.makeTempDir({ prefix: "alchemist-storage-" });
     try {
       for (
         const name of ["R2_ENDPOINT", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
       ) {
-        Deno.env.delete(name);
+        __deleteEnvForTest(name);
       }
-      Deno.env.set("R2_KEY_PREFIX", opts.keyPrefix ?? "");
-      Deno.env.set("LOCAL_STORAGE_DIR", root);
-      Deno.env.set("LOCAL_STORAGE_SIGNING_SECRET", "test-signing-secret");
+      __setEnvForTest("R2_KEY_PREFIX", opts.keyPrefix ?? "");
+      __setEnvForTest("LOCAL_STORAGE_DIR", root);
+      __setEnvForTest("LOCAL_STORAGE_SIGNING_SECRET", "test-signing-secret");
 
       return await fn({
         root,
-        setKeyPrefix: (prefix: string) => Deno.env.set("R2_KEY_PREFIX", prefix),
+        setKeyPrefix: (prefix: string) => __setEnvForTest("R2_KEY_PREFIX", prefix),
       });
     } finally {
       for (const [name, value] of saved) {
-        if (value === undefined) Deno.env.delete(name);
-        else Deno.env.set(name, value);
+        if (value === undefined) __deleteEnvForTest(name);
+        else __setEnvForTest(name, value);
       }
       await Deno.remove(root, { recursive: true }).catch(() => {});
     }
@@ -340,7 +341,7 @@ export function utf8Bytes(text: string): Uint8Array<ArrayBuffer> {
   return new Uint8Array(new TextEncoder().encode(text));
 }
 
-const HAS_TEST_DB = !!(Deno.env.get("TEST_DATABASE_URL") || Deno.env.get("DATABASE_URL"));
+const HAS_TEST_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 
 /**
  * `Deno.test` for a case that touches the shared Postgres pool.

@@ -21,16 +21,17 @@
 
 import { assertEquals } from "@std/assert";
 import { getWorkerRole, roleRunsBackgroundWork } from "@/lib/worker-role.ts";
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 
 function withRole<T>(value: string | undefined, fn: () => T): T {
-  const prev = Deno.env.get("WORKER_ROLE");
-  if (value === undefined) Deno.env.delete("WORKER_ROLE");
-  else Deno.env.set("WORKER_ROLE", value);
+  const prev = getEnv("WORKER_ROLE");
+  if (value === undefined) __deleteEnvForTest("WORKER_ROLE");
+  else __setEnvForTest("WORKER_ROLE", value);
   try {
     return fn();
   } finally {
-    if (prev === undefined) Deno.env.delete("WORKER_ROLE");
-    else Deno.env.set("WORKER_ROLE", prev);
+    if (prev === undefined) __deleteEnvForTest("WORKER_ROLE");
+    else __setEnvForTest("WORKER_ROLE", prev);
   }
 }
 
