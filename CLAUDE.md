@@ -1324,7 +1324,7 @@ The flow (all shipped, all dormant until configured):
 Postmark inbound webhook -> POST /api/ingest/email?token=...   (fail-closed gate)
   -> capture.service.ts: dedup on Message-ID, attachments to R2,
      inbound_email + inbound_email_attachment rows, status='received'
-  -> src/jobs/inbound-email-reaper.ts (60s loop, advisory lock)
+  -> src/jobs/inbound-email-reaper.ts (60s loop, Redis job lock)
   -> extract.service.ts: LLM triage into { <your data> | human_message | unclear }
   -> YOUR extraction profile's applyData() -> your domain tables
   -> Inbound Email dashboard page (list/detail, signed attachment URLs)
@@ -1440,10 +1440,10 @@ Invariants (each one is a defect someone already shipped):
 **Scheduled alerts** ("email me before X expires") have a scaffold:
 `src/services/expiration-digest.ts` plus `src/jobs/expiration-digest.ts`.
 Register an expiring-records provider and you get the schedule, the
-advisory lock, the branded digest, and the gating. It is dormant until you
+job lock, the branded digest, and the gating. It is dormant until you
 do. The digest is ORDINARY mail, so a muted org gets nothing. Copy the
-job's shape (setTimeout not setInterval, a session advisory lock on a
-dedicated connection, dead under `NODE_ENV=test`, started under
+job's shape (setTimeout not setInterval, `withJobLock` from
+`src/lib/job-lock.ts`, dead under `NODE_ENV=test`, started under
 `runsBackgroundWork` in `main.ts`) for any other periodic alert.
 
 ## End-user portal lane: use it, never build a parallel portal

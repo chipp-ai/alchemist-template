@@ -20,11 +20,10 @@
  * When the app runs multiple replicas, all boot at once. The upsert is
  * idempotent (ON CONFLICT) so concurrent runs can't corrupt the index,
  * but to avoid N replicas all paying to embed the same changed chunks we
- * take a Postgres SESSION advisory lock on ONE dedicated connection (via
- * `db.connection()`, so lock + work + unlock share a connection — pooling
- * safe). A replica that can't get the lock skips; the embeddings happen
- * between statements, so the per-statement `statement_timeout` never trips
- * on the (slow) embedding round-trip.
+ * take the job lock (`withJobLock`, src/lib/job-lock.ts, Redis). A replica
+ * that can't get the lock skips. No connection is held while embedding, so
+ * the per-statement `statement_timeout` never trips on the (slow) embedding
+ * round-trip.
  *
  * The index is app-global (docs are product docs, identical for every
  * org), so there is no per-org scoping here. Non-fatal by contract.
