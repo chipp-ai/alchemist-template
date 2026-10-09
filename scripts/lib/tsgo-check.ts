@@ -49,8 +49,23 @@ export const TYPES_NODE_VERSION = "22.20.5";
  * `IGNORED_DIAGNOSTIC_CODES` in denoland/deno `cli/tsc/mod.rs` at v2.9.7;
  * see that file for the reason behind each code. */
 export const DENO_IGNORED_DIAGNOSTIC_CODES: ReadonlySet<number> = new Set([
-  1452, 1471, 1479, 1543, 2306, 2688, 2792, 2307, 2834, 2835, 2882, 5009, 5055,
-  5070, 6200, 7016, 18060,
+  1452,
+  1471,
+  1479,
+  1543,
+  2306,
+  2688,
+  2792,
+  2307,
+  2834,
+  2835,
+  2882,
+  5009,
+  5055,
+  5070,
+  6200,
+  7016,
+  18060,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -274,7 +289,16 @@ const MEDIA_EXT: Record<string, string> = {
   Jsx: ".jsx",
   Json: ".json",
 };
-const SCRIPT_MEDIA = new Set(["TypeScript", "Mts", "Cts", "Tsx", "JavaScript", "Mjs", "Cjs", "Jsx"]);
+const SCRIPT_MEDIA = new Set([
+  "TypeScript",
+  "Mts",
+  "Cts",
+  "Tsx",
+  "JavaScript",
+  "Mjs",
+  "Cjs",
+  "Jsx",
+]);
 const AMBIENT_MODULE_RE = /^\s*declare\s+module\s+['"]([^'"]+)['"]/m;
 const TOP_LEVEL_MODULE_SYNTAX_RE = /^(export|import)\s/m;
 
@@ -334,8 +358,26 @@ function join(...parts: string[]): string {
   return parts.join("/").replace(/\/+/g, "/").replace(/\/\.\//g, "/");
 }
 
-function escapeId(id: string): string {
-  return id.replace(/[^A-Za-z0-9._-]/g, "+");
+/** 32-bit FNV-1a, hex. Only needs to be stable and spread, not secure. */
+function fnv1a(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+/**
+ * A directory name for an npm package id. Ids carry their resolved peer
+ * dependencies (`@electric-sql/pglite-socket@0.2.8_@electric-sql+pglite@...`)
+ * and can exceed the 255-byte filename limit (2026-10-08, a customer repo),
+ * so a long id keeps its leading `name@version` plus a hash of the whole id.
+ */
+export function escapeId(id: string): string {
+  const safe = id.replace(/[^A-Za-z0-9._-]/g, "+");
+  if (safe.length <= 100) return safe;
+  return `${safe.slice(0, 80)}+${fnv1a(id)}`;
 }
 
 /** Map a JS file or package dir to the declaration TypeScript would load. */
@@ -354,7 +396,9 @@ function declarationFor(p: string): string | null {
     // not a dir; fall through to file handling
   }
   if (/\.(d\.)?[mc]?tsx?$/.test(p) && isFile(p)) return p;
-  for (const [js, dts] of [[".mjs", ".d.mts"], [".cjs", ".d.cts"], [".jsx", ".d.ts"], [".js", ".d.ts"]]) {
+  for (
+    const [js, dts] of [[".mjs", ".d.mts"], [".cjs", ".d.cts"], [".jsx", ".d.ts"], [".js", ".d.ts"]]
+  ) {
     if (p.endsWith(js)) {
       const base = p.slice(0, -js.length);
       if (isFile(base + dts)) return base + dts;
@@ -456,7 +500,10 @@ export function generateTsgoProject(opts: GenerateOptions): GeneratedProject {
       const afterName = spec.slice("npm:/".length + pkg.name.length);
       const slash = afterName.indexOf("/");
       const sub = slash >= 0 ? afterName.slice(slash + 1) : "";
-      const entries = resolvePackageEntryCandidates(readJson(join(pkg.localPath, "package.json")), sub)
+      const entries = resolvePackageEntryCandidates(
+        readJson(join(pkg.localPath, "package.json")),
+        sub,
+      )
         .map((e) => join(pkgDir(id), e));
       entries.push(sub ? join(pkgDir(id), sub) : pkgDir(id));
       let dts: string | null = null;
@@ -508,7 +555,9 @@ export function generateTsgoProject(opts: GenerateOptions): GeneratedProject {
     }
     for (const dep of m.dependencies ?? []) {
       const written = dep.specifier;
-      if (written.startsWith(".") || written.startsWith("/") || written.startsWith("node:")) continue;
+      if (written.startsWith(".") || written.startsWith("/") || written.startsWith("node:")) {
+        continue;
+      }
       const resolved = dep.type?.specifier ?? dep.code?.specifier;
       if (!resolved) continue;
       const target = targetOf(resolved);
@@ -659,7 +708,10 @@ export interface RunTsgoCheckOptions {
 export async function runTsgoCheck(opts: RunTsgoCheckOptions): Promise<TsgoVerdict> {
   const startedMs = Date.now();
   if (Deno.permissions.querySync({ name: "write" }).state !== "granted") {
-    return { kind: "fallback", reason: "no --allow-write (the engine writes a generated tsconfig to a temp dir)" };
+    return {
+      kind: "fallback",
+      reason: "no --allow-write (the engine writes a generated tsconfig to a temp dir)",
+    };
   }
   const plan = planTsgoMemory(opts.localFileCount, opts.availableMb);
   if (plan.kind === "insufficient") {
@@ -677,16 +729,18 @@ export async function runTsgoCheck(opts: RunTsgoCheckOptions): Promise<TsgoVerdi
     const pkg = nativeTscPackage(Deno.build.os, Deno.build.arch);
     const info = await denoInfoNpm(opts.run, `npm:${pkg}@${TS_NATIVE_VERSION}`);
     const local = Object.values(info?.npmPackages ?? {}).find((p) => p.name === pkg)?.localPath;
-    if (!local) return { kind: "fallback", reason: `could not fetch npm:${pkg}@${TS_NATIVE_VERSION}` };
+    if (!local) {
+      return { kind: "fallback", reason: `could not fetch npm:${pkg}@${TS_NATIVE_VERSION}` };
+    }
     tscBin = `${local}/lib/tsc${Deno.build.os === "windows" ? ".exe" : ""}`;
   }
   const typesNodeInfo = await denoInfoNpm(opts.run, `npm:@types/node@${TYPES_NODE_VERSION}`);
   if (!typesNodeInfo) {
     return { kind: "fallback", reason: `could not fetch npm:@types/node@${TYPES_NODE_VERSION}` };
   }
-  const typesNodeId = Object.keys(typesNodeInfo.npmPackages ?? {}).find((id) =>
-    id.startsWith("@types/node@")
-  ) ?? null;
+  const typesNodeId =
+    Object.keys(typesNodeInfo.npmPackages ?? {}).find((id) => id.startsWith("@types/node@")) ??
+      null;
 
   const denoTypes = await opts.run("deno", ["types"]);
   if (denoTypes.code !== 0) return { kind: "fallback", reason: "`deno types` failed" };
@@ -695,14 +749,26 @@ export async function runTsgoCheck(opts: RunTsgoCheckOptions): Promise<TsgoVerdi
   const outDir = Deno.realPathSync(await Deno.makeTempDir({ prefix: "check-tsgo-" }));
   const keep = Deno.env.get("CHECK_TSGO_KEEP") === "1";
   try {
-    const project = generateTsgoProject({
-      info: mergeInfos([...opts.infos, { npmPackages: typesNodeInfo.npmPackages }]),
-      repoRoot,
-      outDir,
-      denoCompilerOptions: readDenoCompilerOptions(repoRoot),
-      denoTypes: denoTypes.stdout,
-      typesNodeId,
-    });
+    let project: GeneratedProject;
+    try {
+      project = generateTsgoProject({
+        info: mergeInfos([...opts.infos, { npmPackages: typesNodeInfo.npmPackages }]),
+        repoRoot,
+        outDir,
+        denoCompilerOptions: readDenoCompilerOptions(repoRoot),
+        denoTypes: denoTypes.stdout,
+        typesNodeId,
+      });
+    } catch (err) {
+      // A generator failure is this tool's problem, not a type error: give
+      // no verdict and let the caller run `deno check`.
+      return {
+        kind: "fallback",
+        reason: `could not generate the project: ${
+          err instanceof Error ? err.message : String(err)
+        }`.slice(0, 500),
+      };
+    }
     const threads = Deno.env.get("CHECK_TSGO_CHECKERS");
     const args = ["-p", project.tsconfigPath, "--pretty", "false"];
     if (threads) args.push("--checkers", threads);
