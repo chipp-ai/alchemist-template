@@ -27,7 +27,8 @@
 # Safe on old Deno: check-types.ts runs plain `deno check` on Deno < 2.9, so a
 # project whose CI pins 2.3.1 checks exactly what it checked before.
 #
-# Does NOT commit or push. Review `git diff` in the target, then commit.
+# Does NOT commit or push. Review `git diff` in the target, run the tests it
+# flags (tests that read deno.json or CI config), then commit.
 
 set -euo pipefail
 
@@ -151,6 +152,22 @@ apply_to() {
   patch_deno_json "$target"
   patch_ci "$target"
   add_kysely_lint "$target"
+  flag_config_tests "$target"
+}
+
+# A project's own tests can pin the very commands this script rewrites.
+# 2026-10-08 fleet rollout: two of 96 repos went red in CI on exactly this
+# (one pins the literal `deno check main.ts` CI step, one scans every
+# `deno run ... main.ts` command in deno.json). Both engines and the lint
+# passed locally; these tests were never run. Name them so they are.
+flag_config_tests() {
+  local target="$1" hits
+  hits="$(grep -rlE 'deno check|\.github/workflows|deno\.json' "$target/src/__tests__" 2>/dev/null \
+    | grep -E '\.test\.ts$|_test\.ts$' | grep -v 'kysely-unscoped-db-fn' || true)"
+  if [ -n "$hits" ]; then
+    warn "these tests read deno.json / CI config / deno check; run them before committing:"
+    printf '%s\n' "$hits" | sed "s#^$target/#         #" >&2
+  fi
 }
 
 if [ $# -lt 1 ]; then
