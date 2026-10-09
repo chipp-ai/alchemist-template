@@ -48,8 +48,14 @@ jobs:
         with:
           deno-version-file: .dvmrc
 
+      # Native TypeScript 7 engine (scripts/check-types.ts), then Deno's own
+      # checker on the same files. A pass on one and a failure on the other is
+      # engine drift and fails this job either way.
       - name: Check types
-        run: deno check main.ts
+        run: deno task check
+
+      - name: Check types (deno check parity)
+        run: CHECK_ENGINE=deno deno task check
 
   lint:
     name: Lint

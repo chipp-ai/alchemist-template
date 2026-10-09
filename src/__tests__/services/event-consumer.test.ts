@@ -39,7 +39,7 @@ import {
   sweepEventRetention,
   syncSubscriptionsFromRegistry,
 } from "@/lib/events.ts";
-import { acquireLock, releaseLock } from "@/lib/redis.ts";
+import { _heldLockTokenForTest, acquireLock, releaseLock } from "@/lib/redis.ts";
 import {
   createWebhookSubscription,
   deactivateWebhookSubscription,
@@ -305,6 +305,16 @@ dbRedisTest(
       registerEventHandler(topic, () => {}, { name: "gated" });
       held = await acquireLock(LOCK, 60);
       assert(held, "the test could not take the lock (a stale key from an aborted run?)");
+      // acquireLock fails OPEN: with REDIS_URL set but Redis unreachable it
+      // returns true without taking anything, the consumer's own acquire
+      // "succeeds" the same way, and the assertion below fails as if the
+      // lock were broken. Only a real acquisition records a held token.
+      assert(
+        _heldLockTokenForTest(LOCK) !== undefined,
+        `REDIS_URL is set (${
+          getEnv("REDIS_URL")
+        }) but Redis did not answer; start it or unset REDIS_URL`,
+      );
 
       startEventConsumer({
         subscribe,

@@ -3,9 +3,9 @@
   "tasks": {
     "dev": "ALCHEMIST_DEV_ROUTES=1 deno run --env --watch=db/migrations/ --allow-net --allow-env --allow-read --allow-write --allow-ffi --allow-sys main.ts",
     "start": "deno run --env --allow-net --allow-env --allow-read --allow-ffi --allow-sys main.ts",
-    "check": "deno check main.ts src/services/storefront/",
-    "check:tests": "deno check src/__tests__/",
-    "check:touched": "deno check",
+    "check": "deno run --allow-read --allow-write --allow-run --allow-env --allow-sys scripts/check-types.ts main.ts src/services/storefront/",
+    "check:tests": "deno run --allow-read --allow-write --allow-run --allow-env --allow-sys scripts/check-types.ts src/__tests__/",
+    "check:touched": "deno run --allow-read --allow-write --allow-run --allow-env --allow-sys scripts/check-types.ts",
     "test:clean-schemas": "deno run --env --allow-net --allow-env --allow-read db/clean-test-schemas.ts",
     "test": "deno task test:clean-schemas && TEST_PARALLEL_ISOLATION=1 deno test --parallel --env --no-check --allow-all src/__tests__/",
     "test:fast": "deno task test:clean-schemas && TEST_PARALLEL_ISOLATION=1 deno test --parallel --env --no-check --allow-all src/__tests__/routes/ src/__tests__/services/",
