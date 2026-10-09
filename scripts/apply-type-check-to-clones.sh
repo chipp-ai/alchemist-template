@@ -90,6 +90,13 @@ patch_ci() {
     skip "ci.yml already runs both engines"
     return
   fi
+  # CI switches to `deno task check` only when that task now runs
+  # check-types.ts. A customized check task would make CI run something
+  # other than what it ran before.
+  if ! python3 -c 'import json,sys; t=json.load(open(sys.argv[1])).get("tasks",{}).get("check",""); sys.exit(0 if "scripts/check-types.ts" in t else 1)' "$1/deno.json" 2>/dev/null; then
+    warn "ci.yml left alone: the deno.json check task does not run check-types.ts"
+    return
+  fi
   python3 - "$file" <<'PY'
 import re, sys
 path = sys.argv[1]
