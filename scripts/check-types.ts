@@ -82,9 +82,26 @@ async function denoCheck(args: string[], why: string): Promise<never> {
   Deno.exit(status.code === 0 ? 0 : 1);
 }
 
+/** Oldest Deno whose `deno info --json` the generator was verified against. */
+const MIN_DENO = [2, 9, 0];
+
+/** True when `version` ("2.9.7") is at least `min`. */
+export function denoAtLeast(version: string, min: readonly number[]): boolean {
+  const v = version.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < min.length; i++) {
+    if ((v[i] ?? 0) !== min[i]) return (v[i] ?? 0) > min[i];
+  }
+  return true;
+}
+
 const args = Deno.args.length > 0 ? Deno.args : ["main.ts"];
 if ((Deno.env.get("CHECK_ENGINE") ?? "").toLowerCase() === "deno") {
   await denoCheck(args, "CHECK_ENGINE=deno");
+}
+if (!denoAtLeast(Deno.version.deno, MIN_DENO)) {
+  // Projects that still pin an older Deno (many pin 2.3.1 in CI) keep the
+  // exact check they had: the graph format was only verified on 2.9.
+  await denoCheck(args, `Deno ${Deno.version.deno} is older than ${MIN_DENO.join(".")}`);
 }
 
 // One `deno info` over a temporary entry that imports every file, so the
