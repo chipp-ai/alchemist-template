@@ -1312,6 +1312,68 @@ system, OAuth server or MCP endpoint.**
   exist in every project either way. Both features spend the same
   organization credit balance.
 
+## Embedded agent tools: register them for every feature
+
+Every app ships an embedded Chipp agent. It reads and changes this app's
+data through tools, acting as the signed-in user and never as anyone else.
+**When you build a feature, register agent tools for its routes in
+src/services/agent-tools/, scoped by the session user's organization; mark
+writes write:true; never accept org or user ids from tool args; never add
+raw SQL tools.**
+
+| Piece | File |
+|---|---|
+| Registry (`registerAgentTool`) | `src/services/agent-tools/registry.ts` |
+| Starter tools (**copy this file**) | `src/services/agent-tools/starter-tools.ts` |
+| Tool module list | `src/services/agent-tools/index.ts` (import each new tools file here) |
+| Agent token (`mintAgentToken`, `verifyAgentToken`) | `src/services/agent-tools/agent-token.ts` |
+| Auth gate (`requireAgentAuth`) | `src/api/middleware/agent-auth.ts` |
+| Endpoint `POST /api/agent-mcp` | `src/api/routes/agent-mcp/index.ts` |
+| Session proxy helper (`embeddedAgentSessionExtras`) | `src/services/embedded-agent/session-extras.ts` |
+
+```ts
+registerAgentTool({
+  name: "list_orders",
+  description: "List this workspace's orders, newest first.",
+  inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 100 } } },
+  capability: "app.read",          // a roles.ts capability, checked on every list and call
+  write: false,                    // true for anything that changes data
+  handler: ({ user }, args) =>
+    listOrders({ organizationId: user.organizationId, limit: args.limit ?? 25 }),
+});
+```
+
+How it fits together: the embedded-agent session proxy mints a 15-minute
+agent token for the signed-in user and sends it to Chipp with
+`embeddedAgentSessionExtras(user)`. The Chipp runtime calls
+`POST /api/agent-mcp` (MCP over JSON-RPC) with `Authorization: Bearer
+<agentToken>`. The gate re-reads the user, so the current role, the current
+org and logout-all apply.
+
+Invariants:
+
+- **Scope by `ctx.user`, never by an argument.** The org comes from
+  `user.organizationId`; personal data from `user.id`. Registration throws
+  on an argument named like `organizationId` or `userId`, and unknown
+  arguments are refused at call time.
+- **A row id argument is fine; the service query still carries the org in
+  its WHERE clause.** Another org's id must be a "not found".
+- **Writes are `write: true`.** They are advertised with
+  `destructiveHint: true` and `_meta["chipp/requiresConfirmation"]`, so the
+  Chipp runtime asks the person before calling.
+- **Pick the capability the matching route uses.** tools/list shows a tool
+  only to roles that have it.
+- **Portal viewers see only `portalSafe: true` tools.** Mark a tool portal
+  safe only when it scopes by `ctx.portalBindings` or `ctx.user.id`.
+- **No raw SQL, no "run a query" tools.** Registration refuses the names.
+- **Scoped tokens stay scoped.** An agent token is never a session (the
+  session verifier refuses any token with `scope` or `aud`), and a session
+  or WS token never reaches the tools. Agent tokens need `JWT_SECRET`;
+  there is no development fallback.
+- **Test cross-tenant reads for every new tool**: a user of org A passing
+  org B's ids gets nothing of B's. `src/__tests__/routes/agent-mcp.test.ts`
+  shows the pattern.
+
 ## Inbound email ingestion: built-in pipeline (do NOT rebuild this)
 
 The template ships a dormant email-ingestion substrate: a purpose-built
@@ -2035,6 +2097,7 @@ This section grows as mistakes are discovered. Check it before writing code.
 - **Typed Kysely `where`/`orderBy` take camelCase column names** (`"organizationId"`); snake_case is for raw `sql` templates only
 - **The look lives in `web/src/design/design.json`** -- never hardcode a `font-family`, a hex colour or a font `<link>`; never edit `app.css` token values to restyle
 - **New UI component = add it to `/#/design`** in the same change, using global classes from `app.css`
+- **A new feature without agent tools is unfinished** -- register its tools in `src/services/agent-tools/`, scoped by `ctx.user.organizationId` (see "Embedded agent tools")
 
 ## JSONB: never pass a pre-stringified value as a parameter
 

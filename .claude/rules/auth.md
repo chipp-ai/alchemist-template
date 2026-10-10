@@ -170,3 +170,15 @@ verification account.
   `students` row makes a student), extend `provisionVerificationAccount` to
   create that row for the matching role and add the role to
   `VERIFICATION_ROLES`. Keep the account in the verification org.
+
+## Agent tokens (embedded Chipp agent)
+
+The embedded agent calls `POST /api/agent-mcp` with a 15-minute
+`scope: "agent"`, `aud: "chipp-embed"` token from `mintAgentToken`
+(`src/services/agent-tools/agent-token.ts`), never with the session cookie.
+`requireAgentAuth` (`src/api/middleware/agent-auth.ts`) verifies it and then
+runs the same `resolveUser` as `requireAuth`, so the current role, the
+current org and logout-all apply. The session verifier refuses any token
+that carries a `scope` or an `aud`, so neither an agent token nor a WS token
+works as a session. Agent tokens need `JWT_SECRET`; there is no
+development fallback. Tool rules: CLAUDE.md, "Embedded agent tools".

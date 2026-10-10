@@ -148,9 +148,12 @@ export async function verifyWsToken(token: string): Promise<jose.JWTPayload | nu
 async function verifyToken(token: string): Promise<jose.JWTPayload | null> {
   try {
     const { payload } = await jose.jwtVerify(token, JWT_SECRET);
-    // Reject WS-scoped tokens here — they should ONLY be used by
-    // verifyWsToken. Session cookies must NOT carry scope:"ws".
-    if (payload.scope === "ws") return null;
+    // Reject every scoped token here. A session JWT never carries `scope`
+    // or `aud`. Scoped tokens are verified only by their own verifier:
+    // "ws" by verifyWsToken, "agent" (aud "chipp-embed") by
+    // verifyAgentToken in src/services/agent-tools/agent-token.ts. Without
+    // this check a leaked agent or WS token would work as a session cookie.
+    if (payload.scope !== undefined || payload.aud !== undefined) return null;
     return payload;
   } catch {
     return null;
@@ -218,8 +221,12 @@ async function verifyFirstValidToken(
  * against the JWT's `iat` claim to enforce POST /auth/logout-all
  * server-side — without a check on every request, revocation can't
  * outpace the JWT's own 7-day TTL.
+ *
+ * Exported for `requireAgentAuth` (src/api/middleware/agent-auth.ts), so an
+ * agent token gets the same current-role, current-org and logout-all checks
+ * as a session cookie. Pass only a payload that a verifier already checked.
  */
-async function resolveUser(payload: jose.JWTPayload): Promise<AuthUser | null> {
+export async function resolveUser(payload: jose.JWTPayload): Promise<AuthUser | null> {
   const userId = payload.sub;
   if (!userId) return null;
 

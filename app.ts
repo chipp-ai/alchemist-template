@@ -40,6 +40,7 @@ import { ingestEmailRoutes } from "@/api/routes/ingest-email/index.ts";
 import { inboundEmailRoutes } from "@/api/routes/inbound-emails/index.ts";
 import { emailRoutes } from "@/api/routes/email/index.ts";
 import { portalRoutes } from "@/api/routes/portal/index.ts";
+import { agentMcpRoutes } from "@/api/routes/agent-mcp/index.ts";
 import { storageLocalRoutes } from "@/api/routes/storage-local/index.ts";
 import { eventsRoutes } from "@/api/routes/events/index.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
@@ -65,6 +66,9 @@ type AppEnv = {
   };
 };
 
+/** Where the agent tool endpoint is mounted. */
+const AGENT_MCP_PATH = "/api/agent-mcp";
+
 // ── App instance ──
 
 const app = new Hono<AppEnv>();
@@ -80,15 +84,21 @@ app.use("*", async (c, next) => {
 });
 
 // CORS
-app.use(
-  "*",
-  cors({
-    origin: (origin) => origin, // reflect origin for dev; tighten in production
-    credentials: true,
-    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
-  }),
-);
+const corsMiddleware = cors({
+  origin: (origin) => origin, // reflect origin for dev; tighten in production
+  credentials: true,
+  allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowHeaders: ["Content-Type", "Authorization"],
+});
+app.use("*", async (c, next) => {
+  // The agent tool endpoint is server to server (the Chipp runtime calls it
+  // with a bearer token). No CORS headers, so no browser page can call it.
+  if (c.req.path === AGENT_MCP_PATH || c.req.path.startsWith(`${AGENT_MCP_PATH}/`)) {
+    await next();
+    return;
+  }
+  return await corsMiddleware(c, next);
+});
 
 // Security headers
 app.use("*", secureHeaders());
@@ -228,6 +238,12 @@ app.route("/api/email", emailRoutes);
 // admin-gated. Admins arrive by invite, end users NEVER do. See
 // src/api/routes/portal/index.ts.
 app.route("/api/portal", portalRoutes);
+
+// Embedded Chipp agent tools (MCP over JSON-RPC). Server to server: bearer
+// agent token only (never the session cookie), no CORS, rate-limited per
+// user. Tools live in src/services/agent-tools/. See
+// src/api/routes/agent-mcp/index.ts.
+app.route(AGENT_MCP_PATH, agentMcpRoutes);
 
 // Realtime / WebSocket. Auth via short-lived ws-token (issued from
 // GET /api/auth/ws-token). The baseline route echoes messages so
