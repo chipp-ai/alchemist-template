@@ -25,6 +25,26 @@ interface EmbeddingsResponse {
 export async function embedTexts(inputs: string[]): Promise<number[][] | null> {
   if (!LLM_CONFIG.configured) return null;
   if (inputs.length === 0) return [];
+  const out: number[][] = [];
+  for (let i = 0; i < inputs.length; i += EMBEDDING_MAX_BATCH) {
+    const vectors = await embedSingleBatch(inputs.slice(i, i + EMBEDDING_MAX_BATCH));
+    if (!vectors) return null;
+    out.push(...vectors);
+  }
+  return out;
+}
+
+/**
+ * The platform proxy answers 400 "input exceeds max batch size of 96" for a
+ * larger request (see chipp-deno docs/llm-proxy-embeddings.md), so
+ * `embedTexts` splits any input list into batches of at most this size.
+ * Without the split, a caller that passed a whole document's chunks in one
+ * call failed on every attempt (nexa-tutor, 2026-10-10: 191 chunks).
+ */
+export const EMBEDDING_MAX_BATCH = 96;
+
+/** One proxy call. Callers keep `inputs` at or under EMBEDDING_MAX_BATCH. */
+async function embedSingleBatch(inputs: string[]): Promise<number[][] | null> {
 
   try {
     const res = await fetch(`${LLM_CONFIG.baseUrl}/api/llm/embeddings`, {
