@@ -90,6 +90,8 @@ export interface InfoModule {
   npmPackage?: string;
   dependencies?: InfoDependency[];
   typesDependency?: { specifier?: string; dependency?: InfoResolution };
+  /** Set (with no `local`) when Deno could not load the module. */
+  error?: string;
 }
 
 export interface InfoNpmPackage {
@@ -625,6 +627,125 @@ export function generateTsgoProject(opts: GenerateOptions): GeneratedProject {
 }
 
 // ---------------------------------------------------------------------------
+// Incomplete graphs: modules `deno info` could not load
+// ---------------------------------------------------------------------------
+//
+// `deno info --json` exits 0 even when a module fails to load (a remote
+// download error, a missing --allow-import host, a missing local file). It
+// records the module as `{ specifier, error }` with no `local` file. The
+// generator then has nothing to mirror, the import resolves to nothing, and
+// TS2307 ("cannot find module") is a code Deno suppresses. The imported
+// names silently become `any`: the check reports spurious errors in the
+// importing file, or worse, passes. Found in a customer repo (2026-10-11):
+// one deno.land/x/redis file failed to download on CI, 234 of 238
+// specifiers were mapped, and an unchanged src/lib/redis.ts reported 4 type
+// errors. Removing that module's `local` from a good graph reproduced the
+// same 4 errors. So a graph with module errors gets no verdict.
+
+export interface InfoModuleError {
+  specifier: string;
+  error: string;
+}
+
+/** Every module in `infos` that Deno could not load. */
+export function infoModuleErrors(infos: DenoInfo | DenoInfo[]): InfoModuleError[] {
+  const out: InfoModuleError[] = [];
+  const seen = new Set<string>();
+  for (const info of Array.isArray(infos) ? infos : [infos]) {
+    for (const m of info.modules ?? []) {
+      if (m.error === undefined || m.error === null || seen.has(m.specifier)) continue;
+      seen.add(m.specifier);
+      out.push({ specifier: m.specifier, error: String(m.error) });
+    }
+  }
+  return out;
+}
+
+/** One line per failed module, for an error message. */
+export function formatInfoModuleErrors(errors: InfoModuleError[]): string {
+  return errors.map((e) => `  ${e.specifier}: ${e.error}`).join("\n");
+}
+
+export type DenoInfoGraphResult =
+  | { kind: "ok"; info: DenoInfo; attempts: number }
+  /** `deno info` itself exited non-zero on every attempt. */
+  | { kind: "command-failed"; code: number; stderr: string; attempts: number }
+  /** stdout was not a JSON document. */
+  | { kind: "parse-failed"; message: string; stderr: string; attempts: number }
+  /** The graph is incomplete. `localOnly`: every failed module is a local
+   * file, which is a real error in the code (a retry cannot fix it).
+   * Otherwise a remote module could not be fetched: the checker could not
+   * run, which is not a type error. */
+  | {
+    kind: "module-errors";
+    errors: InfoModuleError[];
+    localOnly: boolean;
+    attempts: number;
+  };
+
+export interface DenoInfoGraphOptions {
+  /** Total tries for a failed command or a remote module error. Default 3. */
+  attempts?: number;
+  /** Injected for tests. Default: a real timer. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Base backoff; attempt N waits N * this. Default 2000ms. */
+  backoffMs?: number;
+  log?: (message: string) => void;
+}
+
+/**
+ * Run `deno <args>` (an `info --json ...` command) until it gives a complete
+ * graph. A failed command or a remote module error is retried, since Deno
+ * keeps what it already fetched. Callers MUST treat anything but `ok` as
+ * "no verdict": never type-check the graph, never pass.
+ */
+export async function denoInfoGraph(
+  run: CommandRunner,
+  args: string[],
+  opts: DenoInfoGraphOptions = {},
+): Promise<DenoInfoGraphResult> {
+  const attempts = Math.max(1, opts.attempts ?? 3);
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const backoffMs = opts.backoffMs ?? 2000;
+  const log = opts.log ?? (() => {});
+  const label = `deno ${args.join(" ")}`;
+  for (let attempt = 1;; attempt++) {
+    const result = await run("deno", args);
+    let retryReason: string;
+    if (result.code !== 0) {
+      if (attempt >= attempts) {
+        return { kind: "command-failed", code: result.code, stderr: result.stderr, attempts: attempt };
+      }
+      retryReason = `exited ${result.code}`;
+    } else {
+      let info: DenoInfo;
+      try {
+        // stdout ONLY: Deno can write non-JSON warnings to stderr on success.
+        info = JSON.parse(result.stdout) as DenoInfo;
+      } catch (err) {
+        return {
+          kind: "parse-failed",
+          message: err instanceof Error ? err.message : String(err),
+          stderr: result.stderr,
+          attempts: attempt,
+        };
+      }
+      const errors = infoModuleErrors(info);
+      if (errors.length === 0) return { kind: "ok", info, attempts: attempt };
+      const localOnly = errors.every((e) => e.specifier.startsWith("file:"));
+      if (localOnly || attempt >= attempts) {
+        return { kind: "module-errors", errors, localOnly, attempts: attempt };
+      }
+      retryReason = `${errors.length} module(s) could not be loaded:\n${
+        formatInfoModuleErrors(errors)
+      }`;
+    }
+    log(`\`${label}\` attempt ${attempt}/${attempts}: ${retryReason} -- retrying`);
+    await sleep(backoffMs * attempt);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Runner: toolchain, generation, compile, verdict. Shared by chipp-deno's
 // scripts/check-project.ts and alchemist-template's scripts/check-types.ts.
 // ---------------------------------------------------------------------------
@@ -707,6 +828,18 @@ export interface RunTsgoCheckOptions {
  */
 export async function runTsgoCheck(opts: RunTsgoCheckOptions): Promise<TsgoVerdict> {
   const startedMs = Date.now();
+  // Defense in depth: callers should already refuse an incomplete graph
+  // (see `denoInfoGraph`). If one did not, do not check it here: `deno
+  // check` fetches on its own, so it either loads the module or fails loudly.
+  const moduleErrors = infoModuleErrors(opts.infos);
+  if (moduleErrors.length > 0) {
+    return {
+      kind: "fallback",
+      reason: `deno info could not load ${moduleErrors.length} module(s), so the graph is incomplete:\n${
+        formatInfoModuleErrors(moduleErrors)
+      }`.slice(0, 2000),
+    };
+  }
   if (Deno.permissions.querySync({ name: "write" }).state !== "granted") {
     return {
       kind: "fallback",

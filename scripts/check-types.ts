@@ -11,7 +11,8 @@
  * That file is copied from chipp-deno (scripts/lib/tsgo-check.ts); keep the
  * two identical, and change it there first.
  *
- * Exit codes: 0 clean, 1 type errors, 2 could not check.
+ * Exit codes: 0 clean, 1 type errors (or a missing local module), 2 could
+ * not check (including a remote module that failed to download).
  *
  * FALLBACK: when the native engine cannot give a verdict (no write
  * permission, too little memory, the compiler cannot be fetched, a config
@@ -19,7 +20,12 @@
  * arguments instead, so a check never silently passes. `CHECK_ENGINE=deno`
  * forces that path.
  */
-import { type DenoInfo, runTsgoCheck } from "./lib/tsgo-check.ts";
+import {
+  type DenoInfo,
+  denoInfoGraph,
+  formatInfoModuleErrors,
+  runTsgoCheck,
+} from "./lib/tsgo-check.ts";
 
 const TAG = "[check-types]";
 
@@ -115,12 +121,35 @@ try {
     files.map((f) => `import ${JSON.stringify(toRelativeSpecifier(f))};`).join("\n") +
       "\n",
   );
-  const r = await run("deno", ["info", "--json", entry]);
-  if (r.code !== 0) {
-    console.error(`${TAG} deno info failed:\n${r.stderr}`);
+  // `deno info` exits 0 when a module fails to load, and checking without it
+  // turns its exports into `any` (spurious errors, or a silent pass). See
+  // `infoModuleErrors` in lib/tsgo-check.ts. A download is retried; an
+  // incomplete graph never gets a verdict.
+  const graph = await denoInfoGraph(run, ["info", "--json", entry], {
+    log: (m) => console.warn(`${TAG} ${m}`),
+  });
+  if (graph.kind === "command-failed") {
+    console.error(`${TAG} deno info failed ${graph.attempts} time(s):\n${graph.stderr}`);
     Deno.exit(2);
   }
-  info = JSON.parse(r.stdout) as DenoInfo;
+  if (graph.kind === "parse-failed") {
+    console.error(`${TAG} could not parse deno info output: ${graph.message}\n${graph.stderr}`);
+    Deno.exit(2);
+  }
+  if (graph.kind === "module-errors") {
+    const list = formatInfoModuleErrors(graph.errors);
+    if (graph.localOnly) {
+      // A missing local file is an error in the code; deno check fails on it too.
+      console.error(`${TAG} ${graph.errors.length} local module(s) could not be loaded:\n${list}`);
+      Deno.exit(1);
+    }
+    console.error(
+      `${TAG} ${graph.errors.length} module(s) could not be loaded after ${graph.attempts} attempt(s); ` +
+        `refusing to type-check an incomplete graph:\n${list}`,
+    );
+    Deno.exit(2);
+  }
+  info = graph.info;
 } finally {
   await Deno.remove(entry).catch(() => {});
 }
