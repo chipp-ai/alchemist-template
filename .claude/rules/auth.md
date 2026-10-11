@@ -8,6 +8,8 @@ paths:
   - "web/src/lib/permissions.ts"
   - "src/api/routes/org/**"
   - "src/api/routes/invite/**"
+  - "src/api/routes/auth/**"
+  - "src/lib/verification-*.ts"
 ---
 
 # Auth + authorization
@@ -142,3 +144,29 @@ portal lane: use it, never build a parallel portal".
 WS connections authenticate with a short-lived `scope: "ws"` token, NOT
 the session cookie. Scope segregation is enforced both ways — see the
 `api-layer` rule's Realtime section.
+
+## Platform verification sessions (read-only, platform-signed)
+
+The Alchemist platform verifies deployed changes in a real browser. Login
+here is by emailed code, which an automated verifier cannot receive, so the
+platform signs a short-lived token and trades it at
+`POST /api/auth/verification-session` for a session on a dedicated
+verification account.
+
+- **Off unless the platform injected `ALCH_VERIFICATION_SESSION_SECRET` and
+  `PROJECT_ID`.** Without both the route 404s. Never set the secret by hand.
+- **Single-use, project-bound token.** Every claim is checked in
+  `src/lib/verification-session-token.ts`; the jti is burned in the
+  `verification_sessions` table (also the audit log) before a session exists.
+- **Read-only everywhere.** The minted JWT carries a `vrf` claim, and
+  `verificationReadOnlyGuard` (mounted in `app.ts` before every route)
+  answers 403 to any POST/PUT/PATCH/DELETE from it. Do not add a write
+  exemption; logout is the only one.
+- **Dedicated accounts, never real users.** `src/lib/verification-accounts.ts`
+  keeps one user per role (`admin`, `editor`, `viewer`; `member` maps to
+  `editor`; never `owner`) in its own "Alchemist verification" org, at
+  `@verification.invalid` addresses that cannot sign in by email code.
+- **Custom personas.** If your app derives a persona from extra rows (a
+  `students` row makes a student), extend `provisionVerificationAccount` to
+  create that row for the matching role and add the role to
+  `VERIFICATION_ROLES`. Keep the account in the verification org.

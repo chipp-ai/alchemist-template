@@ -41,8 +41,14 @@ import {
   type OAuthProvider,
 } from "@/lib/oauth-providers.ts";
 import { getEnv } from "@/lib/env.ts";
+import { isVerificationAccountEmail } from "@/lib/verification-accounts.ts";
+import { verificationSessionRoutes } from "./verification-session.ts";
 
 const authRoutes = new Hono();
+
+// Platform verification sessions (read-only, platform-signed token only).
+// Disabled (404) unless the platform injected its secret. See the file.
+authRoutes.route("/verification-session", verificationSessionRoutes);
 
 const SESSION_COOKIE = "session_id";
 const IS_PROD = getEnv("NODE_ENV") === "production";
@@ -124,6 +130,12 @@ const verifyOtpSchema = z.object({
 authRoutes.post("/send-otp", zValidator("json", sendOtpSchema, validationHook), async (c) => {
   const { email } = c.req.valid("json");
 
+  // Platform verification accounts sign in ONLY through the platform-signed
+  // verification token. Never issue a guessable email code for them.
+  if (isVerificationAccountEmail(email)) {
+    throw new BadRequestError("This address cannot sign in by email code");
+  }
+
   // Delete any existing OTPs for this email
   await db
     .deleteFrom("otps")
@@ -159,6 +171,10 @@ authRoutes.post("/send-otp", zValidator("json", sendOtpSchema, validationHook), 
  */
 authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHook), async (c) => {
   const { email, otpCode, name } = c.req.valid("json");
+
+  if (isVerificationAccountEmail(email)) {
+    throw new UnauthorizedError("Invalid or expired code");
+  }
 
   // Look up the OTP
   const otp = await db

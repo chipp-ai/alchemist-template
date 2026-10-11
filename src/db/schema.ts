@@ -86,6 +86,23 @@ export interface OtpsTable {
 export type Otp = Selectable<OtpsTable>;
 export type NewOtp = Insertable<OtpsTable>;
 
+/**
+ * Audit log + replay guard for platform verification sessions
+ * (`POST /api/auth/verification-session`). One row per accepted token;
+ * the UNIQUE jti makes every token single-use.
+ */
+export interface VerificationSessionsTable {
+  id: Generated<string>;
+  jti: string;
+  ticketId: string;
+  runId: string;
+  role: string;
+  userId: string | null;
+  status: Generated<"claimed" | "issued" | "failed">;
+  expiresAt: Date | null;
+  createdAt: CreatedAt;
+}
+
 export interface SessionsTable {
   id: Generated<string>;
   userId: string;
@@ -630,6 +647,7 @@ export interface Database {
   organizations: OrganizationsTable;
   users: UsersTable;
   otps: OtpsTable;
+  verification_sessions: VerificationSessionsTable;
   sessions: SessionsTable;
   api_credentials: ApiCredentialsTable;
   invites: InvitesTable;

@@ -13,6 +13,7 @@ import { serveStatic } from "hono/deno";
 import { AppError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
 import { requestTimingMiddleware } from "@/api/middleware/request-timing.ts";
+import { verificationReadOnlyGuard } from "@/api/middleware/auth.ts";
 import { recentActivityMiddleware } from "@/api/middleware/recent-activity.ts";
 import { chippInsightsMiddleware } from "@/api/middleware/chipp-insights.ts";
 import { demoNoindexHeaderMiddleware, demoRobotsTxtRoute } from "@/api/middleware/demo-noindex.ts";
@@ -155,6 +156,12 @@ app.use("*", requestTimingMiddleware);
 if (devRoutesEnabled()) {
   app.use("*", recentActivityMiddleware);
 }
+
+// Platform verification sessions are read-only app-wide: any
+// state-changing request carrying one gets 403, whatever the route. Mounted
+// before every route so no handler (or recipe router) can forget it. See
+// src/api/routes/auth/verification-session.ts.
+app.use("*", verificationReadOnlyGuard);
 
 // ── Routes ──
 

@@ -63,6 +63,43 @@ export async function createSessionToken(user: {
 }
 
 /**
+ * Claim that marks a session JWT as a platform verification session (see
+ * `src/api/routes/auth/verification-session.ts`). Only that route writes it.
+ * `verificationReadOnlyGuard` below rejects every state-changing request
+ * that carries such a session.
+ */
+export const VERIFICATION_SESSION_CLAIM = "vrf";
+
+/**
+ * Create a session JWT for a platform verification account. Same shape as
+ * `createSessionToken` (so every existing auth path accepts it), plus the
+ * `vrf` claim and a short TTL chosen by the caller (minutes, never the
+ * normal user session length).
+ */
+export async function createVerificationSessionToken(
+  user: { id: string; email: string; name: string | null; organizationId: string; role: string },
+  opts: { ttlSeconds: number; jti: string },
+): Promise<string> {
+  return await new jose.SignJWT({
+    sub: user.id,
+    email: user.email,
+    name: user.name,
+    organizationId: user.organizationId,
+    role: user.role,
+    [VERIFICATION_SESSION_CLAIM]: { ro: true, jti: opts.jti },
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(`${Math.floor(opts.ttlSeconds)}s`)
+    .sign(JWT_SECRET);
+}
+
+/** True when a verified session payload is a platform verification session. */
+export function isVerificationSessionPayload(payload: jose.JWTPayload): boolean {
+  return payload[VERIFICATION_SESSION_CLAIM] !== undefined;
+}
+
+/**
  * Create a short-lived JWT for a WebSocket handshake. Browsers can't
  * send the httpOnly session cookie on cross-origin WS connections, and
  * many WS clients can't attach Cookie headers at all — so we mint a
@@ -243,6 +280,41 @@ export async function resolveOptionalUser(
   if (!payload) return null;
   return await resolveUser(payload);
 }
+
+/** Methods that never change server state. */
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+/** State-changing paths a verification session may still call. */
+const VERIFICATION_WRITE_ALLOWLIST = new Set(["/api/auth/logout"]);
+
+/**
+ * Global guard: a platform verification session is READ-ONLY. Any
+ * state-changing request (POST/PUT/PATCH/DELETE) whose session cookie is a
+ * verification session gets 403, whatever route it targets. This enforces
+ * the verifier's read-only rule in the app itself, so a prompt-injected or
+ * careless verifier cannot write data, invite members, mint API keys, or
+ * renew the session into a normal one (`POST /api/auth/touch`).
+ *
+ * It reads the same token the auth middleware would use (the first
+ * candidate that verifies), so it cannot disagree with `requireAuth` about
+ * who the caller is. Mounted in app.ts before every route.
+ */
+export const verificationReadOnlyGuard = createMiddleware(async (c, next) => {
+  if (
+    SAFE_METHODS.has(c.req.method.toUpperCase()) ||
+    VERIFICATION_WRITE_ALLOWLIST.has(c.req.path)
+  ) {
+    await next();
+    return;
+  }
+  const candidates = getSessionTokenCandidates(c);
+  if (candidates.length > 0) {
+    const payload = await verifyFirstValidToken(candidates);
+    if (payload && isVerificationSessionPayload(payload)) {
+      throw new ForbiddenError("Verification sessions are read-only");
+    }
+  }
+  await next();
+});
 
 /**
  * Auth middleware that populates c.get("user") and c.get("organizationId").
