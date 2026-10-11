@@ -124,7 +124,8 @@ These guide all code review and implementation decisions:
 - **Run `deno task check:tests` after touching ANY test file.** Local test runs use `--no-check`, but CI's test job type-checks `src/__tests__/` -- a type error in a test file passes green locally and reds CI on every later push until someone notices (31 accumulated on one project before anyone did). The task takes seconds; make it part of finishing a test change.
 - **`deno task check`, `check:tests` and `check:touched` run the native TypeScript 7 compiler** through `scripts/check-types.ts` (a few times faster than `deno check`, same diagnostics). It falls back to `deno check` on its own when it cannot give a verdict; `CHECK_ENGINE=deno` forces `deno check`. CI runs both and fails if either fails. `scripts/lib/tsgo-check.ts` is copied from chipp-deno: change it there first, then copy it here unchanged.
 - **Kysely aggregates take columns from the query's builder, never `db.fn`:** `.select((eb) => [eb.fn.max("col").as("x")])`, not `.select([db.fn.max("col").as("x")])`. The bare form makes TypeScript search every table's columns and can add tens of seconds to every type check; `src/__tests__/kysely-unscoped-db-fn.test.ts` fails on it.
-- **Type-check the files you changed with `deno task check:touched <file> [more files]`** while you work; `deno task check` (the whole app) is for finishing. In a Chipp sandbox every `deno` command goes through a guard: type checks and test runs execute one at a time per sandbox, because several at once have run sandboxes out of memory. A `[chipp deno-guard] waiting for another type check or test run` line means your command is queued, not hung. Do not kill it and retry.
+- **Type-check the files you changed with `deno task check:touched <file> [more files]`** (up to 20 files) while you work and before you finish. Outside a Chipp sandbox, `deno task check` checks the whole app.
+- **In a Chipp sandbox (Builder or Software Factory), every `deno` command goes through a memory guard.** It REFUSES a whole-repo check (`deno task check`, `deno task check:tests`, `deno check main.ts`, `deno check src/`) and every test run, with a `[chipp deno-guard] refused` line. That is the sandbox, not a fault in this repo: do not work around it. It allows `deno check <file>` and `deno task check:touched <file>` on up to 20 files that are not `main.ts`; each also checks everything those files import. The full `deno check main.ts` runs where it can: Builder Publish runs it before merging, and the deploy build runs it again.
 - **Tests that create DB resources must use `createIsolatedUser()`** -- never the shared test user. Parallel tests can delete each other's data.
 - **NEVER use `--no-verify` or `--no-gpg-sign`** on any git command. If hooks fail, fix the underlying issue.
 - **Every interactive element gets `data-testid`** following `{area}-{component}-{element}` convention (e.g., `data-testid="settings-form-input-name"`).
@@ -1737,7 +1738,7 @@ the same snapshot next to the rows.
 
 Before reporting any implementation as complete:
 
-1. **Type checks:** `deno task check` passes
+1. **Type checks:** `deno task check` passes (in a Chipp sandbox, `deno task check:touched <every file you changed>` passes; Publish and the deploy build run the full check)
 2. **Tests written and passing:** `deno task test:fast 2>&1 | tee .scratch/test-output.txt`
 3. **API tested** (for backend changes): write a scratch test in `.scratch/` and run it
 4. **Browser verified** (for UI changes): hard reload and check the actual rendered result
