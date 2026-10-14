@@ -1313,6 +1313,32 @@ system, OAuth server or MCP endpoint.**
   exist in every project either way. Both features spend the same
   organization credit balance.
 
+## Chat with AI: it is the embedded Chipp agent (do NOT rebuild it)
+
+Any feature where a person types to the AI and reads its replies is this
+app's embedded Chipp agent: a chat, an assistant, a coach, a tutor, a
+helper, "ask the docs", Q&A. **Never build a chat screen, a message list,
+a chat route, a conversation store, or a model call that runs a
+conversation, not even as a placeholder.** Chipp hosts the agent, its
+instructions, its knowledge, its memory and its billing.
+
+1. Call `get_embedded_chipp_agent_status`. If there is no agent, write
+   `chipp/agent.json` (name, instructions, welcome, knowledge, contextKeys,
+   surfaces) and the markdown under `chipp/knowledge/`, then call
+   `sync_chipp_agent`. It creates the agent.
+2. If the result says the pack landed, `git fetch origin && git merge
+   origin/<base branch>` to get `web/src/lib/embedded-agent/`.
+3. Place `<EmbeddedAgentPanel context={...} />` on the pages where it
+   helps, or `<EmbeddedAgentWidget />` once in `App.svelte`. Send only
+   context keys listed in `contextKeys`, never personal data.
+4. Give it this app's data through agent tools (next section).
+
+`llmMessages` / `llmStructured` (`src/services/llm/`) are for one-shot
+server tasks with no conversation: extract, classify, summarize, draft one
+text. Never import an AI provider SDK, call a provider's API host, or ask
+for `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`.
+`src/__tests__/no-custom-ai-chat.test.ts` fails the build when code does.
+
 ## Embedded agent tools: register them for every feature
 
 Every app ships an embedded Chipp agent. It reads and changes this app's

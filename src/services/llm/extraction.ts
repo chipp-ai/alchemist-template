@@ -302,6 +302,10 @@ export function __resetLlmFetchForTest(): void {
 /**
  * Thin Anthropic Messages-API passthrough through the billing proxy.
  *
+ * For one-shot server tasks (extract, classify, summarize, draft one text).
+ * Never use it to run a conversation a person types into: that is the
+ * app's embedded Chipp agent (CLAUDE.md, "Chat with AI").
+ *
  * Fails closed when unconfigured (throws `LlmNotConfiguredError` before
  * any fetch). On HTTP 402 throws `LlmCreditsExhaustedError`; on any other
  * non-2xx logs at the classified severity (never the token) and throws
