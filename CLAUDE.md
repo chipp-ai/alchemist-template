@@ -1339,8 +1339,9 @@ or off with `"capabilities"` in `chipp/agent.json`, then call
 `sync_chipp_agent`: `webSearch`, `imageGeneration`, `videoGeneration`,
 `deepResearch`, `voice`, `fileUploads` (each `true` or `false`; a missing
 key leaves the agent's setting alone). Images and videos show in the chat
-on their own. `deepResearch` needs the Studio Pro plan: when the sync says
-the plan blocks it, tell the person; never build a workaround. Never build
+on their own. A `deepResearch` reply can take a few minutes. If the sync
+ever says the plan blocks a switch, tell the person; never build a
+workaround. Never build
 your own image, video, search, research, voice or upload feature for the
 chat. Full table: `docs/agent-guidance/embedded-chipp-agent.md`.
 
