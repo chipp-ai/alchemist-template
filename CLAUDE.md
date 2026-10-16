@@ -1333,6 +1333,17 @@ instructions, its knowledge, its memory and its billing.
    context keys listed in `contextKeys`, never personal data.
 4. Give it this app's data through agent tools (next section).
 
+The agent can already search the web, make images and videos, run deep
+research, and (when switched on) take voice and file uploads. Turn these on
+or off with `"capabilities"` in `chipp/agent.json`, then call
+`sync_chipp_agent`: `webSearch`, `imageGeneration`, `videoGeneration`,
+`deepResearch`, `voice`, `fileUploads` (each `true` or `false`; a missing
+key leaves the agent's setting alone). Images and videos show in the chat
+on their own. `deepResearch` needs the Studio Pro plan: when the sync says
+the plan blocks it, tell the person; never build a workaround. Never build
+your own image, video, search, research, voice or upload feature for the
+chat. Full table: `docs/agent-guidance/embedded-chipp-agent.md`.
+
 `llmMessages` / `llmStructured` (`src/services/llm/`) are for one-shot
 server tasks with no conversation: extract, classify, summarize, draft one
 text. Never import an AI provider SDK, call a provider's API host, or ask
