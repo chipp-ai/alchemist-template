@@ -1,0 +1,139 @@
+---
+/**
+ * The one layout every landing page uses: header with nav, main, footer.
+ * It prints the visible Published and Updated dates and the JSON-LD.
+ * See landing/README.md for the AEO rules.
+ */
+import { PAGES, absoluteUrl, formatDate, jsonLd, loadBrand, scriptJson, site, type SiteFaq } from "../lib/site";
+
+interface Props {
+  /** The <title>. */
+  title: string;
+  /** The meta description. */
+  description: string;
+  /** This page's path, e.g. "/pricing/". */
+  path: string;
+  /** The FAQ this page shows, so the FAQPage JSON-LD matches it. */
+  faq?: SiteFaq[];
+}
+
+const { title, description, path, faq } = Astro.props;
+const brand = loadBrand();
+const families = [...new Set([brand.headingFont, brand.bodyFont])]
+  .map((f) => `family=${encodeURIComponent(f).replace(/%20/g, "+")}:wght@${brand.bodyWeight};${brand.headingWeight}`)
+  .join("&");
+const fontsHref = `https://fonts.googleapis.com/css2?${families}&display=swap`;
+const ld = scriptJson(jsonLd({ path, title, description, faq }));
+const canonical = site.url ? absoluteUrl(path) : null;
+const year = site.updatedAt.slice(0, 4);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {canonical && <link rel="canonical" href={canonical} />}
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="article:published_time" content={site.publishedAt} />
+    <meta property="article:modified_time" content={site.updatedAt} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href={fontsHref} />
+    <script type="application/ld+json" set:html={ld} />
+    <script is:inline>
+      // Links sent before the app moved to /app (for example "/#/invite/x")
+      // still open the right app page.
+      (function () {
+        var h = window.location.hash;
+        if (h && h.indexOf("#/") === 0) window.location.replace("/app/" + h);
+      })();
+    </script>
+    <style
+      define:vars={{
+        primary: brand.primary,
+        accent: brand.accent,
+        bg: brand.background,
+        surface: brand.surface,
+        text: brand.text,
+        headingFont: `"${brand.headingFont}", system-ui, sans-serif`,
+        bodyFont: `"${brand.bodyFont}", system-ui, sans-serif`,
+        headingWeight: brand.headingWeight,
+        bodyWeight: brand.bodyWeight,
+        radius: brand.radius,
+      }}
+      is:global
+    >
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--bodyFont);
+        font-weight: var(--bodyWeight);
+        line-height: 1.6;
+      }
+      h1, h2, h3 { font-family: var(--headingFont); font-weight: var(--headingWeight); line-height: 1.2; }
+      h1 { font-size: clamp(2rem, 5vw, 3rem); margin: 0 0 0.5rem; }
+      h2 { font-size: 1.5rem; margin: 2.5rem 0 0.75rem; }
+      h3 { font-size: 1.125rem; margin: 1.25rem 0 0.25rem; }
+      a { color: var(--primary); }
+      a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+      .wrap { max-width: 56rem; margin: 0 auto; padding: 0 1.25rem; }
+      .site-header { background: var(--surface); border-bottom: 1px solid rgba(0, 0, 0, 0.08); }
+      .site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 1rem; padding-bottom: 1rem; flex-wrap: wrap; }
+      .brand { font-family: var(--headingFont); font-weight: var(--headingWeight); color: var(--text); text-decoration: none; font-size: 1.125rem; }
+      .site-header ul { display: flex; gap: 1.25rem; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+      .site-header a[aria-current="page"] { font-weight: 700; }
+      main { padding: 3rem 0; }
+      .button {
+        display: inline-block;
+        background: var(--primary);
+        color: #fff;
+        padding: 0.75rem 1.25rem;
+        border-radius: var(--radius);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .card { background: var(--surface); border-radius: var(--radius); padding: 1.25rem; border: 1px solid rgba(0, 0, 0, 0.08); }
+      .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); padding: 0; list-style: none; }
+      .as-of { font-size: 0.875rem; opacity: 0.8; }
+      .page-dates { margin-top: 3rem; font-size: 0.875rem; opacity: 0.8; }
+      .site-footer { border-top: 1px solid rgba(0, 0, 0, 0.08); padding: 2rem 0; font-size: 0.875rem; }
+      dl { margin: 0; }
+      dt { font-weight: 700; margin-top: 1rem; }
+      dd { margin: 0.25rem 0 0; }
+      blockquote { margin: 0; }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap">
+        <a class="brand" href="/">{site.name}</a>
+        <nav aria-label="Main">
+          <ul>
+            {PAGES.map((p) => (
+              <li><a href={p.path} aria-current={p.path === path ? "page" : undefined}>{p.label}</a></li>
+            ))}
+            <li><a href={site.cta.href}>{site.cta.label}</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+    <main class="wrap">
+      <slot />
+      <p class="page-dates">
+        Published <time datetime={site.publishedAt}>{formatDate(site.publishedAt)}</time>.
+        Updated <time datetime={site.updatedAt}>{formatDate(site.updatedAt)}</time>.
+      </p>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap">
+        <p>&copy; {year} {site.name}. Facts on this site are current as of {site.asOf}.</p>
+      </div>
+    </footer>
+  </body>
+</html>

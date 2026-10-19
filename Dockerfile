@@ -16,6 +16,21 @@ RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
+# ── Landing site build stage ──
+# Builds the static Astro landing site in landing/ into landing/dist/. app.ts
+# serves it at "/" and the SPA at /app (src/lib/landing-site.ts). `npm run
+# build` also runs scripts/aeo-check.mjs, so a page that breaks an AEO rule
+# fails the image build. The site reads brand tokens from
+# web/src/design/design.json at build time, so that file comes along.
+FROM node:22-alpine AS landing-builder
+
+WORKDIR /src/landing
+COPY landing/package.json landing/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY landing/ ./
+COPY web/src/design/design.json /src/web/src/design/design.json
+RUN npm run build
+
 # ── Build stage: cache Deno dependencies ──
 FROM denoland/deno:2.9.7 AS builder
 
@@ -33,6 +48,7 @@ COPY . .
 # Pull in the built SPA from the web-builder stage so `deno check` and
 # the runtime image both see web/dist/ as part of the application.
 COPY --from=web-builder /web/dist ./web/dist
+COPY --from=landing-builder /src/landing/dist ./landing/dist
 
 # Typecheck + cache the full application graph
 # The storefront route modules load by discovery at boot (see

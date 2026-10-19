@@ -70,6 +70,28 @@ jobs:
       - name: Lint
         run: deno lint
 
+  landing:
+    # The landing site (landing/): unit tests for the AEO check, then the
+    # Astro build, which runs scripts/aeo-check.mjs on every page.
+    name: Landing Site (AEO)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: landing
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - name: Build and check AEO rules
+        run: npm run build
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -143,7 +165,7 @@ jobs:
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [typecheck, test]
+    needs: [typecheck, test, landing]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
     steps:
       - uses: actions/checkout@v4

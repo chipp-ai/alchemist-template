@@ -1,0 +1,29 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site } from "../lib/site";
+
+const title = `About ${site.name}`;
+---
+<Layout title={title} description={site.about.answer} path="/about/">
+  <article>
+    <header>
+      <h1>About {site.name}</h1>
+    </header>
+
+    <section aria-labelledby="main-question">
+      <h2 id="main-question">{site.about.question}</h2>
+      <p>{site.about.answer}</p>
+    </section>
+
+    <section aria-labelledby="story">
+      <h2 id="story">Why {site.name} exists</h2>
+      <p>{site.about.body}</p>
+    </section>
+
+    <section aria-labelledby="definition">
+      <h2 id="definition">What is {site.name}?</h2>
+      <p>{site.definition.what} {site.definition.who} {site.definition.does}</p>
+      <p class="as-of">As of {site.asOf}.</p>
+    </section>
+  </article>
+</Layout>

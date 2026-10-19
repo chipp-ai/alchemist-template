@@ -34,6 +34,7 @@ import { ForbiddenError, NotFoundError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
 import { sendEmailKind } from "@/services/email-kinds.ts";
 import { getEnv } from "@/lib/env.ts";
+import { appPath } from "@/config/site.ts";
 
 const LOG_SOURCE = "portal-access";
 const TOKEN_BYTES = 32;
@@ -455,8 +456,8 @@ export async function hashToken(token: string): Promise<string> {
 
 export function buildPortalUrl(token: string): string {
   const base = getEnv("APP_URL") ?? "http://localhost:8000";
-  // Hash route -- matches web/src/routes.ts.
-  return `${base}/#/portal/claim/${token}`;
+  // Hash route -- matches web/src/routes.ts, under the SPA prefix (appPath).
+  return `${base}${appPath(`/#/portal/claim/${token}`)}`;
 }
 
 // deno-lint-ignore no-explicit-any

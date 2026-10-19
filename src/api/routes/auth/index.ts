@@ -41,6 +41,7 @@ import {
   type OAuthProvider,
 } from "@/lib/oauth-providers.ts";
 import { getEnv } from "@/lib/env.ts";
+import { appPath } from "@/config/site.ts";
 import { isVerificationAccountEmail } from "@/lib/verification-accounts.ts";
 import { verificationSessionRoutes } from "./verification-session.ts";
 
@@ -1074,8 +1075,9 @@ authRoutes.get("/:provider/callback", async (c) => {
     email: user.email,
   });
 
-  const webUrl = getEnv("WEB_APP_URL") ?? "http://localhost:5173";
-  return c.redirect(webUrl);
+  // Land on the SPA, not the landing site that may own "/".
+  const webUrl = (getEnv("WEB_APP_URL") ?? "http://localhost:5173").replace(/\/+$/, "");
+  return c.redirect(`${webUrl}${appPath("/#/")}`);
 });
 
 export { authRoutes };

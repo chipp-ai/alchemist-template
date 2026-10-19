@@ -25,6 +25,7 @@ import { sendInviteEmail } from "@/services/email.ts";
 import { ASSIGNABLE_ROLES, type AssignableRole, roleLabel } from "@/lib/roles.ts";
 import { log } from "@/lib/logger.ts";
 import { getEnv } from "@/lib/env.ts";
+import { appPath } from "@/config/site.ts";
 
 const INVITE_TTL_DAYS = 7;
 const TOKEN_BYTES = 32;
@@ -485,6 +486,7 @@ function generateInviteToken(): string {
 
 function buildAcceptUrl(token: string): string {
   const base = getEnv("APP_URL") ?? "http://localhost:8000";
-  // Hash route — matches web/src/routes.ts.
-  return `${base}/#/invite/${token}`;
+  // Hash route: matches web/src/routes.ts. appPath puts it under the SPA
+  // prefix, so the link skips the landing site at "/".
+  return `${base}${appPath(`/#/invite/${token}`)}`;
 }
