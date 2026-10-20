@@ -3,5 +3,15 @@
   "healthUrl": "http://localhost:8000/health",
   "apiUrl": "http://localhost:8000",
   "spaUrl": "http://localhost:5173",
-  "readyTimeoutMs": 300000
+  "readyTimeoutMs": 300000,
+  "apps": [
+    {
+      "name": "landing",
+      "label": "Landing site",
+      "dir": "landing",
+      "script": "dev",
+      "port": 4321,
+      "node": "22"
+    }
+  ]
 }

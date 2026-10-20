@@ -176,8 +176,9 @@ Deno.test("serveSpaShell serves the built shell, and 404s when it is not built",
 
 // ── site + app-links ──
 
-Deno.test("appPath links into the SPA at the site root and rejects a relative path", () => {
-  assertEquals(appPath("/#/login"), "/#/login");
+Deno.test("appPath links into the SPA at /app and rejects a relative path", () => {
+  // The SPA moved to /app on 2026-10-19; "/" is the landing site (landing/).
+  assertEquals(appPath("/#/login"), "/app/#/login");
   let threw = false;
   try {
     appPath("#/login");

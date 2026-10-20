@@ -38,6 +38,7 @@ import { BRAND } from "@/config/brand.ts";
 import { escapeHtml } from "@/lib/safe-html.ts";
 import { NotFoundError } from "@/utils/errors.ts";
 import { appUrl, sendEmail } from "@/services/email-transport.ts";
+import { appPath } from "@/config/site.ts";
 
 // ── Registry types ─────────────────────────────────────────────────────────
 
@@ -351,7 +352,7 @@ registerEmailKind<InviteEmailData>({
     inviterEmail: "admin@example.invalid",
     organizationName: BRAND.name,
     roleLabel: "Editor",
-    acceptUrl: `${appUrl()}/#/invite/sample-token`,
+    acceptUrl: `${appUrl()}${appPath("/#/invite/sample-token")}`,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   }),
 });
@@ -450,7 +451,7 @@ registerEmailKind<PortalLinkEmailData>({
   sample: () => ({
     organizationName: BRAND.name,
     subjectLabel: "Sample Record",
-    portalUrl: `${appUrl()}/#/portal/claim/sample-token`,
+    portalUrl: `${appUrl()}${appPath("/#/portal/claim/sample-token")}`,
   }),
 });
 

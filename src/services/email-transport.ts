@@ -27,6 +27,7 @@ import { captureEmail } from "@/services/email-mailbox.ts";
 import { checkCommunicationsSuppression } from "@/services/communications.service.ts";
 import { appOrigin } from "@/services/app-links.ts";
 import { getEnv } from "@/lib/env.ts";
+import { appPath } from "@/config/site.ts";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -143,7 +144,7 @@ export function effectiveSendHeaders(
 ): Record<string, string> | undefined {
   const merged: Record<string, string> = { ...(opts.headers ?? {}) };
   if (!opts.authCritical && !merged["List-Unsubscribe"]) {
-    merged["List-Unsubscribe"] = `<${appUrl()}/#/settings?tab=notifications>`;
+    merged["List-Unsubscribe"] = `<${appUrl()}${appPath("/#/settings?tab=notifications")}>`;
   }
   return Object.keys(merged).length > 0 ? merged : undefined;
 }

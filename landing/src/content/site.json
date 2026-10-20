@@ -1,0 +1,58 @@
+{
+  "name": "Your product",
+  "url": "",
+  "description": "Your product is a web app that helps a team do one job well. This page says what it is, who it is for, and what it does.",
+  "definition": {
+    "what": "Your product is a web app that helps a team do one job well.",
+    "who": "It is for teams that do this job every week and want one place to do it.",
+    "does": "It keeps the work in one place, shows what is left to do, and records what changed."
+  },
+  "mainQuestion": "Is Your product right for my team?",
+  "itDependsAnswer": "It depends on how often your team does this job and where the work lives today. If the job comes up every week and the work is spread across email and spreadsheets, Your product saves time because it keeps everything in one place. If the job comes up a few times a year, a shared document may be enough.",
+  "features": [
+    {
+      "title": "One place for the work",
+      "body": "Every item, file and decision lives in one place that the whole team can see."
+    },
+    {
+      "title": "Clear next steps",
+      "body": "Each person sees what is left to do and who is waiting on them."
+    },
+    {
+      "title": "A record of changes",
+      "body": "Every change is saved with who made it and when."
+    }
+  ],
+  "faq": [
+    {
+      "question": "What is Your product?",
+      "answer": "Your product is a web app that helps a team do one job well. It keeps the work in one place, shows what is left to do, and records what changed."
+    },
+    {
+      "question": "Who is Your product for?",
+      "answer": "It is for teams that do this job every week and want one place to do it."
+    },
+    {
+      "question": "How do I start?",
+      "answer": "Open the app and create an account. It takes about a minute."
+    }
+  ],
+  "testimonials": [],
+  "pricing": {
+    "question": "How much does Your product cost?",
+    "answer": "It depends on the size of your team. Contact us and we will send a price for your team.",
+    "plans": []
+  },
+  "about": {
+    "question": "Who makes Your product?",
+    "answer": "A small team that builds tools for this job. We answer every message ourselves.",
+    "body": "We built Your product because the work kept getting lost between email threads and spreadsheets."
+  },
+  "cta": {
+    "label": "Open the app",
+    "href": "/app/"
+  },
+  "asOf": "October 2026",
+  "publishedAt": "2026-10-19",
+  "updatedAt": "2026-10-19"
+}

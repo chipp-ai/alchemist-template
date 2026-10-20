@@ -74,13 +74,18 @@ src/                    # Deno + Hono API server
     services/           # Service unit tests
     helpers.ts          # Test utilities (createIsolatedUser, etc.)
 
-web/                    # Svelte 5 SPA
+web/                    # Svelte 5 SPA, served at /app (hash routes: /app/#/settings)
   src/
     design/             # design.json (THE look), presets, fonts catalog, tokens, apply
     routes/             # Page components (hash-based routing); Design.svelte = the sheet
     stores/             # Svelte stores (state management)
     lib/
       api.ts            # Typed fetch wrapper with 401 handling
+
+landing/                # Astro static landing site, served at "/" (marketing pages)
+  src/content/site.json # ALL landing copy: name, definition, main question, FAQ, dates
+  src/pages/            # index, pricing, about, sitemap.xml, robots.txt
+  scripts/aeo-check.mjs # runs after astro build; fails the build on an AEO rule
 
 db/
   migrations/           # SQL migration files (YYYYMMDDHHMMSS_description.sql)
@@ -96,10 +101,46 @@ scripts/
 
 **Stack:**
 - **API:** Deno + Hono
-- **Frontend:** Svelte 5 SPA with hash-based routing (`svelte-spa-router`)
+- **Frontend:** Svelte 5 SPA with hash-based routing (`svelte-spa-router`), served at `/app`
+- **Landing site:** static Astro site in `landing/`, served at `/` (see "Landing site" below)
 - **Database:** PostgreSQL via Kysely (CamelCasePlugin)
 - **Cache / locks / rate limits:** shared platform Redis via `src/lib/redis.ts` (best-effort, fail-open -- see "Shared Redis" below). Sessions are stateless JWT cookies, NOT server-side session storage.
 - **Edge Proxy:** Cloudflare Worker (when deployed)
+
+## Landing site (`landing/`) vs the app (`web/`)
+
+Marketing pages live in `landing/`, never in the SPA. The SPA renders nothing
+until its JS runs, so answer engines (ChatGPT, Claude, Perplexity, Google AI)
+and crawlers cannot read product facts that live only there.
+
+- **Where things are served.** `landing/dist` is served at `/` and the
+  marketing paths (`/pricing/`, `/about/`, `/robots.txt`, `/sitemap.xml`). The
+  app lives at `/app` (`APP_BASE_PATH` in `src/config/site.ts`), so app links
+  are `/app/#/settings`. Build every server-side link into the app with
+  `appPath("/#/...")`, never a hard-coded `"/#/..."`. Old `/#/x` links still
+  work: the landing pages forward them to `/app/#/x`. `/api/*`, `/health`,
+  `/.well-known` and the recipe routers are mounted ahead and are unchanged.
+  If `landing/dist` is not built, `/` serves the SPA as before
+  (`src/lib/landing-site.ts`).
+- **Copy lives in `landing/src/content/site.json`.** Change the words there,
+  not in the pages. The JSON-LD is built from the same values, so it always
+  matches the visible text.
+- **The build enforces the AEO rules.** `cd landing && npm run build` runs
+  `astro build` and then `scripts/aeo-check.mjs`; the same build runs in CI
+  and in the deploy image, so a broken rule fails the deploy. The 11 rules,
+  with the reason for each, are in `landing/README.md`. In short: semantic
+  HTML with labels and alt text; key facts in the static HTML; the reader's
+  main question as the first H2 under the H1; an honest "it depends" answer
+  of 100 words or less under it; a plain definition (what it is, who it is
+  for, what it does) instead of a slogan; testimonials as plain text; "as of
+  <Month Year>" on key facts; robots.txt open to AI search crawlers
+  (meta-webindexer included); no broken links; visible Published and
+  Updated dates plus the same dates in JSON-LD.
+- **Preview.** The Builder runs the landing site as a second app ("Landing
+  site", port 4321) from `.alchemist/dev-server.json`. Locally:
+  `cd landing && npm install && npm run dev`.
+- **Brand.** The landing site reads colors and fonts from
+  `web/src/design/design.json` at build time. Change the design there.
 
 ## Engineering Preferences
 
@@ -609,6 +650,8 @@ Mechanics and the switcher checklist: `.claude/rules/frontend-state.md`.
 ### Routing
 
 Hash-based routing via `svelte-spa-router`. Routes defined in `web/src/routes/`.
+The SPA is served at `/app`, so a full URL is `/app/#/dashboard`; `push()` and
+`replace()` take the hash path only, as before.
 
 ```typescript
 import { push, replace } from "svelte-spa-router";
