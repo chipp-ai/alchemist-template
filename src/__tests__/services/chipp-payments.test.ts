@@ -1,39 +1,16 @@
 /**
- * Chipp Payments in the app: config and raw-key precedence, the broker
- * client (no price, no full URL), the purchases mirror (seq ordering), the
- * checkout path switch in product.service.ts, and the billing webhook's
- * GET 405 / 503-when-unset answers.
- *
- * The broker is stubbed with __setChippPaymentsFetchForTest; no test calls
- * Chipp or Stripe.
+ * Chipp Payments wired into the base billing layer: product checkout goes
+ * through Chipp in Chipp mode, the catalog is read-only here, and the
+ * billing webhook answers GET with 405 and POST with 503 when unset
+ * (issue #10). Client and mirror tests: chipp-payments-mirror.test.ts.
  */
 
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { db } from "@/db/client.ts";
 import { createIsolatedUser, withTestServer } from "../helpers.ts";
 import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
-import {
-  __setChippPaymentsFetchForTest,
-  chippPaymentsActive,
-  chippPaymentsConfig,
-  customerRefForOrg,
-  orgIdFromCustomerRef,
-  startChippCheckout,
-  toRelativePath,
-} from "@/lib/chipp-payments.ts";
-import {
-  applyChippEntitlement,
-  ENTITLEMENT_CHANGED_TOPIC,
-  localPurchaseStatus,
-  registerChippEntitlementHandlers,
-  syncChippEntitlements,
-} from "@/services/chipp-entitlements.ts";
-import {
-  createProduct,
-  createProductCheckout,
-  getProductByKey,
-  hasActiveEntitlement,
-} from "@/services/product.service.ts";
+import { __setChippPaymentsFetchForTest, customerRefForOrg } from "@/lib/chipp-payments.ts";
+import { createProduct, createProductCheckout } from "@/services/product.service.ts";
 import { billingRoutes } from "@/api/routes/billing/index.ts";
 import { BadRequestError } from "@/utils/errors.ts";
 
@@ -102,219 +79,9 @@ function stubBroker(
   return { calls, restore: () => __setChippPaymentsFetchForTest() };
 }
 
-// ── config and precedence ──────────────────────────────────────────────────
-
-Deno.test("chipp payments: unconfigured means off", async () => {
-  await withEnv({}, () => {
-    assertEquals(chippPaymentsConfig(), null);
-    assertEquals(chippPaymentsActive(), false);
-  });
-  await withEnv({ ...ON, CHIPP_PAYMENTS_MODE: "prod" }, () => {
-    assertEquals(chippPaymentsConfig(), null);
-  });
-});
-
-Deno.test("chipp payments: the app's own STRIPE_SECRET_KEY wins (never switched silently)", async () => {
-  await withEnv({ ...ON }, () => assertEquals(chippPaymentsActive(), true));
-  await withEnv(
-    { ...ON, STRIPE_SECRET_KEY: "sk_test_own" },
-    () => assertEquals(chippPaymentsActive(), false),
-  );
-});
-
-Deno.test("chipp payments: buyer refs and relative paths", () => {
-  const org = "33333333-3333-4333-8333-333333333333";
-  assertEquals(customerRefForOrg(org), `org:${org}`);
-  assertEquals(orgIdFromCustomerRef(`org:${org}`), org);
-  assertEquals(orgIdFromCustomerRef("org:not-a-uuid"), null);
-  assertEquals(orgIdFromCustomerRef("user:x"), null);
-  assertEquals(toRelativePath("https://evil.test/app/#/x?y=1", "/"), "/app/#/x?y=1");
-  assertEquals(toRelativePath("/app/#/settings", "/"), "/app/#/settings");
-  assertEquals(toRelativePath("//evil.test/x", "/"), "/");
-  assertEquals(toRelativePath(undefined, "/fallback"), "/fallback");
-  assertEquals(localPurchaseStatus({ status: "active", entitled: true }), "active");
-  assertEquals(localPurchaseStatus({ status: "past_due", entitled: true }), "past_due");
-  assertEquals(localPurchaseStatus({ status: "active", entitled: false }), "canceled");
-  assertEquals(localPurchaseStatus({ status: "refunded", entitled: false }), "refunded");
-});
-
-Deno.test("chipp payments: the client sends the bound headers and never a price or a full URL", async () => {
-  await withEnv(ON, async () => {
-    const { calls, restore } = stubBroker({
-      "/checkout": () => ({
-        ok: true,
-        url: "https://checkout.stripe.test/x",
-        purchaseId: "p",
-        testMode: true,
-      }),
-    });
-    try {
-      const res = await startChippCheckout({
-        productKey: "pro",
-        customerRef: "org:x",
-        returnPath: "/app/#/billing",
-      });
-      assertEquals(res.url, "https://checkout.stripe.test/x");
-      const c = calls[0];
-      assertEquals(c.url, "https://platform.chipp.test/api/internal/payments-broker/checkout");
-      assertEquals(c.headers["x-chipp-payments-auth"], "tok_abc");
-      assertEquals(c.headers["x-chipp-payments-project"], ON.CHIPP_PAYMENTS_PROJECT_ID);
-      assertEquals(c.headers["x-chipp-payments-org"], ON.CHIPP_PAYMENTS_ORG_ID);
-      assertEquals(c.headers["x-chipp-payments-mode"], "test");
-      assertEquals(c.headers["x-chipp-payments-scope"], "deploy");
-      assertEquals(Object.keys(c.body as object).sort(), [
-        "customerRef",
-        "productKey",
-        "returnPath",
-      ]);
-    } finally {
-      restore();
-    }
-  });
-});
-
-Deno.test("chipp payments: the inbox handler is registered for entitlement.changed", () => {
-  // Registration is pure bookkeeping; calling it twice must not throw.
-  registerChippEntitlementHandlers();
-  assertEquals(ENTITLEMENT_CHANGED_TOPIC, "entitlement.changed");
-});
-
-// ── the mirror ─────────────────────────────────────────────────────────────
-
 function uniqueKey(): string {
   return `cp-${crypto.randomUUID().slice(0, 8)}`;
 }
-
-dbTest("chipp payments: entitlements mirror into purchases in seq order", async () => {
-  const ctx = await createIsolatedUser("owner");
-  const key = uniqueKey();
-  const { restore } = stubBroker({
-    "/products": () => ({
-      ok: true,
-      mode: "test",
-      testMode: true,
-      sandboxAccount: true,
-      products: [{
-        key,
-        name: "Pro",
-        description: null,
-        kind: "subscription",
-        amountCents: 2900,
-        currency: "usd",
-        interval: "month",
-      }],
-    }),
-  });
-  try {
-    await withEnv(ON, async () => {
-      const purchaseId = crypto.randomUUID();
-      const base = {
-        purchaseId,
-        productKey: key,
-        customerRef: customerRefForOrg(ctx.org.id),
-        status: "active",
-        entitled: true,
-        currentPeriodEnd: new Date(Date.now() + 30 * 86400_000).toISOString(),
-        amountCents: 2900,
-        currency: "usd",
-      };
-      assertEquals(await applyChippEntitlement({ ...base, seq: 2 }), "applied");
-      assert(await hasActiveEntitlement(ctx.org.id, key));
-      const product = await getProductByKey(key);
-      assertEquals(product?.stripePriceId, null);
-      // An older event arriving late is ignored.
-      assertEquals(
-        await applyChippEntitlement({ ...base, seq: 1, entitled: false, status: "canceled" }),
-        "stale",
-      );
-      assert(await hasActiveEntitlement(ctx.org.id, key));
-      // A newer one revokes.
-      assertEquals(
-        await applyChippEntitlement({ ...base, seq: 3, entitled: false, status: "refunded" }),
-        "applied",
-      );
-      assertEquals(await hasActiveEntitlement(ctx.org.id, key), false);
-      const rows = await db.selectFrom("purchases").selectAll().where(
-        "organizationId",
-        "=",
-        ctx.org.id,
-      ).execute();
-      assertEquals(rows.length, 1);
-      assertEquals(rows[0].status, "refunded");
-      // An org this database does not have is skipped.
-      assertEquals(
-        await applyChippEntitlement({
-          ...base,
-          purchaseId: crypto.randomUUID(),
-          customerRef: `org:${crypto.randomUUID()}`,
-          seq: 1,
-        }),
-        "unknown_org",
-      );
-    });
-  } finally {
-    restore();
-    await db.deleteFrom("purchases").where("organizationId", "=", ctx.org.id).execute();
-    await db.deleteFrom("products").where("productKey", "=", key).execute();
-    await ctx.cleanup();
-  }
-});
-
-dbTest(
-  "chipp payments: pull sync applies the broker's entitlements for the caller's org only",
-  async () => {
-    const ctx = await createIsolatedUser("owner");
-    const key = uniqueKey();
-    const { calls, restore } = stubBroker({
-      "/products": () => ({
-        ok: true,
-        mode: "test",
-        testMode: true,
-        sandboxAccount: false,
-        products: [{
-          key,
-          name: "Setup",
-          description: null,
-          kind: "one_time",
-          amountCents: 9900,
-          currency: "usd",
-          interval: null,
-        }],
-      }),
-      "/entitlements": () => ({
-        ok: true,
-        entitlements: [{
-          purchaseId: crypto.randomUUID(),
-          productKey: key,
-          status: "active",
-          entitled: true,
-          disputeStatus: "none",
-          currentPeriodEnd: null,
-          seq: 1,
-        }],
-      }),
-    });
-    try {
-      await withEnv(ON, async () => {
-        assertEquals(await syncChippEntitlements(ctx.org.id), 1);
-        assert(await hasActiveEntitlement(ctx.org.id, key));
-        const pull = calls.find((c) => c.url.includes("/entitlements"))!;
-        assert(
-          pull.url.endsWith(`customerRef=${encodeURIComponent(customerRefForOrg(ctx.org.id))}`),
-        );
-      });
-      // With the app's own key, sync does nothing.
-      await withEnv({ ...ON, STRIPE_SECRET_KEY: "sk_test_own" }, async () => {
-        assertEquals(await syncChippEntitlements(ctx.org.id), 0);
-      });
-    } finally {
-      restore();
-      await db.deleteFrom("purchases").where("organizationId", "=", ctx.org.id).execute();
-      await db.deleteFrom("products").where("productKey", "=", key).execute();
-      await ctx.cleanup();
-    }
-  },
-);
 
 dbTest(
   "chipp payments: product checkout goes through Chipp; the catalog is read-only here",
