@@ -1,5 +1,7 @@
 <script lang="ts">
   import { link, location } from "svelte-spa-router";
+  import { onMount } from "svelte";
+  import { applyBrandLogos } from "../lib/brand-logo";
   import { authStore } from "../stores/auth.svelte";
   import { orgStore } from "../stores/organization.svelte";
   import { can } from "../lib/permissions";
@@ -58,6 +60,8 @@
     if (itemPath === "/") return currentPath === "/";
     return currentPath.startsWith(itemPath);
   }
+
+  onMount(applyBrandLogos);
 </script>
 
 <header class="mobile-topbar" data-testid="sidebar-topbar">
@@ -71,7 +75,10 @@
   >
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
   </button>
-  <span class="sidebar-logo">{orgStore.currentOrg?.name ?? "App"}</span>
+  <span class="sidebar-logo">
+    <img data-brand-logo="light" class="brand-logo-img" alt={orgStore.currentOrg?.name ?? "App"} hidden />
+    <span class="brand-logo-name">{orgStore.currentOrg?.name ?? "App"}</span>
+  </span>
 </header>
 
 {#if menuOpen}
@@ -81,7 +88,10 @@
 <nav class="sidebar" class:open={menuOpen} id="app-sidebar" data-testid="sidebar">
   <div class="sidebar-header">
     <span class="sidebar-logo" data-testid="sidebar-logo">
-      {orgStore.currentOrg?.name ?? "App"}
+      <!-- Uploaded logo (brand-loader.js sets src and clears hidden). The
+           text name stays as the fallback until a logo exists. -->
+      <img data-brand-logo="light" class="brand-logo-img" alt={orgStore.currentOrg?.name ?? "App"} hidden data-testid="sidebar-logo-img" />
+      <span class="brand-logo-name">{orgStore.currentOrg?.name ?? "App"}</span>
     </span>
   </div>
 
@@ -217,9 +227,24 @@
   }
 
   .sidebar-logo {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
     font-size: var(--text-lg);
     font-weight: 600;
     color: var(--color-text);
+  }
+  .brand-logo-img {
+    max-height: 28px;
+    max-width: 160px;
+    object-fit: contain;
+  }
+  .brand-logo-img[hidden] {
+    display: none;
+  }
+  /* A shown logo replaces the text name; the name stays as its alt text. */
+  .brand-logo-img:not([hidden]) + .brand-logo-name {
+    display: none;
   }
 
   .sidebar-nav {

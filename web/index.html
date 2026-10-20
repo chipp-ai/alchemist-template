@@ -29,10 +29,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!--
-      Brand loader. Reads brand_config from the alchemist platform and
-      sets CSS custom properties (--brand-primary / --brand-accent /
-      --brand-neutral) on :root, plus assigns logo <img src> for any
-      element with `data-brand-logo="light|dark"`.
+      Brand loader. Reads the app's identity from the platform's
+      brand.json: the tab title, logo <img src> for any element with
+      `data-brand-logo="light|dark"`, the favicon and the gradient. It
+      never sets colors, fonts or radius: the look lives only in
+      web/src/design/design.json.
 
       The agent should set window.ALCHEMIST_PROJECT_ID at build time
       (Vite env var → VITE_ALCHEMIST_PROJECT_ID, baked into a small
@@ -81,10 +82,8 @@
     </script>
     <style>
       /*
-       * Template-level fallbacks. Render when brand-loader.js fails
-       * to fetch (network, project archived, no brand configured).
-       * Keep these reading well on their own — they're the canvas
-       * the brand sits on top of.
+       * Template-level fallbacks for the first paint, before
+       * web/src/design/apply.ts installs the design.json tokens.
        */
       :root {
         --brand-primary: #5e6ad2;

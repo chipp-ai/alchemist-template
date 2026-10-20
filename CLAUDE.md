@@ -989,11 +989,12 @@ two things, save. Details + the judgement calls live in
 **One file is the whole look:** `web/src/design/design.json` — three fonts
 (heading / body / mono), five colours (primary, accent, background, surface,
 text), radius family, shadow style, type scale, density. `web/src/design/
-apply.ts` turns it into a `<style>` block that sets the SAME `--brand-*`
-custom properties `brand-loader.js` writes from the platform's brand config
-(colours, v3 fonts, radius scale, primary contrast) plus the derived tokens
-every component reads, and injects the one Google Fonts `<link>` the design
-needs. `web/src/app.css` is the token contract (`web/DESIGN.md` explains it);
+apply.ts` turns it into a `<style>` block that sets the `--brand-*` custom
+properties (colours, fonts, radius scale, primary contrast) plus the derived
+tokens every component reads, and injects the one Google Fonts `<link>` the
+design needs. **design.json is the only source of the look:** the platform's
+`brand-loader.js` applies only the app name, logo, favicon and gradient from
+brand.json and never a colour, font or radius. `web/src/app.css` is the token contract (`web/DESIGN.md` explains it);
 design.json feeds it, it does not replace it. Dark mode stays the user's
 toggle (`web/src/stores/theme.svelte.ts`); a design with `mode: "dark"` is
 dark under both themes.

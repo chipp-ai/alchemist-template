@@ -11,11 +11,11 @@
  *     is more specific, so the user's dark-mode toggle (theme store) keeps
  *     working over a light design. A design whose `mode` is "dark" is
  *     dark by construction: its palette is emitted for BOTH themes.
- *   - The brand vars it sets (--brand-primary/-accent/-neutral,
- *     --brand-font-heading/-body, --brand-radius-scale,
- *     --brand-primary-contrast) are the same ones the platform's
- *     brand-loader.js writes, so a platform brand config still overrides
- *     at runtime when present.
+ *   - design.json is the only source of the look. The brand vars it sets
+ *     (--brand-primary/-accent/-neutral, --brand-font-heading/-body,
+ *     --brand-radius-scale, --brand-primary-contrast) are not touched by
+ *     the platform's brand-loader.js, which applies identity only (title,
+ *     logo, favicon, gradient).
  *   - `data-radius-scale` mirrors the brand v3 personality label; the
  *     concrete --radius-* values are emitted too, so both agree.
  *   - One Google Fonts <link> carries exactly the families + weights the

@@ -19,14 +19,15 @@ when the request is aesthetic.
 
 ## One file
 
-`web/src/design/design.json` is the repo-side source of the look.
+`web/src/design/design.json` is the only source of the look.
 `web/src/design/apply.ts` turns it into a `<style id="design-tokens">` block
 before the app mounts and injects the single Google Fonts `<link>`. It writes
-the SAME `--brand-*` variables the platform's `brand-loader.js` sets from
-brand.json (`--brand-primary/-accent/-neutral`, v3 `--brand-font-heading/
--body`, `--brand-radius-scale` + `data-radius-scale`,
-`--brand-primary-contrast`), so a platform brand config can still override at
-runtime; every derived token in `app.css` reaches the brand through `var()`.
+the `--brand-*` variables (`--brand-primary/-accent/-neutral`,
+`--brand-font-heading/-body`, `--brand-radius-scale` + `data-radius-scale`,
+`--brand-primary-contrast`); every derived token in `app.css` reaches the
+brand through `var()`. The platform's `brand-loader.js` does NOT set any of
+them: it applies only the app name, logo, favicon and gradient from
+brand.json. To change a colour, font or radius, edit design.json.
 `web/src/app.css` remains the token + component contract documented in
 `web/DESIGN.md` (color-mix ramps, `[data-theme="dark"]`, `[data-radius-scale]`,
 motion); design.json feeds it and never replaces it.
@@ -93,6 +94,7 @@ imports it too.
   apply to a second route, it belongs in `app.css` as a class.
 - Controls use `--radius-control`; cards use `--radius-lg`. Under the `pill`
   preset controls are round and cards are not; do not special-case.
-- The platform's `brand-loader.js` may override `--brand-primary`,
-  `--brand-accent`, `--brand-neutral` at runtime. Derived tokens reference
-  those through `var()`, so keep that indirection when adding colour tokens.
+- Nothing overrides `--brand-primary`, `--brand-accent`, `--brand-neutral`
+  at runtime any more: design.json is the only source. Derived tokens still
+  reference them through `var()`, so keep that indirection when adding
+  colour tokens.

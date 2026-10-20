@@ -20,6 +20,8 @@
 -->
 <script lang="ts">
   import { authStore } from "../stores/auth.svelte";
+  import { onMount } from "svelte";
+  import { applyBrandLogos } from "../lib/brand-logo";
   import ThemeToggle from "./ThemeToggle.svelte";
   // Feature links for end users (web/src/features/support.ts). Empty in
   // the base template, so the header shows no extra link until the
@@ -42,11 +44,16 @@
   function signOut() {
     authStore.logout("#/portal");
   }
+
+  onMount(applyBrandLogos);
 </script>
 
 <div class="portal-shell" data-testid="portal-layout">
   <header class="portal-header">
-    <span class="portal-brand" data-testid="portal-brand">{title}</span>
+    <span class="portal-brand" data-testid="portal-brand">
+      <img data-brand-logo="light" class="brand-logo-img" alt={title} hidden data-testid="portal-brand-logo" />
+      <span class="brand-logo-name">{title}</span>
+    </span>
     <div class="portal-header-actions">
       {#each supportNavItems as item (item.path)}
         <a
@@ -96,7 +103,21 @@
     border-bottom: 1px solid var(--color-border);
   }
 
+  .brand-logo-img {
+    max-height: 28px;
+    max-width: 160px;
+    object-fit: contain;
+  }
+  .brand-logo-img[hidden] {
+    display: none;
+  }
+  .brand-logo-img:not([hidden]) + .brand-logo-name {
+    display: none;
+  }
+
   .portal-brand {
+    display: inline-flex;
+    align-items: center;
     font-family: var(--font-heading);
     font-size: var(--text-lg);
     font-weight: 600;

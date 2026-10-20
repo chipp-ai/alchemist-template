@@ -4,7 +4,7 @@
  * Coverage:
  *   - web/src/lib/color-math.ts: WCAG relative luminance, contrast ratio,
  *     and AA-safe contrast-text derivation (the pure math that backs
- *     --brand-primary-contrast, computed at runtime by brand-loader.js).
+ *     --brand-primary-contrast, emitted from design.json by tokens.ts).
  *   - Source-shape lints:
  *     - web/src/app.css preserves every pre-existing component class name
  *       (buttons, input, card, badge, alert, empty-state, page-header —
@@ -14,8 +14,9 @@
  *       modular type scale, a radius scale keyed off [data-radius-scale],
  *       exactly 3 elevation levels, and no hand-picked hex for the
  *       accent/error/success ramps outside the :root token block.
- *     - web/public/brand-loader.js sets the v3 CSS vars (font/radius/
- *       gradient) and keeps the isLightSurface neutral guard intact.
+ *     - web/public/brand-loader.js never sets the look (colors, fonts,
+ *       radius): design.json is the only source. It keeps the title,
+ *       logo, favicon and gradient.
  *
  * This file intentionally does NOT cover motion.css, dark-mode theming,
  * or the guardrail lints for arbitrary component/page styles — those are
@@ -248,44 +249,37 @@ deno("app.css: focus-visible ring is defined for interactive elements", async ()
 
 // ── Source-shape lints: web/public/brand-loader.js ──────────────────────────
 
-deno("brand-loader.js: sets the v3 font/radius/gradient CSS vars", async () => {
+deno("brand-loader.js: never sets the look (design.json is the only source)", async () => {
   const src = await Deno.readTextFile(
     new URL("../../web/public/brand-loader.js", import.meta.url),
   );
   for (
-    const setVar of [
+    const lookVar of [
+      `"--brand-primary"`,
+      `"--brand-accent"`,
+      `"--brand-neutral"`,
+      `"--brand-primary-contrast"`,
       `"--brand-font-heading"`,
       `"--brand-font-body"`,
       `"--brand-radius-scale"`,
-      `"--brand-gradient-from"`,
-      `"--brand-gradient-to"`,
-      `"--brand-primary-contrast"`,
     ]
   ) {
-    assertStringIncludes(
-      src,
-      setVar,
-      `brand-loader.js must set ${setVar} from brand.json's v3 fields when present`,
+    assert(
+      !src.includes(lookVar),
+      `brand-loader.js must not set ${lookVar}: the look lives in web/src/design/design.json`,
     );
   }
-  assertStringIncludes(src, "data-radius-scale");
+  assert(!src.includes(`setAttribute("data-radius-scale"`), "radius comes from design.json");
+  assert(!src.includes("fonts.googleapis.com"), "fonts come from design.json (apply.ts)");
 });
 
-deno("brand-loader.js: keeps the isLightSurface neutral guard intact", async () => {
+deno("brand-loader.js: keeps identity (title, logo, favicon) and the gradient", async () => {
   const src = await Deno.readTextFile(
     new URL("../../web/public/brand-loader.js", import.meta.url),
   );
-  assertStringIncludes(
-    src,
-    `typeof brand.neutralColor === "string" && isLightSurface(brand.neutralColor)`,
-    "brand-loader.js must keep clamping --brand-neutral to light-surface values only",
-  );
-});
-
-deno("brand-loader.js: builds the Google Fonts request with display=swap", async () => {
-  const src = await Deno.readTextFile(
-    new URL("../../web/public/brand-loader.js", import.meta.url),
-  );
-  assertStringIncludes(src, "fonts.googleapis.com/css2");
-  assertStringIncludes(src, "display=swap");
+  assertStringIncludes(src, "brand.productName");
+  assertStringIncludes(src, "img[data-brand-logo]");
+  assertStringIncludes(src, "faviconUrl");
+  assertStringIncludes(src, `"--brand-gradient-from"`);
+  assertStringIncludes(src, `"--brand-gradient-to"`);
 });

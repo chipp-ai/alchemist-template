@@ -231,11 +231,10 @@ export function designToCssVars(design: DesignConfig): Record<string, string> {
 
   const vars: Record<string, string> = {
     // ── Brand seam ──
-    // These are the SAME custom properties the platform's brand-loader.js
-    // sets from brand.json (v2 colours, v3 fonts/radius/contrast). design.json
-    // is the repo-side source; a platform brand config, when present, can
-    // still override them at runtime. Every derived token below reaches the
-    // brand through var(), so either writer wins consistently.
+    // design.json is the ONLY source of the look. The platform's
+    // brand-loader.js no longer sets these (it applies only the title, logo,
+    // favicon and gradient), so nothing overrides them at runtime. Every
+    // derived token below reaches the brand through var().
     "brand-primary": primary,
     "brand-accent": accent,
     "brand-neutral": bg,

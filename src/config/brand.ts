@@ -22,12 +22,10 @@
  *
  * # What goes in here
  *
- * Anything user-visible that should be customer-brandable. Colors
- * are NOT here — those are dynamic via `/brand.json` + the
- * brand-loader.js running in the SPA, because they may change
- * between page loads (brand chat live-updates). The values in
- * this module are read at boot and assumed stable for the pod's
- * lifetime — they end up in transactional emails (built before the
+ * Anything user-visible that should be customer-brandable. The SPA's
+ * look comes from web/src/design/design.json (the only source of the
+ * look); the email colors below follow it too. The values in this
+ * module are read at boot and assumed stable for the pod's lifetime — they end up in transactional emails (built before the
  * SPA exists for a recipient) and in the static HTML title (which
  * is set on the document at request time by the SSR/SPA).
  *
@@ -40,6 +38,30 @@
  */
 
 import { getEnv } from "@/lib/env.ts";
+
+const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+/**
+ * Email colors from web/src/design/design.json, read once at boot. Empty
+ * when the file is missing or unreadable (the image may not carry web/src),
+ * so the env values or the neutral defaults stand. Never throws.
+ */
+export function designEmailColorsSync(
+  path: string = new URL("../../web/src/design/design.json", import.meta.url).pathname,
+): { primary?: string; accent?: string; neutral?: string } {
+  try {
+    const parsed = JSON.parse(Deno.readTextFileSync(path)) as {
+      colors?: { primary?: unknown; accent?: unknown; background?: unknown };
+    };
+    const c = parsed?.colors ?? {};
+    const hex = (v: unknown) => (typeof v === "string" && HEX_RE.test(v) ? v : undefined);
+    return { primary: hex(c.primary), accent: hex(c.accent), neutral: hex(c.background) };
+  } catch {
+    return {};
+  }
+}
+
+const DESIGN_EMAIL = designEmailColorsSync();
 
 export interface Brand {
   /**
@@ -70,11 +92,12 @@ export interface Brand {
   readonly fromName: string;
 
   /**
-   * Brand palette + logo for SERVER-SIDE rendered surfaces that can't
-   * use /brand.json — chiefly transactional emails (OTP, invites),
-   * which are built before any SPA exists for the recipient. The
-   * alchemist-ai platform injects these from the project's brand_config
-   * via BRAND_PRIMARY / BRAND_ACCENT / BRAND_NEUTRAL / BRAND_LOGO_URL.
+   * Brand palette + logo for SERVER-SIDE rendered surfaces, chiefly
+   * transactional emails (OTP, invites), which are built before any SPA
+   * exists for the recipient. Order: the BRAND_* env the platform injects
+   * (for a project whose look is in code it reads them from design.json
+   * at the deployed sha), then web/src/design/design.json read at boot,
+   * then the neutral defaults below.
    *
    * Fallbacks are the template's neutral defaults (NEVER a specific
    * customer's colors) so an un-branded pod still renders a clean,
@@ -91,8 +114,8 @@ export const BRAND: Brand = Object.freeze({
   name: getEnv("APP_NAME") ?? "Your App",
   fromEmail: getEnv("EMAIL_FROM") ?? "noreply@example.com",
   fromName: getEnv("APP_NAME") ?? "Your App",
-  primaryColor: getEnv("BRAND_PRIMARY") ?? "#4f46e5",
-  accentColor: getEnv("BRAND_ACCENT") ?? "#0ea5e9",
-  neutralColor: getEnv("BRAND_NEUTRAL") ?? "#1f2937",
+  primaryColor: getEnv("BRAND_PRIMARY") ?? DESIGN_EMAIL.primary ?? "#4f46e5",
+  accentColor: getEnv("BRAND_ACCENT") ?? DESIGN_EMAIL.accent ?? "#0ea5e9",
+  neutralColor: getEnv("BRAND_NEUTRAL") ?? DESIGN_EMAIL.neutral ?? "#1f2937",
   logoUrl: getEnv("BRAND_LOGO_URL") ?? "",
 });

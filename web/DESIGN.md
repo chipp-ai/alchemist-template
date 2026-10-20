@@ -61,22 +61,23 @@ Every accent/status shade in `app.css` is generated from ONE base value via
 
 | Ramp | Base | Shades derived from it |
 |---|---|---|
-| Accent | `--brand-primary` | `-hover` (88% → black), `-active` (76% → black), `-subtle` (12% → white), `-soft` (8% → surface), `-contrast` (AA text color, computed by `brand-loader.js`) |
+| Accent | `--brand-primary` | `-hover` (88% → black), `-active` (76% → black), `-subtle` (12% → white), `-soft` (8% → surface), `-contrast` (AA text color, computed from design.json by `tokens.ts`) |
 | Error / Success / Warning / Info | one hand-picked hue each | `-hover`, `-bg`, `-border`, `-contrast` |
 
 `--brand-primary`, `--brand-accent`, `--brand-neutral` come from
-`brand.json` via `web/public/brand-loader.js`; every fallback (`var(--brand-primary,
-#5e6ad2)`) renders the template default when a project hasn't set brand
-config yet. Dark mode (`[data-theme="dark"]`) overrides `--color-bg`/
+`web/src/design/design.json` (written by `web/src/design/apply.ts`), the only
+source of the look; `brand.json` never sets them. Every fallback
+(`var(--brand-primary, #5e6ad2)`) renders the template default before the
+design tokens load. Dark mode (`[data-theme="dark"]`) overrides `--color-bg`/
 `--color-surface`/etc. directly — everything computed FROM them via
 `color-mix()` recomputes automatically, so you only add an explicit
 dark-mode override for a ramp that literally hand-picked "white" or "black"
 as a `color-mix()` endpoint (the accent hover/active ramp and the status
 backgrounds both do — see the comment above the dark block in `app.css`).
 
-**Brand-neutral guard:** `--brand-neutral` is clamped to a LIGHT surface by
-`brand-loader.js`'s `isLightSurface()` check before it's ever set, and the
-dark theme's `--color-bg` override is a fixed hex that never references
+**Brand-neutral guard:** `--brand-neutral` is the design's light page
+background (design.json `colors.background`, WCAG-checked by
+`validateDesign`), and the dark theme's `--color-bg` override is a fixed hex that never references
 `--brand-neutral`. Never wire `--brand-neutral` into a dark-mode surface —
 that reintroduces the "half-dark" bug this template shipped once already.
 
@@ -90,18 +91,16 @@ that reintroduces the "half-dark" bug this template shipped once already.
 
 Never write `font-family: "Inter"` or `font-family: monospace` in a
 component. Use the token. `--font-heading`/`--font-sans` resolve
-`var(--brand-font-heading, "Inter"), <system stack>` — a project without
-brand.json v3 font fields (every project today) renders the "Inter"
-fallback; a project with them renders the brand's Google Fonts pick, loaded
-by the fonts partial in `web/index.html` + `brand-loader.js` with
+`var(--brand-font-heading, "Inter"), <system stack>`. The families come from
+design.json `fonts`, loaded by `apply.ts` as one Google Fonts `<link>` with
 `display=swap` so there's no layout-shifting FOUT.
 
 ## Radius, spacing, elevation
 
 - **Radius** — always `var(--radius-sm|md|lg|full)`, never a raw px value.
   The concrete numbers are keyed off `<html data-radius-scale="sharp|soft|
-  round">` (set by `brand-loader.js` from `brand.json`'s nullable
-  `radiusScale` field); "soft" is the `:root` default.
+  round">` (set by `apply.ts` from design.json `shape.radius`); "soft" is
+  the `:root` default.
 - **Spacing** — always `var(--space-xs|sm|md|lg|xl|2xl|3xl)`. A raw px
   margin/padding/gap in a component is a review flag even though there's no
   automated lint for it yet.
