@@ -1,6 +1,11 @@
 /**
  * Billing Routes
  *
+ * With Chipp Payments (no STRIPE_SECRET_KEY, CHIPP_PAYMENTS_TOKEN set) the
+ * same routes sell through Chipp: product checkout and the portal go through
+ * src/lib/chipp-payments.ts, the catalog and the purchases are a local
+ * mirror (src/services/chipp-entitlements.ts), and /webhook is unused.
+ *
  * Two layers, one Stripe account:
  *
  *   PLAN TIER (the org's own subscription to THIS app's plans)
@@ -47,6 +52,13 @@ import {
   updateProduct,
 } from "@/services/product.service.ts";
 import { can } from "@/lib/roles.ts";
+import {
+  chippPaymentsActive,
+  customerRefForOrg,
+  startChippPortal,
+  toRelativePath,
+} from "@/lib/chipp-payments.ts";
+import { syncChippCatalog, syncChippEntitlements } from "@/services/chipp-entitlements.ts";
 import { getEnv } from "@/lib/env.ts";
 
 const billingRoutes = new Hono();
@@ -148,6 +160,13 @@ billingRoutes.post(
   async (c) => {
     const user = getUser(c);
     const { returnUrl } = c.req.valid("json");
+    if (chippPaymentsActive()) {
+      const portal = await startChippPortal({
+        customerRef: customerRefForOrg(user.organizationId),
+        returnPath: toRelativePath(returnUrl, "/app/#/settings/billing"),
+      });
+      return c.json({ url: portal.url });
+    }
     const stripe = getStripe();
 
     if (!stripe) {
@@ -246,6 +265,15 @@ billingRoutes.get("/products", requireAuth, async (c) => {
   const user = getUser(c);
   const includeInactive = c.req.query("includeInactive") === "true" &&
     can(user.role, "billing.manage");
+  if (chippPaymentsActive()) {
+    // Chipp owns the catalog; keep the local mirror current. A failed sync
+    // still lists what the mirror already has.
+    try {
+      await syncChippCatalog();
+    } catch (err) {
+      log.warn("Chipp Payments catalog sync failed", { source: "billing" }, err);
+    }
+  }
   const products = await listProducts({ includeInactive });
   return c.json({ data: { products } });
 });
@@ -330,6 +358,8 @@ billingRoutes.get("/purchases", requireAuth, async (c) => {
  */
 billingRoutes.get("/entitlements", requireAuth, async (c) => {
   const user = getUser(c);
+  // Chipp Payments: pull sales Chipp settled (a preview has no push).
+  await syncChippEntitlements(user.organizationId);
   const entitlements = await getEntitlementsForOrg(user.organizationId);
   return c.json({ data: { entitlements } });
 });
@@ -341,18 +371,31 @@ billingRoutes.get("/entitlements", requireAuth, async (c) => {
  * Stripe webhook handler. Verifies signature, then dispatches to
  * handleStripeWebhookEvent (exported for tests).
  */
+/**
+ * GET /webhook
+ * Stripe only POSTs here. A person who opens the URL in a browser sees why
+ * it is not a page, instead of a 404.
+ */
+billingRoutes.get("/webhook", (c) => {
+  c.header("Allow", "POST");
+  return c.text("Stripe sends POST requests here. This is not a page.", 405);
+});
+
 billingRoutes.post("/webhook", async (c) => {
+  // A configuration gap answers 503 (Stripe retries), never 500. With
+  // Chipp Payments the app holds no key and Chipp settles sales from its
+  // own webhook, so this route stays unconfigured on purpose.
   const stripe = getStripe();
   if (!stripe) {
-    return c.json({ error: "Stripe not configured" }, 500);
+    return c.json({ error: "Stripe not configured" }, 503);
   }
 
   const webhookSecret = getEnv("STRIPE_WEBHOOK_SECRET");
   if (!webhookSecret) {
-    log.warn("STRIPE_WEBHOOK_SECRET not set, skipping signature verification", {
+    log.warn("STRIPE_WEBHOOK_SECRET not set; refusing the webhook", {
       source: "billing",
     });
-    return c.json({ error: "Webhook not configured" }, 500);
+    return c.json({ error: "Webhook not configured" }, 503);
   }
 
   const signature = c.req.header("stripe-signature");

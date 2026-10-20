@@ -346,6 +346,12 @@ export interface PurchasesTable {
   currency: Generated<string>;
   currentPeriodEnd: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
   canceledAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
+  /** 'chipp_payments' for a sale Chipp settled (mirror), else 'stripe_direct'. */
+  source: Generated<"stripe_direct" | "chipp_payments">;
+  /** Chipp's purchase id for a mirrored sale. */
+  chippPurchaseId: string | null;
+  /** BIGINT: Chipp's change counter; a lower one never overwrites a higher one. */
+  chippSeq: ColumnType<string | null, string | number | null | undefined, string | number | null>;
   createdAt: CreatedAt;
   updatedAt: UpdatedAt;
 }

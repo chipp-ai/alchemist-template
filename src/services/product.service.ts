@@ -40,6 +40,16 @@ import {
   NotFoundError,
 } from "@/utils/errors.ts";
 import { getEnv } from "@/lib/env.ts";
+import {
+  chippPaymentsActive,
+  customerRefForOrg,
+  startChippCheckout,
+  toRelativePath,
+} from "@/lib/chipp-payments.ts";
+
+/** Thrown in Chipp Payments mode: the catalog lives in Chipp, not here. */
+const CHIPP_MANAGED_CATALOG =
+  "Products are managed by Chipp Payments. Add or change them in the Sell tab of the Chipp Builder.";
 
 // ── Types ──
 
@@ -118,8 +128,10 @@ function assertValidInput(input: NewProductInput): void {
  */
 export async function createProduct(
   input: NewProductInput,
-  stripe: StripeLike = requireStripe(),
+  stripeArg?: StripeLike,
 ): Promise<Product> {
+  if (chippPaymentsActive()) throw new BadRequestError(CHIPP_MANAGED_CATALOG);
+  const stripe = stripeArg ?? requireStripe();
   assertValidInput(input);
 
   const existing = await db
@@ -193,8 +205,10 @@ export async function createProduct(
 export async function updateProduct(
   productId: string,
   patch: ProductUpdateInput,
-  stripe: StripeLike = requireStripe(),
+  stripeArg?: StripeLike,
 ): Promise<Product> {
+  if (chippPaymentsActive()) throw new BadRequestError(CHIPP_MANAGED_CATALOG);
+  const stripe = stripeArg ?? requireStripe();
   const product = await getProductById(productId);
 
   if (
@@ -340,12 +354,28 @@ export async function ensureStripeCustomer(
  */
 export async function createProductCheckout(
   input: ProductCheckoutInput,
-  stripe: StripeLike = requireStripe(),
+  stripeArg?: StripeLike,
 ): Promise<{ url: string; sessionId: string }> {
   const product = await getProductById(input.productId);
   if (!product.active) {
     throw new BadRequestError("This product is not available for purchase.");
   }
+  if (chippPaymentsActive()) {
+    // Chipp makes the sale on the org's Stripe account. Send the key and
+    // relative paths only; Chipp builds the origin and owns the price.
+    const returnPath = toRelativePath(input.successUrl, "/app/#/settings/billing?purchase=success");
+    const res = await startChippCheckout({
+      productKey: product.productKey,
+      customerRef: customerRefForOrg(input.organizationId),
+      email: input.userEmail,
+      returnPath,
+      cancelPath: toRelativePath(input.cancelUrl, "/app/#/settings/billing"),
+    });
+    return { url: res.url, sessionId: res.purchaseId };
+  }
+  // Resolved only on the app's own Stripe path, so Chipp Payments mode
+  // never needs a key.
+  const stripe = stripeArg ?? requireStripe();
   if (!product.stripePriceId) {
     throw new BadRequestError(
       "This product has no Stripe price configured. Recreate it while Stripe is configured.",

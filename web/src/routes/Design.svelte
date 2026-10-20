@@ -14,6 +14,8 @@
    */
   import { onMount } from "svelte";
   import Modal from "../components/Modal.svelte";
+  import UpgradeButton from "../components/chipp-payments/UpgradeButton.svelte";
+  import ManageBillingLink from "../components/chipp-payments/ManageBillingLink.svelte";
   import { api } from "../lib/api";
   import { toastStore } from "../stores/toast.svelte";
   import savedDesignJson from "../design/design.json";
@@ -709,6 +711,16 @@
           <button class="btn btn-primary" onclick={() => (modalOpen = false)}>Save</button>
         {/snippet}
       </Modal>
+    </section>
+
+    <!-- Payments (Chipp Payments components) -->
+    <section class="block" id="payments">
+      <h2 class="block-title">Payments</h2>
+      <div class="card row">
+        <UpgradeButton productKey="pro" label="Upgrade to Pro" />
+        <ManageBillingLink />
+        <span class="text-muted">Sell through Chipp Payments. Access is granted by the server.</span>
+      </div>
     </section>
 
     <!-- JSON -->

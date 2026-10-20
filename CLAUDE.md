@@ -1330,6 +1330,29 @@ that has purchases (FK is RESTRICT on purpose).
   org's plan of THIS app. Products are what the app sells on top. Don't
   merge the two.
 
+## Selling through Chipp Payments (no Stripe key in the app)
+
+When Chipp injects `CHIPP_PAYMENTS_TOKEN` (the builder turned on selling in
+the Chipp Builder) and `STRIPE_SECRET_KEY` is NOT set, the same selling
+layer above sells through Chipp: every sale is a direct charge on the org's
+own Stripe Connect account, Chipp settles it from its own webhook, and this
+app's `products` and `purchases` tables become a mirror that Chipp keeps
+current with a signed `entitlement.changed` event (POST /api/events/inbox)
+plus a pull. `requirePurchase`, `requireEntitlement` and `billingStore` work
+unchanged. Full guide: `docs/agent-guidance/chipp-payments.md`.
+
+- **Never ask for a Stripe key, a webhook secret, or a webhook setup** for
+  Chipp Payments. There is none.
+- **`STRIPE_SECRET_KEY` wins.** An app that already sells with its own key
+  keeps that path. Never switch it silently.
+- **UI:** `<UpgradeButton productKey="pro" />`,
+  `<ManageBillingLink />` (`web/src/components/chipp-payments/`), and the
+  test-mode banner already mounted in `App.svelte`.
+- **Never grant access on the checkout return.** The return only pulls
+  sooner (`/api/chipp-payments/sync`).
+- **Products are managed in Chipp** (the Sell tab). `createProduct` and
+  `updateProduct` refuse while Chipp Payments is on.
+
 ## Built-in API and MCP features: OFF until the project turns them on
 
 Every project ships two optional features. Both are complete and tested,
@@ -2148,7 +2171,7 @@ const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, {
 });
 ```
 
-The platform-injected `STRIPE_SECRET_KEY` belongs to the customer's connected Stripe account. Do not hardcode another key.
+The platform does NOT inject a Stripe key. An app that sells with its own key gets `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` from the person through `request_secrets`; call `get_payments_status` for the real webhook URL. An app on Chipp Payments has no key at all (see "Selling through Chipp Payments"). Never hardcode a key.
 
 ## Self-Improvement Loop (Non-Negotiable)
 

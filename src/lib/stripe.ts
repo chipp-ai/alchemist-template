@@ -2,9 +2,11 @@
  * Shared Stripe client.
  *
  * Single construction point for the Stripe SDK so the API-version pin
- * lives in exactly one place. The platform-injected STRIPE_SECRET_KEY
- * belongs to the customer's connected Stripe account -- never hardcode
- * another key.
+ * lives in exactly one place. The platform does NOT inject a Stripe key.
+ * This client is for an app that sells with its OWN key: the person adds
+ * STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET through `request_secrets`.
+ * An app on Chipp Payments has no key at all and sells through
+ * src/lib/chipp-payments.ts instead. Never hardcode a key.
  *
  * Usage:
  *   getStripe()      -- returns the client, or null when Stripe is not

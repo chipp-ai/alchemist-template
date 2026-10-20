@@ -9,6 +9,7 @@
   import SessionTimeoutWarning from "./components/SessionTimeoutWarning.svelte";
   import DevPanel from "./components/DevPanel.svelte";
   import ToastContainer from "./components/ToastContainer.svelte";
+  import TestModeBanner from "./components/chipp-payments/TestModeBanner.svelte";
   import { initRevealOnScroll } from "./lib/reveal-dom";
   import { navigateWithTransition } from "./lib/view-transitions-dom";
 
@@ -102,6 +103,8 @@
   <div class="app-layout" data-testid="app-layout">
     <Sidebar />
     <main class="app-main">
+      <!-- Chipp Payments: a banner while payments run in test mode. Renders nothing otherwise. -->
+      <TestModeBanner />
       {#key routerKey}
         <Router {routes} />
       {/key}

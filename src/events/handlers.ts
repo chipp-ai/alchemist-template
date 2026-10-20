@@ -30,9 +30,14 @@
  *
  * This function is called from main.ts before the consumer starts.
  * Registration is pure bookkeeping: no DB, no network, nothing that can
- * fail at boot. The template ships no handlers; add yours here.
+ * fail at boot. The template ships one handler (Chipp Payments); add yours here.
  */
+
+import { registerChippEntitlementHandlers } from "@/services/chipp-entitlements.ts";
 
 export function registerEventHandlers(): void {
   // registerEventHandler("order.created", sendOrderConfirmation, { retries: 8 });
+
+  // Chipp Payments: sales Chipp settles arrive as entitlement.changed.
+  registerChippEntitlementHandlers();
 }
