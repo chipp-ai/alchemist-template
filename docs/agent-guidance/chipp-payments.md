@@ -11,7 +11,9 @@ The builder sets it up in the Chipp Builder (the Sell tab, or by asking
 "charge $29/month for Pro"). Chipp then injects `CHIPP_PAYMENTS_URL`,
 `CHIPP_PAYMENTS_TOKEN`, `CHIPP_PAYMENTS_MODE`, `CHIPP_PAYMENTS_SCOPE`,
 `CHIPP_PAYMENTS_PROJECT_ID` and `CHIPP_PAYMENTS_ORG_ID`. A Builder preview
-always runs in test mode.
+always runs in test mode. The published app gets these only after an owner
+or admin goes live; before that it does not sell, and test sales happen in
+the preview only.
 
 **Never ask the person for a Stripe key for Chipp Payments.** If
 `STRIPE_SECRET_KEY` is set, the app keeps selling with its own key
@@ -49,4 +51,7 @@ Moving such an app to Chipp Payments is the owner's decision.
   key and a relative return path. Chipp builds the origin.
 - Never create or edit products in this app while Chipp Payments is on.
   The catalog lives in Chipp; `products` is a mirror.
+- A sale counts only in the mode the app runs in now (`purchases.chipp_mode`
+  against `CHIPP_PAYMENTS_MODE`), so a test-card sale never unlocks a live
+  app.
 - Test card in test mode: 4242 4242 4242 4242, any future date, any CVC.

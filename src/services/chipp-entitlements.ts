@@ -15,6 +15,11 @@
  * seq is not newer than the row's is ignored, so an old event that arrives
  * late never undoes a newer one.
  *
+ * Every row records the mode Chipp sold in (`chipp_mode`). A sale in any
+ * other mode than the one this app runs in (`chippAccessMode()`) is not
+ * written, and `product.service.ts` counts only rows of the current mode, so
+ * a test-card sale can never unlock a live app.
+ *
  * `requirePurchase`, `hasActiveEntitlement` and `billingStore` keep their
  * API: they read the local `purchases` table, which this module fills.
  */
@@ -25,6 +30,7 @@ import { db } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
 import { registerEventHandler } from "@/lib/events.ts";
 import {
+  chippAccessMode,
   type ChippCatalog,
   chippPaymentsActive,
   type ChippProduct,
@@ -40,6 +46,7 @@ const payloadSchema = z.object({
   purchaseId: z.string().uuid(),
   productKey: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
   customerRef: z.string().min(1).max(128),
+  mode: z.enum(["test", "live"]),
   status: z.string().max(32),
   entitled: z.boolean(),
   disputeStatus: z.string().max(16).optional(),
@@ -102,11 +109,13 @@ async function productIdForKey(productKey: string): Promise<string | null> {
   return (await syncChippCatalog()).get(productKey) ?? null;
 }
 
-export type ApplyOutcome = "applied" | "stale" | "unknown_org" | "unknown_product";
+export type ApplyOutcome = "applied" | "stale" | "other_mode" | "unknown_org" | "unknown_product";
 
 /** Applies one Chipp entitlement to the local mirror. Idempotent, ordered by seq. */
 export async function applyChippEntitlement(raw: unknown): Promise<ApplyOutcome> {
   const p = payloadSchema.parse(raw);
+  // A sale in another mode (a test sale reaching a live app) grants nothing.
+  if (p.mode !== chippAccessMode()) return "other_mode";
   const orgId = orgIdFromCustomerRef(p.customerRef);
   if (!orgId) return "unknown_org";
   const org = await db.selectFrom("organizations").select(["id"]).where("id", "=", orgId)
@@ -119,18 +128,19 @@ export async function applyChippEntitlement(raw: unknown): Promise<ApplyOutcome>
   const periodEnd = p.currentPeriodEnd ? new Date(p.currentPeriodEnd) : null;
   const res = await sql<{ id: string }>`
     INSERT INTO purchases (organization_id, product_id, status, amount_cents, currency, current_period_end,
-                           canceled_at, source, chipp_purchase_id, chipp_seq)
+                           canceled_at, source, chipp_purchase_id, chipp_seq, chipp_mode)
     VALUES (${orgId}, ${productId}, ${status}::purchase_status, ${p.amountCents ?? 0}, ${
     p.currency ?? "usd"
   },
             ${periodEnd}, ${
     status === "canceled" ? new Date() : null
-  }, 'chipp_payments', ${p.purchaseId}, ${p.seq})
+  }, 'chipp_payments', ${p.purchaseId}, ${p.seq}, ${p.mode})
     ON CONFLICT (chipp_purchase_id) WHERE chipp_purchase_id IS NOT NULL DO UPDATE SET
       status = EXCLUDED.status,
       current_period_end = EXCLUDED.current_period_end,
       canceled_at = CASE WHEN EXCLUDED.status = 'canceled' THEN COALESCE(purchases.canceled_at, NOW()) ELSE NULL END,
       chipp_seq = EXCLUDED.chipp_seq,
+      chipp_mode = EXCLUDED.chipp_mode,
       updated_at = NOW()
     WHERE purchases.chipp_seq IS NULL OR purchases.chipp_seq < EXCLUDED.chipp_seq
     RETURNING id
@@ -144,9 +154,11 @@ export async function syncChippEntitlements(organizationId: string): Promise<num
   try {
     const ref = customerRefForOrg(organizationId);
     const rows = await fetchChippEntitlements(ref);
+    // The broker answers for this app's own mode.
+    const mode = chippAccessMode();
     let applied = 0;
     for (const r of rows) {
-      const outcome = await applyChippEntitlement({ ...r, customerRef: ref });
+      const outcome = await applyChippEntitlement({ ...r, mode: r.mode ?? mode, customerRef: ref });
       if (outcome === "applied") applied++;
     }
     return applied;
@@ -164,9 +176,10 @@ export async function handleEntitlementChanged(
   event: { payload: Record<string, unknown> },
 ): Promise<void> {
   const outcome = await applyChippEntitlement(event.payload);
-  if (outcome === "unknown_org" || outcome === "unknown_product") {
-    // A sale for an org this database does not have (another environment)
-    // or a product Chipp no longer lists. Nothing to grant here.
+  if (outcome === "unknown_org" || outcome === "unknown_product" || outcome === "other_mode") {
+    // A sale for an org this database does not have (another environment),
+    // a product Chipp no longer lists, or a sale in another mode than this
+    // app's. Nothing to grant here.
     log.info("Chipp Payments entitlement skipped", { source: "chipp-payments", outcome });
   }
 }

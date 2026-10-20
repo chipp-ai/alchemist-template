@@ -1352,6 +1352,10 @@ unchanged. Full guide: `docs/agent-guidance/chipp-payments.md`.
   sooner (`/api/chipp-payments/sync`).
 - **Products are managed in Chipp** (the Sell tab). `createProduct` and
   `updateProduct` refuse while Chipp Payments is on.
+- **Test sales run in the preview only.** The published app gets the
+  payments env after an owner goes live, and a sale counts only in the mode
+  the app runs in now (`purchases.chipp_mode`), so a test-card sale never
+  unlocks a live app.
 
 ## Built-in API and MCP features: OFF until the project turns them on
 

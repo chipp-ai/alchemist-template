@@ -174,6 +174,49 @@ Deno.test("chipp payments: the inbox handler is registered for entitlement.chang
 
 // ── the mirror ─────────────────────────────────────────────────────────────
 
+dbTest("chipp payments: a test-mode sale never unlocks the app once it runs live", async () => {
+  const ctx = await createIsolatedUser("owner");
+  const key = uniqueKey();
+  const { restore } = stubBroker({
+    "/products": () => ({
+      ok: true,
+      mode: "test",
+      testMode: true,
+      sandboxAccount: true,
+      products: [{ key, name: "Pro", description: null, kind: "one_time", amountCents: 9900, currency: "usd", interval: null }],
+    }),
+  });
+  try {
+    const sale = {
+      purchaseId: crypto.randomUUID(),
+      productKey: key,
+      customerRef: customerRefForOrg(ctx.org.id),
+      mode: "test",
+      status: "active",
+      entitled: true,
+      currentPeriodEnd: null,
+      seq: 1,
+    };
+    await withEnv(ON, async () => {
+      assertEquals(await applyChippEntitlement(sale), "applied");
+      assert(await hasActiveEntitlement(ctx.org.id, key));
+    });
+    // Go-live: the same database, now in live mode. The test sale is ignored.
+    await withEnv({ ...ON, CHIPP_PAYMENTS_MODE: "live" }, async () => {
+      assertEquals(await hasActiveEntitlement(ctx.org.id, key), false);
+    });
+    // Without Chipp env, only live sales count.
+    await withEnv({}, async () => {
+      assertEquals(await hasActiveEntitlement(ctx.org.id, key), false);
+    });
+  } finally {
+    restore();
+    await db.deleteFrom("purchases").where("organizationId", "=", ctx.org.id).execute();
+    await db.deleteFrom("products").where("productKey", "=", key).execute();
+    await ctx.cleanup();
+  }
+});
+
 function uniqueKey(): string {
   return `cp-${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -205,12 +248,19 @@ dbTest("chipp payments: entitlements mirror into purchases in seq order", async 
         purchaseId,
         productKey: key,
         customerRef: customerRefForOrg(ctx.org.id),
+        mode: "test",
         status: "active",
         entitled: true,
         currentPeriodEnd: new Date(Date.now() + 30 * 86400_000).toISOString(),
         amountCents: 2900,
         currency: "usd",
       };
+      // A sale in another mode than the app's grants nothing.
+      assertEquals(
+        await applyChippEntitlement({ ...base, purchaseId: crypto.randomUUID(), mode: "live", seq: 1 }),
+        "other_mode",
+      );
+      assertEquals(await hasActiveEntitlement(ctx.org.id, key), false);
       assertEquals(await applyChippEntitlement({ ...base, seq: 2 }), "applied");
       assert(await hasActiveEntitlement(ctx.org.id, key));
       const product = await getProductByKey(key);

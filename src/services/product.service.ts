@@ -41,6 +41,7 @@ import {
 } from "@/utils/errors.ts";
 import { getEnv } from "@/lib/env.ts";
 import {
+  chippAccessMode,
   chippPaymentsActive,
   customerRefForOrg,
   startChippCheckout,
@@ -640,6 +641,14 @@ async function entitledPurchaseRows(
       eb.or([
         eb("purchases.currentPeriodEnd", "is", null),
         eb("purchases.currentPeriodEnd", ">", new Date()),
+      ])
+    )
+    // A Chipp Payments sale counts only in the mode this app runs in now,
+    // so a test-card sale never unlocks a live app.
+    .where((eb) =>
+      eb.or([
+        eb("purchases.source", "!=", "chipp_payments"),
+        eb("purchases.chippMode", "=", chippAccessMode()),
       ])
     )
     .execute();

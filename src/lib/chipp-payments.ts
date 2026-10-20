@@ -68,6 +68,16 @@ export function chippPaymentsActive(): boolean {
   return !usesOwnStripeKey() && chippPaymentsConfig() !== null;
 }
 
+/**
+ * The mode whose Chipp sales grant access in this app right now: the
+ * injected CHIPP_PAYMENTS_MODE, or 'live' when Chipp Payments is not set up
+ * (a sale someone paid real money for keeps counting; a test sale never
+ * does). A test-card sale can therefore never unlock a live app.
+ */
+export function chippAccessMode(): ChippPaymentsMode {
+  return chippPaymentsConfig()?.mode ?? "live";
+}
+
 /** The opaque buyer ref Chipp keys a buyer's sales on. One per organization. */
 export function customerRefForOrg(organizationId: string): string {
   return `org:${organizationId}`;
@@ -111,6 +121,8 @@ export interface ChippCatalog {
 
 export interface ChippEntitlement {
   purchaseId: string;
+  /** The mode Chipp sold in (older platforms omit it; the pull is for the caller's mode). */
+  mode?: ChippPaymentsMode;
   productKey: string;
   status: string;
   entitled: boolean;

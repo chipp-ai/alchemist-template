@@ -352,6 +352,8 @@ export interface PurchasesTable {
   chippPurchaseId: string | null;
   /** BIGINT: Chipp's change counter; a lower one never overwrites a higher one. */
   chippSeq: ColumnType<string | null, string | number | null | undefined, string | number | null>;
+  /** 'test' | 'live': the mode Chipp sold in. Only the app's current mode grants access. */
+  chippMode: "test" | "live" | null;
   createdAt: CreatedAt;
   updatedAt: UpdatedAt;
 }
