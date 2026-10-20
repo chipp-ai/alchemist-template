@@ -25,9 +25,13 @@ before the app mounts and injects the single Google Fonts `<link>`. It writes
 the `--brand-*` variables (`--brand-primary/-accent/-neutral`,
 `--brand-font-heading/-body`, `--brand-radius-scale` + `data-radius-scale`,
 `--brand-primary-contrast`); every derived token in `app.css` reaches the
-brand through `var()`. The platform's `brand-loader.js` does NOT set any of
-them: it applies only the app name, logo, favicon and gradient from
-brand.json. To change a colour, font or radius, edit design.json.
+brand through `var()`. The platform's `brand-loader.js` applies the app
+name, logo, favicon and gradient from brand.json. Once the app's look lives
+in code (the platform moves each app on its own), brand.json carries no
+colour, font or radius, so nothing overrides design.json. An app that has
+not moved yet still gets them in brand.json from the Brand panel, and the
+loader's legacy path applies them on top. To change a colour, font or
+radius, edit design.json.
 `web/src/app.css` remains the token + component contract documented in
 `web/DESIGN.md` (color-mix ramps, `[data-theme="dark"]`, `[data-radius-scale]`,
 motion); design.json feeds it and never replaces it.
@@ -94,7 +98,7 @@ imports it too.
   apply to a second route, it belongs in `app.css` as a class.
 - Controls use `--radius-control`; cards use `--radius-lg`. Under the `pill`
   preset controls are round and cards are not; do not special-case.
-- Nothing overrides `--brand-primary`, `--brand-accent`, `--brand-neutral`
-  at runtime any more: design.json is the only source. Derived tokens still
+- Once the app's look lives in code, nothing overrides `--brand-primary`,
+  `--brand-accent`, `--brand-neutral` at runtime. Derived tokens still
   reference them through `var()`, so keep that indirection when adding
   colour tokens.

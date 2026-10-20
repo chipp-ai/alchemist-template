@@ -31,9 +31,10 @@
     <!--
       Brand loader. Reads the app's identity from the platform's
       brand.json: the tab title, logo <img src> for any element with
-      `data-brand-logo="light|dark"`, the favicon and the gradient. It
-      never sets colors, fonts or radius: the look lives only in
-      web/src/design/design.json.
+      `data-brand-logo="light|dark"`, the favicon and the gradient. The
+      look lives in web/src/design/design.json. Only an app whose look
+      has not moved into code yet still gets colors, fonts and radius in
+      brand.json, and the loader applies them as before.
 
       The agent should set window.ALCHEMIST_PROJECT_ID at build time
       (Vite env var → VITE_ALCHEMIST_PROJECT_ID, baked into a small

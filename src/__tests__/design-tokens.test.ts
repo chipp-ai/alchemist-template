@@ -14,9 +14,9 @@
  *       modular type scale, a radius scale keyed off [data-radius-scale],
  *       exactly 3 elevation levels, and no hand-picked hex for the
  *       accent/error/success ramps outside the :root token block.
- *     - web/public/brand-loader.js never sets the look (colors, fonts,
- *       radius): design.json is the only source. It keeps the title,
- *       logo, favicon and gradient.
+ *     - web/public/brand-loader.js sets the look (colors, fonts, radius)
+ *       only on its legacy path, for an app whose brand.json still
+ *       carries it. It keeps the title, logo, favicon and gradient.
  *
  * This file intentionally does NOT cover motion.css, dark-mode theming,
  * or the guardrail lints for arbitrary component/page styles — those are
@@ -249,10 +249,15 @@ deno("app.css: focus-visible ring is defined for interactive elements", async ()
 
 // ── Source-shape lints: web/public/brand-loader.js ──────────────────────────
 
-deno("brand-loader.js: never sets the look (design.json is the only source)", async () => {
+deno("brand-loader.js: sets the look only in applyLegacyLook, behind hasLegacyLook", async () => {
   const src = await Deno.readTextFile(
     new URL("../../web/public/brand-loader.js", import.meta.url),
   );
+  const start = src.indexOf("function applyLegacyLook(");
+  assert(start > 0, "applyLegacyLook exists");
+  const end = src.indexOf("\n  }\n", start);
+  const legacy = src.slice(start, end);
+  const outside = src.slice(0, start) + src.slice(end);
   for (
     const lookVar of [
       `"--brand-primary"`,
@@ -264,13 +269,16 @@ deno("brand-loader.js: never sets the look (design.json is the only source)", as
       `"--brand-radius-scale"`,
     ]
   ) {
+    assertStringIncludes(legacy, lookVar);
     assert(
-      !src.includes(lookVar),
-      `brand-loader.js must not set ${lookVar}: the look lives in web/src/design/design.json`,
+      !outside.includes(lookVar),
+      `${lookVar} is set only for an app whose look has not moved into design.json`,
     );
   }
-  assert(!src.includes(`setAttribute("data-radius-scale"`), "radius comes from design.json");
-  assert(!src.includes("fonts.googleapis.com"), "fonts come from design.json (apply.ts)");
+  assert(!outside.includes(`setAttribute("data-radius-scale"`), "radius comes from design.json");
+  assertStringIncludes(src, "if (hasLegacyLook(brand)) applyLegacyLook(brand, root);");
+  // The neutral luminance guard stays on the legacy path.
+  assertStringIncludes(legacy, "isLightSurface(brand.neutralColor)");
 });
 
 deno("brand-loader.js: keeps identity (title, logo, favicon) and the gradient", async () => {

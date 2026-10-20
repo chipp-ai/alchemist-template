@@ -1,11 +1,14 @@
 /**
- * web/public/brand-loader.js runs against a small fake DOM: a full,
- * old-style brand.json (colors, fonts, radius) must change none of the
- * look, while the title, logos, favicon and gradient still apply.
+ * web/public/brand-loader.js runs against a small fake DOM.
+ *
+ * Once an app's look lives in code, the platform's brand.json carries
+ * identity only, and the loader must change none of the look while the
+ * title, logos, favicon and gradient apply. An app whose look has not moved
+ * yet still gets colors, fonts and radius in brand.json, and the loader
+ * applies them as before (legacy), so the Brand panel keeps working there.
  *
  * Why: brand.json used to be applied last and won over design.json, so a
- * look changed in code reverted on Publish. design.json is now the only
- * source of the look.
+ * look changed in code reverted on Publish.
  */
 
 import { assert, assertEquals } from "@std/assert";
@@ -101,8 +104,17 @@ async function settle() {
   await new Promise((r) => setTimeout(r, 0));
 }
 
-Deno.test("brand-loader: colors, fonts and radius from brand.json are ignored", async () => {
-  const env = makeEnv(FULL_OLD_BRAND);
+const IDENTITY_ONLY_BRAND = {
+  productName: "Acme",
+  gradient: { from: "#111111", to: "#eeeeee" },
+  logoUrl: "/api/public/brand-assets/light.png",
+  logoUrlDark: "https://cdn.test/dark.png",
+  faviconUrl: "/api/public/brand-assets/fav.png",
+  version: 3,
+};
+
+Deno.test("brand-loader: an identity-only brand.json (look in code) sets no look var", async () => {
+  const env = makeEnv(IDENTITY_ONLY_BRAND);
   await settle();
   for (
     const k of [
@@ -119,6 +131,25 @@ Deno.test("brand-loader: colors, fonts and radius from brand.json are ignored", 
   }
   assertEquals(env.root.getAttribute("data-radius-scale"), null);
   assert(!env.head.some((e) => e.id === "alchemist-brand-fonts"), "no font link");
+});
+
+Deno.test("brand-loader: an app whose look has not moved still gets the brand.json look (legacy)", async () => {
+  const env = makeEnv(FULL_OLD_BRAND);
+  await settle();
+  assertEquals(env.root.style.props.get("--brand-primary"), "#16a34a");
+  assertEquals(env.root.style.props.get("--brand-accent"), "#f59e0b");
+  assertEquals(env.root.style.props.get("--brand-neutral"), "#fafafa");
+  assertEquals(env.root.style.props.get("--brand-primary-contrast"), "#111827");
+  assertEquals(env.root.style.props.get("--brand-font-heading"), '"Fraunces"');
+  assertEquals(env.root.style.props.get("--brand-font-body"), '"Inter"');
+  assertEquals(env.root.getAttribute("data-radius-scale"), "round");
+  assert(env.head.some((e) => e.id === "alchemist-brand-fonts"), "font link for the brand fonts");
+});
+
+Deno.test("brand-loader: a dark legacy neutral never reaches the page background", async () => {
+  const env = makeEnv({ ...FULL_OLD_BRAND, neutralColor: "#0a0a0a" });
+  await settle();
+  assert(!env.root.style.props.has("--brand-neutral"));
 });
 
 Deno.test("brand-loader: title, logos, favicon and gradient still apply", async () => {

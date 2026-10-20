@@ -66,7 +66,7 @@ Every accent/status shade in `app.css` is generated from ONE base value via
 
 `--brand-primary`, `--brand-accent`, `--brand-neutral` come from
 `web/src/design/design.json` (written by `web/src/design/apply.ts`), the only
-source of the look; `brand.json` never sets them. Every fallback
+source of the look. An app whose look has not moved into code yet still gets colours, fonts and radius in brand.json (set in the Brand panel), and the loader applies them on top, as before. Once the look moves, brand.json carries identity only. Every fallback
 (`var(--brand-primary, #5e6ad2)`) renders the template default before the
 design tokens load. Dark mode (`[data-theme="dark"]`) overrides `--color-bg`/
 `--color-surface`/etc. directly — everything computed FROM them via

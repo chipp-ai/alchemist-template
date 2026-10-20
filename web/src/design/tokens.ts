@@ -202,10 +202,10 @@ const SEMANTIC_DEFAULTS: Record<DesignMode, { success: string; warning: string; 
  * Every CSS custom property the stylesheet reads, derived from one design.
  * Keys omit the leading `--`. Values are plain CSS strings.
  *
- * `--brand-*` are set too: the platform's brand-loader.js overrides those
- * at runtime when a project has a brand config, and the derived accent
- * tokens reference them through var() so a platform-side colour change
- * still flows through without touching this file.
+ * `--brand-*` are set too. The platform's brand-loader.js overrides them
+ * only for an app whose look has not moved into code yet; the derived
+ * accent tokens reference them through var(), so either writer flows
+ * through.
  */
 export function designToCssVars(design: DesignConfig): Record<string, string> {
   const { colors, mode } = design;
@@ -231,10 +231,10 @@ export function designToCssVars(design: DesignConfig): Record<string, string> {
 
   const vars: Record<string, string> = {
     // ── Brand seam ──
-    // design.json is the ONLY source of the look. The platform's
-    // brand-loader.js no longer sets these (it applies only the title, logo,
-    // favicon and gradient), so nothing overrides them at runtime. Every
-    // derived token below reaches the brand through var().
+    // design.json is the source of the look. The platform's brand-loader.js
+    // sets these only for an app whose look has not moved into code yet
+    // (brand.json still carries the look). Every derived token below
+    // reaches the brand through var().
     "brand-primary": primary,
     "brand-accent": accent,
     "brand-neutral": bg,

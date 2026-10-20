@@ -993,8 +993,8 @@ apply.ts` turns it into a `<style>` block that sets the `--brand-*` custom
 properties (colours, fonts, radius scale, primary contrast) plus the derived
 tokens every component reads, and injects the one Google Fonts `<link>` the
 design needs. **design.json is the only source of the look:** the platform's
-`brand-loader.js` applies only the app name, logo, favicon and gradient from
-brand.json and never a colour, font or radius. `web/src/app.css` is the token contract (`web/DESIGN.md` explains it);
+`brand-loader.js` applies the app name, logo, favicon and gradient from
+brand.json. An app whose look has not moved into code yet still gets colours, fonts and radius in brand.json (set in the Brand panel), and the loader applies them on top, as before. Once the look moves, brand.json carries identity only. `web/src/app.css` is the token contract (`web/DESIGN.md` explains it);
 design.json feeds it, it does not replace it. Dark mode stays the user's
 toggle (`web/src/stores/theme.svelte.ts`); a design with `mode: "dark"` is
 dark under both themes.
