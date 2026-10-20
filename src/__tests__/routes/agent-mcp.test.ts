@@ -85,10 +85,18 @@ async function bearer(user: U): Promise<string> {
   return `Bearer ${await mintAgentToken(user)}`;
 }
 
+// Tools a feature pack adds (the app-support pack's support_* tools) are
+// pinned by that pack's own test, so the starter-tool lists below stay
+// exact in a project where the pack is installed.
+const FEATURE_PACK_TOOL = /^support_/;
+
 async function toolNames(auth: string): Promise<string[]> {
   const { status, body } = await rpc(auth, "tools/list");
   assertEquals(status, 200);
-  return body.result.tools.map((t: { name: string }) => t.name).sort();
+  return body.result.tools
+    .map((t: { name: string }) => t.name)
+    .filter((n: string) => !FEATURE_PACK_TOOL.test(n))
+    .sort();
 }
 
 async function call(auth: string, name: string, args: unknown = {}) {

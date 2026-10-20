@@ -21,6 +21,10 @@
 <script lang="ts">
   import { authStore } from "../stores/auth.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
+  // Feature links for end users (web/src/features/support.ts). Empty in
+  // the base template, so the header shows no extra link until the
+  // app-support pack replaces the stub.
+  import { supportNavItems } from "../features/support";
 
   let {
     /** Brand line in the header. */
@@ -44,6 +48,15 @@
   <header class="portal-header">
     <span class="portal-brand" data-testid="portal-brand">{title}</span>
     <div class="portal-header-actions">
+      {#each supportNavItems as item (item.path)}
+        <a
+          class="btn btn-ghost portal-link"
+          href={"#" + item.path}
+          data-testid={"portal-nav-" + item.testId}
+        >
+          {item.label}
+        </a>
+      {/each}
       <ThemeToggle />
       {#if authStore.isAuthenticated}
         <span class="portal-identity" data-testid="portal-identity">
@@ -105,7 +118,8 @@
     white-space: nowrap;
   }
 
-  .portal-signout {
+  .portal-signout,
+  .portal-link {
     font-size: var(--text-sm);
   }
 

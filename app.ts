@@ -53,6 +53,7 @@ import { landingPageRouter } from "@/services/landing-page/router.ts";
 import { cmsRouter } from "@/services/cms/router.ts";
 import { storefrontRouter } from "@/services/storefront/router.ts";
 import { clientTicketsPortalRouter } from "@/services/client-tickets-portal/router.ts";
+import { supportRouter } from "@/services/support/router.ts";
 import { landingSiteMiddleware } from "@/lib/landing-site.ts";
 import { serveSpaShell } from "@/lib/spa-shell.ts";
 import { APP_BASE_PATH } from "@/config/site.ts";
@@ -296,6 +297,13 @@ app.route("/api/dashboard/command-center", commandCenterDashboardRouter);
 // queue and ledger summary, and restores it when the portal is turned off.
 // Its SPA half is web/src/features/client-tickets-portal.ts.
 app.route("/api/tickets-and-billing", clientTicketsPortalRouter);
+
+// Support page feature stub: an empty router, inert (404) until a builder
+// turns on "Support page for app users". The app-support pack replaces the
+// stub FILE (src/services/support/router.ts) with the end-user support API
+// (file a request, list my own requests), and restores it when the feature
+// is turned off. Its SPA half is web/src/features/support.ts.
+app.route("/api/support", supportRouter);
 
 // embedded-chipp-agent feature stub: an empty router, inert until a builder
 // turns the embedded Chipp agent on. The pack replaces the stub FILE

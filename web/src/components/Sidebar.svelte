@@ -7,6 +7,7 @@
   import { recipeNavItems } from "../recipe-routes";
   import { clientTicketsPortalNavItems } from "../features/client-tickets-portal";
   import { cmsNavItems } from "../features/cms";
+  import { supportNavItems } from "../features/support";
   import { moduleOn } from "../lib/app-config";
 
   // File review is admin-only. Hiding the link for everyone else is a UX
@@ -34,7 +35,7 @@
   // (usually "/") replaces the base link.
   const navItems = $derived.by(() => {
     const role = authStore.user?.role ?? "";
-    const added = [...recipeNavItems, ...clientTicketsPortalNavItems, ...cmsNavItems];
+    const added = [...recipeNavItems, ...clientTicketsPortalNavItems, ...cmsNavItems, ...supportNavItems];
     const recipe = added
       .filter((item) => !item.visibleTo || item.visibleTo(role))
       .map((item) => ({ path: item.path, label: item.label, icon: item.icon, testId: item.testId }));

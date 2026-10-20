@@ -15,6 +15,7 @@ import NotFound from "./routes/NotFound.svelte";
 import { recipeRoutes } from "./recipe-routes";
 import { clientTicketsPortalRoutes } from "./features/client-tickets-portal";
 import { cmsRoutes } from "./features/cms";
+import { supportPublicPaths, supportRoutes } from "./features/support";
 import { appConfig } from "./lib/app-config";
 import { withoutOffModules } from "./lib/app-modules";
 
@@ -66,6 +67,7 @@ const allRoutes: Record<string, any> = {
   // file is empty in the base template until its pack replaces it).
   ...clientTicketsPortalRoutes,
   ...cmsRoutes,
+  ...supportRoutes,
   // The catch-all stays last: svelte-spa-router matches in insertion order.
   "*": NotFound,
 };
@@ -96,6 +98,10 @@ const PUBLIC_PREFIX_ROUTES = ["/invite/", "/portal/"];
 
 export function isPublicRoute(path: string): boolean {
   if (PUBLIC_LITERAL_ROUTES.has(path)) return true;
+  // Feature pages for end users (web/src/features/support.ts; empty in the
+  // base template). The page renders its own signed-out state and every
+  // API call behind it is auth-gated server-side.
+  if (supportPublicPaths.includes(path)) return true;
   if (import.meta.env.DEV && path === "/design") return true;
   return PUBLIC_PREFIX_ROUTES.some((prefix) => path.startsWith(prefix));
 }
@@ -112,6 +118,7 @@ export function isPublicRoute(path: string): boolean {
  * scoped to the caller), so nothing is exposed by rendering the shell.
  */
 export function isPortalRoute(path: string): boolean {
+  if (supportPublicPaths.includes(path)) return true;
   return path === "/portal" || path.startsWith("/portal/");
 }
 
