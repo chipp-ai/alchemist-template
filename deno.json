@@ -75,7 +75,7 @@
         "no-control-regex"
       ]
     },
-    "exclude": ["web/", "tools/", "landing/"]
+    "exclude": ["web/", "tools/"]
   },
   "nodeModulesDir": "none"
 }

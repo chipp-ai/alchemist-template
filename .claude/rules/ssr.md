@@ -32,7 +32,7 @@ never adds one serves exactly what it served before.
 | `web/src/islands/entry.ts` | Client runtime. Finds every `web/src/islands/*.svelte` with `import.meta.glob`. |
 | `src/api/middleware/optional-session.ts` | `optionalSession`, `getSsrSession`, `SsrSession`, `VISITOR_COOKIE`. |
 | `src/lib/spa-shell.ts` | `serveSpaShell`: the built SPA at a prefix such as `/admin`. |
-| `src/config/site.ts` | `appPath("/#/x")`: every link into the SPA. The SPA lives at `/app` (`APP_BASE_PATH`); "/" is the static landing site in `landing/` when it is built (`src/lib/landing-site.ts`). |
+| `src/config/site.ts` | `appPath("/#/x")`: every link into the SPA. |
 | `src/services/app-links.ts` | `appOrigin()`: the one `APP_URL` reader for absolute links. |
 
 ## Adding a public page

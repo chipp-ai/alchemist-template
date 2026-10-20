@@ -53,9 +53,6 @@ import { landingPageRouter } from "@/services/landing-page/router.ts";
 import { cmsRouter } from "@/services/cms/router.ts";
 import { storefrontRouter } from "@/services/storefront/router.ts";
 import { clientTicketsPortalRouter } from "@/services/client-tickets-portal/router.ts";
-import { landingSiteMiddleware } from "@/lib/landing-site.ts";
-import { serveSpaShell } from "@/lib/spa-shell.ts";
-import { APP_BASE_PATH } from "@/config/site.ts";
 
 // ── App types ──
 
@@ -326,24 +323,6 @@ app.route("/", landingPageRouter);
 // after the API routes and before the SPA fallback, like the landing-page
 // stub above. See .claude/rules/ssr.md.
 app.route("/", storefrontRouter);
-
-// ── SPA at its prefix ──
-// The signed-in SPA lives at APP_BASE_PATH ("/app", src/config/site.ts).
-// Hash routes work unchanged: /app/#/settings. Vite `base` stays "/", so the
-// shell's /assets/... URLs resolve through the static handler below.
-if (APP_BASE_PATH) {
-  app.get(APP_BASE_PATH, serveSpaShell);
-  app.get(`${APP_BASE_PATH}/*`, serveSpaShell);
-}
-
-// ── Landing site ──
-// The static Astro build in landing/dist owns "/" and the marketing pages
-// (src/lib/landing-site.ts). It answers only files that exist there, never
-// /api/*, /index.html or the SPA prefix, so everything else falls through
-// to the SPA below exactly as before. When landing/dist is not built (local
-// dev, an older image) this is skipped and "/" serves the SPA as it always did.
-const landingSite = landingSiteMiddleware();
-if (landingSite) app.use("/*", landingSite);
 
 // ── Static SPA ──
 // Serves the Svelte frontend built in the Dockerfile's web-builder stage
