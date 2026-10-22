@@ -23,6 +23,8 @@ In the Builder it runs as a second preview app named "Landing site".
 - **Pages:** `src/pages/` (index, pricing, about, sitemap.xml, robots.txt).
 - **Layout:** `src/layouts/Layout.astro` (header, nav, main, footer, dates, JSON-LD).
 - **Colors and fonts:** read from `../web/src/design/design.json` at build time.
+  Label and link colors come from `bestTextOn` / `contrastRatio` in
+  `../web/src/design/tokens.ts`, so a light primary gets a dark label.
 
 To add a page: create `src/pages/<name>.astro` with `Layout`, an H1, then a
 question as the first H2, then a short answer. Add it to `PAGES` in

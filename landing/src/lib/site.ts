@@ -5,12 +5,15 @@
  *
  * Brand tokens come from the app's own design file
  * (../web/src/design/design.json) at build time, so the landing site and
- * the app share colors and fonts.
+ * the app share colors and fonts. Contrast math comes from the app's own
+ * tokens (../web/src/design/tokens.ts), so a label on the primary color is
+ * picked the same way in both places.
  */
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import raw from "../content/site.json";
+import { bestTextOn, contrastRatio } from "../../../web/src/design/tokens.ts";
 
 export interface SiteFaq {
   question: string;
@@ -59,9 +62,15 @@ export interface Brand {
   headingWeight: number;
   bodyWeight: number;
   radius: string;
+  /** Label color on a `primary` fill: near-white or near-black, by contrast. */
+  primaryContrast: string;
+  /** Link color on the page background: `primary` when it reads (3:1), else `text`. */
+  link: string;
 }
 
-const DEFAULT_BRAND: Brand = {
+type BaseBrand = Omit<Brand, "primaryContrast" | "link">;
+
+const DEFAULT_BRAND: BaseBrand = {
   primary: "#4f46e5",
   accent: "#0284c7",
   background: "#f8fafc",
@@ -76,8 +85,25 @@ const DEFAULT_BRAND: Brand = {
 
 const RADIUS: Record<string, string> = { none: "0", sm: "4px", md: "8px", lg: "14px", xl: "20px", full: "999px" };
 
+/**
+ * Add the colors derived from the base tokens. A design can pick any primary
+ * (a white primary on a dark canvas is a real design choice), so the button
+ * label and the link color are never hardcoded.
+ */
+export function withDerivedColors(b: BaseBrand): Brand {
+  return {
+    ...b,
+    primaryContrast: bestTextOn(b.primary),
+    link: contrastRatio(b.primary, b.background) >= 3 ? b.primary : b.text,
+  };
+}
+
 /** Read brand tokens from the app's design.json. Falls back to defaults when it is missing. */
 export function loadBrand(): Brand {
+  return withDerivedColors(loadBaseBrand());
+}
+
+function loadBaseBrand(): BaseBrand {
   try {
     const file = resolve(process.cwd(), "../web/src/design/design.json");
     const d = JSON.parse(readFileSync(file, "utf8"));

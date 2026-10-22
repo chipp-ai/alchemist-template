@@ -113,6 +113,25 @@ Marketing pages live in `landing/`, never in the SPA. The SPA renders nothing
 until its JS runs, so answer engines (ChatGPT, Claude, Perplexity, Google AI)
 and crawlers cannot read product facts that live only there.
 
+**The homepage is the deployed root URL `/`.** Never leave the factory
+placeholder landing at `/` and put the real homepage at `/app/#/`.
+
+- **Marketing-first product:** write the real copy in
+  `landing/src/content/site.json`. The seeded draft ("X is a web app.",
+  "It is for anyone who needs what X does.") must never ship.
+- **App-first product** (the app IS the homepage): serve the app at `/`.
+  Make `landing/` redirect to `/app/`, or remove `landing/` (then `/` serves
+  the SPA, `src/lib/landing-site.ts`).
+- **Build only in `web/` or `landing/`.** The image builds and serves only
+  those two. A new top-level app folder is never deployed.
+- **Verify with a production build and a screenshot of `/`,** not of
+  `/app/#/` and not of the dev server.
+
+`cd landing && npm test` enforces two of these: it fails when a project
+with its own app pages still holds placeholder copy, and when a top-level
+folder other than `web/` and `landing/` is a separate front end
+(`landing/scripts/placeholder-copy.mjs`). Detail: `.claude/rules/landing.md`.
+
 - **Where things are served.** `landing/dist` is served at `/` and the
   marketing paths (`/pricing/`, `/about/`, `/robots.txt`, `/sitemap.xml`). The
   app lives at `/app` (`APP_BASE_PATH` in `src/config/site.ts`), so app links
@@ -140,7 +159,10 @@ and crawlers cannot read product facts that live only there.
   site", port 4321) from `.alchemist/dev-server.json`. Locally:
   `cd landing && npm install && npm run dev`.
 - **Brand.** The landing site reads colors and fonts from
-  `web/src/design/design.json` at build time. Change the design there.
+  `web/src/design/design.json` at build time. Change the design there. The
+  button label and link colors are derived by contrast (`bestTextOn` in
+  `web/src/design/tokens.ts`), never hardcoded: a design may pick a white
+  primary.
 
 ## Engineering Preferences
 
@@ -191,6 +213,7 @@ when you work in its area, so the hub stays focused.
 | `design.md` | `web/src/design/**`, `app.css`, `*.svelte` | design.json, presets, font catalog, token rules, the /#/design sheet |
 | `frontend-state.md` | `web/src/App.svelte`, `web/src/routes/**`, `web/src/stores/**`, `query.svelte.ts`, `context-switch.svelte.ts` | Page lifetime and tenant context: the Router key, `runContextSwitch()`, store resets, the switcher checklist |
 | `files.md` | `src/services/storage*.ts`, `uploaded-file.service.ts`, `upload-types.ts`, `src/api/routes/files/**`, `web/src/stores/uploads.svelte.ts`, `web/src/components/*Upload*` | Storage service, managed uploads, org-scoped files, presigned URLs, type allowlist, cross-tenant key contract |
+| `landing.md` | `landing/**`, `src/lib/landing-site.ts` | The homepage at `/`, placeholder copy, app-first products, where front ends may live, brand colors on the landing site |
 | `ssr.md` | `src/services/ssr/**`, `src/services/storefront/**`, `web/src/islands/**`, `optional-session.ts`, `spa-shell.ts` | Server-rendered public pages: route-module discovery, escaping, JSON-LD, design tokens, `optionalSession`, caching, Svelte islands |
 
 In Claude Code these load when you read a matching file. The Alchemist

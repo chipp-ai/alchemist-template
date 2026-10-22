@@ -21,14 +21,15 @@ RUN npm run build
 # serves it at "/" and the SPA at /app (src/lib/landing-site.ts). `npm run
 # build` also runs scripts/aeo-check.mjs, so a page that breaks an AEO rule
 # fails the image build. The site reads brand tokens from
-# web/src/design/design.json at build time, so that file comes along.
+# web/src/design/design.json and its contrast helpers from
+# web/src/design/tokens.ts at build time, so that folder comes along.
 FROM node:22-alpine AS landing-builder
 
 WORKDIR /src/landing
 COPY landing/package.json landing/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY landing/ ./
-COPY web/src/design/design.json /src/web/src/design/design.json
+COPY web/src/design/ /src/web/src/design/
 RUN npm run build
 
 # ── Build stage: cache Deno dependencies ──

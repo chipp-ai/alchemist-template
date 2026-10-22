@@ -6,7 +6,7 @@
     "dev": "astro dev",
     "build": "astro build && node scripts/aeo-check.mjs",
     "check:aeo": "node scripts/aeo-check.mjs",
-    "test": "node --test scripts/aeo-check.test.mjs",
+    "test": "node --test scripts/aeo-check.test.mjs scripts/placeholder-copy.test.mjs",
     "preview": "astro preview"
   },
   "dependencies": {
