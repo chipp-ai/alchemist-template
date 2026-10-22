@@ -11,7 +11,12 @@
  *   - `Sidebar.svelte` renders `recipeNavItems` first. A recipe item whose
  *     path is "/" replaces the base Dashboard link.
  *
+ *   - `routes.ts` treats every pattern in `recipePublicRoutes` as public:
+ *     a signed-out visitor sees the page instead of being sent to /login.
+ *
  * Add a recipe page here, not in routes.ts: routes.ts stays base-owned.
+ * To make a page public, list its route key in `recipePublicRoutes`; never
+ * edit PUBLIC_LITERAL_ROUTES or isPublicRoute in routes.ts.
  */
 
 export interface RecipeNavItem {
@@ -35,3 +40,12 @@ export interface RecipeNavItem {
 export const recipeRoutes: Record<string, any> = {};
 
 export const recipeNavItems: RecipeNavItem[] = [];
+
+/**
+ * Route keys from `recipeRoutes` that need no session, written exactly as in
+ * the route table ("/", "/pricing", "/share/:id", "/docs/*"). Public only
+ * means the SPA does not send a signed-out visitor to /login, and the page
+ * renders without the signed-in layout. Every API call behind the page must
+ * still check access on the server.
+ */
+export const recipePublicRoutes: string[] = [];

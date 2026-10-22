@@ -21,9 +21,19 @@ base-owned. Use the recipe hook instead:
   display only: the API must enforce access on every request.
 - `icon` must be a name `Sidebar.svelte` already draws (grid, activity,
   chart, users, plug, settings, and the rest of its `icons` map).
+- `recipePublicRoutes` lists the route keys that need no session, written
+  as in the route table (`"/"`, `"/pricing"`, `"/share/:id"`, `"/docs/*"`).
+  The base `isPublicRoute` consults it, so a signed-out visitor sees the
+  page instead of the login form, and the page renders without the
+  signed-in layout. Never edit `PUBLIC_LITERAL_ROUTES`,
+  `PUBLIC_PREFIX_ROUTES` or `isPublicRoute` in `routes.ts` to do this
+  (`src/__tests__/recipe-public-routes.test.ts` fails if the base sets
+  change). Public is a UI rule only: the API must still check access.
 
 A pack that fills the hook replaces the whole file, so it must ship a
-complete module that still exports both names
+complete module that still exports `recipeRoutes` and `recipeNavItems`
+(`recipePublicRoutes` is optional: a pack without it builds and has no
+public pages)
 (`src/__tests__/recipe-routes-hook.test.ts` pins the hook).
 
 ## data-testid

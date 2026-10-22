@@ -13,6 +13,11 @@ import PortalHome from "./routes/portal/PortalHome.svelte";
 import PortalClaim from "./routes/portal/PortalClaim.svelte";
 import NotFound from "./routes/NotFound.svelte";
 import { recipeRoutes } from "./recipe-routes";
+// Namespace import: a recipe pack written before `recipePublicRoutes`
+// existed replaces recipe-routes.ts without it, and a named import of a
+// missing export would break the build. Read it with a fallback instead.
+import * as recipeHook from "./recipe-routes";
+import { matchesAnyRoutePattern } from "./lib/route-pattern";
 import { clientTicketsPortalRoutes } from "./features/client-tickets-portal";
 import { cmsRoutes } from "./features/cms";
 import { supportPublicPaths, supportRoutes } from "./features/support";
@@ -96,12 +101,19 @@ const routes: Record<string, any> = withoutOffModules(appConfig, allRoutes);
 const PUBLIC_LITERAL_ROUTES = new Set(["/login", "/signup", "/portal"]);
 const PUBLIC_PREFIX_ROUTES = ["/invite/", "/portal/"];
 
+/** Public pages a recipe declares (web/src/recipe-routes.ts). */
+const recipePublicRoutes: readonly string[] =
+  (recipeHook as { recipePublicRoutes?: readonly string[] }).recipePublicRoutes ?? [];
+
 export function isPublicRoute(path: string): boolean {
   if (PUBLIC_LITERAL_ROUTES.has(path)) return true;
   // Feature pages for end users (web/src/features/support.ts; empty in the
   // base template). The page renders its own signed-out state and every
   // API call behind it is auth-gated server-side.
   if (supportPublicPaths.includes(path)) return true;
+  // Recipe pages declared public in web/src/recipe-routes.ts. This is the
+  // hook for app pages that need no session; the sets above stay base-owned.
+  if (matchesAnyRoutePattern(path, recipePublicRoutes)) return true;
   if (import.meta.env.DEV && path === "/design") return true;
   return PUBLIC_PREFIX_ROUTES.some((prefix) => path.startsWith(prefix));
 }

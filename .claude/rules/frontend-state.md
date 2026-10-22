@@ -3,6 +3,8 @@ name: frontend-state
 description: Frontend data loading and tenant context — pages fetch in onMount and rely on the Router key in App.svelte to remount on a tenant switch or a path change; runContextSwitch() clears stores and the query cache; never key a refetch on an org id. Load when touching routes, stores, the query layer, App.svelte, or when adding any organization / workspace / account switcher.
 paths:
   - "web/src/App.svelte"
+  - "web/src/routes.ts"
+  - "web/src/recipe-routes.ts"
   - "web/src/routes/**"
   - "web/src/stores/**"
   - "web/src/lib/query.svelte.ts"
@@ -86,3 +88,10 @@ contract, run `scripts/apply-context-switch-to-clones.sh <project-dir>`
 (or `--all`). It copies the four new files, patches the six touched files
 behind sentinels (safe to re-run), and prints the test and build commands
 to verify the result.
+
+## Public pages
+
+A page that needs no session goes in `recipePublicRoutes`
+(`web/src/recipe-routes.ts`), never in `PUBLIC_LITERAL_ROUTES` or
+`isPublicRoute` (`web/src/routes.ts` is base-owned). See
+`docs/agent-guidance/dashboard-shell.md`.
