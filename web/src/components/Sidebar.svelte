@@ -11,6 +11,7 @@
   import { cmsNavItems } from "../features/cms";
   import { supportNavItems } from "../features/support";
   import { moduleOn } from "../lib/app-config";
+  import { readAppName } from "../lib/app-name";
 
   // File review is admin-only. Hiding the link for everyone else is a UX
   // choice, not the control: the API gate is what enforces it.
@@ -61,6 +62,12 @@
     return currentPath.startsWith(itemPath);
   }
 
+  // The org name, else the app's own name (web/src/lib/app-name.ts), else
+  // "App". A user with no org (the Builder preview's dev user) used to see
+  // a bare "App" here.
+  const appName = readAppName();
+  const sidebarName = $derived(orgStore.currentOrg?.name ?? appName ?? "App");
+
   onMount(applyBrandLogos);
 </script>
 
@@ -76,8 +83,8 @@
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
   </button>
   <span class="sidebar-logo">
-    <img data-brand-logo="light" class="brand-logo-img" alt={orgStore.currentOrg?.name ?? "App"} hidden />
-    <span class="brand-logo-name">{orgStore.currentOrg?.name ?? "App"}</span>
+    <img data-brand-logo="light" class="brand-logo-img" alt={sidebarName} hidden />
+    <span class="brand-logo-name">{sidebarName}</span>
   </span>
 </header>
 
@@ -90,8 +97,8 @@
     <span class="sidebar-logo" data-testid="sidebar-logo">
       <!-- Uploaded logo (brand-loader.js sets src and clears hidden). The
            text name stays as the fallback until a logo exists. -->
-      <img data-brand-logo="light" class="brand-logo-img" alt={orgStore.currentOrg?.name ?? "App"} hidden data-testid="sidebar-logo-img" />
-      <span class="brand-logo-name">{orgStore.currentOrg?.name ?? "App"}</span>
+      <img data-brand-logo="light" class="brand-logo-img" alt={sidebarName} hidden data-testid="sidebar-logo-img" />
+      <span class="brand-logo-name">{sidebarName}</span>
     </span>
   </div>
 

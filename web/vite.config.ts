@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { fileURLToPath, URL } from "node:url";
+import { appNameMetaTag } from "./src/lib/app-name";
 
 // Project id for brand-loader.js. Baked at build time so the loader
 // in index.html knows which project to fetch /brand.json for. The
@@ -25,6 +26,17 @@ export default defineConfig({
       name: "inject-alchemist-project-id",
       transformIndexHtml(html: string) {
         return html.replaceAll("__ALCHEMIST_PROJECT_ID__", PROJECT_ID);
+      },
+    },
+    {
+      // The app's own name for the SPA (web/src/lib/app-name.ts), from
+      // APP_NAME when Vite starts or builds. The platform sets it on the
+      // Builder preview's dev server. A build without it carries no tag,
+      // and the sidebar keeps its own fallback.
+      name: "inject-app-name",
+      transformIndexHtml(html: string) {
+        const tag = appNameMetaTag(process.env.APP_NAME);
+        return tag ? html.replace(/<\/head>/i, `    ${tag}\n  </head>`) : html;
       },
     },
   ],
