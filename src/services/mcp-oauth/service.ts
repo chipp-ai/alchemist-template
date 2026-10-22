@@ -34,6 +34,23 @@ const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const AUTH_CODE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+/**
+ * WHERE filter: the token pair was issued at or after the user's logout-all
+ * cutoff (`users.token_invalidated_before`), the same rule `resolveUser`
+ * applies to a session JWT's `iat`. A refresh rotates into a NEW row, so the
+ * filter also stops a chain that began before the cutoff from refreshing.
+ * `revokeAllForUser` is the primary revoke; this check still holds when the
+ * cutoff is set by any other path. The query must join `users as u`.
+ */
+function issuedAfterLogoutAll(createdAtRef: "t.createdAt") {
+  // deno-lint-ignore no-explicit-any
+  return (eb: any) =>
+    eb.or([
+      eb("u.tokenInvalidatedBefore", "is", null),
+      eb(createdAtRef, ">=", eb.ref("u.tokenInvalidatedBefore")),
+    ]);
+}
+
 // ── Client registration / lookup ───────────────────────────────────────────
 
 export const clientService = {
@@ -232,6 +249,7 @@ export const oauthTokenService = {
       .where("t.accessTokenHash", "=", hashMcpToken(rawToken))
       .where("t.isRevoked", "=", false)
       .where("t.accessTokenExpiresAt", ">", new Date())
+      .where(issuedAfterLogoutAll("t.createdAt"))
       .select([
         "t.id as tokenId",
         "t.userId as userId",
@@ -277,12 +295,19 @@ export const oauthTokenService = {
     const refreshTokenHash = hashMcpToken(rawRefreshToken);
     const rotated = await db.transaction().execute(async (trx) => {
       const existing = await trx
-        .selectFrom("mcp_oauth_tokens")
-        .where("refreshTokenHash", "=", refreshTokenHash)
-        .where("isRevoked", "=", false)
-        .where("refreshTokenExpiresAt", ">", new Date())
-        .selectAll()
-        .forUpdate()
+        .selectFrom("mcp_oauth_tokens as t")
+        .innerJoin("users as u", "u.id", "t.userId")
+        .where("t.refreshTokenHash", "=", refreshTokenHash)
+        .where("t.isRevoked", "=", false)
+        .where("t.refreshTokenExpiresAt", ">", new Date())
+        .where(issuedAfterLogoutAll("t.createdAt"))
+        .select([
+          "t.id as id",
+          "t.userId as userId",
+          "t.clientId as clientId",
+          "t.scopes as scopes",
+        ])
+        .forUpdate("t")
         .executeTakeFirst();
       if (!existing || existing.clientId !== clientId) return null;
 
@@ -301,6 +326,23 @@ export const oauthTokenService = {
       clientId,
       scopes: rotated.scopes,
     });
+  },
+
+  /**
+   * Revoke every token pair a user holds. POST /api/auth/logout-all calls
+   * it, so "Log out of all devices" also disconnects every assistant
+   * (ChatGPT, Claude) the person connected. A connected assistant reaches
+   * the app's agent tools, writes included, so it is a device like any
+   * other. Returns how many pairs it revoked.
+   */
+  async revokeAllForUser(userId: string): Promise<number> {
+    const res = await db
+      .updateTable("mcp_oauth_tokens")
+      .set({ isRevoked: true, updatedAt: new Date() })
+      .where("userId", "=", userId)
+      .where("isRevoked", "=", false)
+      .executeTakeFirst();
+    return Number(res.numUpdatedRows ?? 0);
   },
 
   /** RFC 7009 revoke by raw access OR refresh token. Always idempotent. */

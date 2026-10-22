@@ -41,6 +41,7 @@ import {
   type OAuthProvider,
 } from "@/lib/oauth-providers.ts";
 import { getEnv } from "@/lib/env.ts";
+import { oauthTokenService } from "@/services/mcp-oauth/service.ts";
 import { appPath } from "@/config/site.ts";
 import { isVerificationAccountEmail } from "@/lib/verification-accounts.ts";
 import { verificationSessionRoutes } from "./verification-session.ts";
@@ -325,6 +326,11 @@ authRoutes.post("/logout-all", requireAuth, async (c) => {
     .where("id", "=", user.id)
     .execute();
 
+  // Connected assistants (ChatGPT, Claude) hold MCP OAuth tokens that reach
+  // the app's agent tools. Revoke them too. mcp_sk_ API keys are separate,
+  // explicitly minted credentials with their own revoke, like api_sk_ keys.
+  const revokedAssistantTokens = await oauthTokenService.revokeAllForUser(user.id);
+
   // Drop the current device's cookie too — otherwise the user stays
   // logged in here while every OTHER device gets kicked, which is
   // confusing UX even though it's technically correct.
@@ -334,6 +340,7 @@ authRoutes.post("/logout-all", requireAuth, async (c) => {
     source: "auth",
     feature: "logout-all",
     userId: user.id,
+    revokedAssistantTokens,
   });
 
   return c.json({ ok: true });

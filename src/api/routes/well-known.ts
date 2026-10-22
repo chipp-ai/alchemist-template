@@ -50,6 +50,18 @@ export function buildAuthServerMetadata(base: string) {
   };
 }
 
+/**
+ * The agent-tools bridge version this build serves on /api/mcp
+ * (src/mcp/agent-tools-bridge.ts). The platform's "Connect to AI assistants"
+ * status probe reads it from the protected-resource document: a document
+ * without it comes from an app built before the bridge, whose /api/mcp has
+ * only the example tools, so the platform tells the builder to update the
+ * app instead of showing "Live". RFC 9728 section 2 lets a resource add its
+ * own members, and clients ignore the ones they do not know. Never remove it
+ * while the bridge exists; raise it only for a change the platform must see.
+ */
+export const AGENT_TOOLS_BRIDGE_VERSION = 1;
+
 /** RFC 9728 protected-resource metadata for the /api/mcp resource. */
 export function buildProtectedResourceMetadata(base: string) {
   return {
@@ -57,6 +69,7 @@ export function buildProtectedResourceMetadata(base: string) {
     authorization_servers: [base],
     scopes_supported: [...ALL_MCP_SCOPES],
     bearer_methods_supported: ["header"],
+    chipp_agent_tools: AGENT_TOOLS_BRIDGE_VERSION,
   };
 }
 

@@ -13,6 +13,10 @@
  *   - write tools carry destructiveHint; read tools carry readOnlyHint
  *   - a read-only token (tools:read) gets no write tools
  *   - feature off: 404
+ *   - the discovery document advertises the bridge (the platform's status
+ *     probe reads it)
+ *   - "Log out of all devices" disconnects every assistant: access and
+ *     refresh tokens issued before it stop working
  * Plus pure checks of the JSON Schema to zod conversion.
  */
 
@@ -24,6 +28,8 @@ import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 import { clientService, oauthTokenService } from "@/services/mcp-oauth/service.ts";
 import { mcpApiKeyService } from "@/services/mcp-oauth/api-key.service.ts";
 import { db } from "@/db/client.ts";
+import { createSessionToken } from "@/api/middleware/auth.ts";
+import { AGENT_TOOLS_BRIDGE_VERSION } from "@/api/routes/well-known.ts";
 import { jsonSchemaToZod, objectShape, scopeAllows } from "@/mcp/agent-tools-bridge.ts";
 import { type AgentTool, registerAgentTool } from "@/services/agent-tools/registry.ts";
 
@@ -124,16 +130,19 @@ dbTest("mcp agent tools: feature off is a 404", async () => {
   assertEquals(res.status, 404);
 }, false);
 
-dbTest("mcp agent tools: oauth mode without a token is a 401 with the RFC 9728 challenge", async () => {
-  __setEnvForTest("MCP_AUTH_MODE", "oauth");
-  const { status, res } = await rpc("tools/list", {});
-  assertEquals(status, 401);
-  assert(
-    (res.headers.get("www-authenticate") ?? "").includes(
-      "/.well-known/oauth-protected-resource",
-    ),
-  );
-});
+dbTest(
+  "mcp agent tools: oauth mode without a token is a 401 with the RFC 9728 challenge",
+  async () => {
+    __setEnvForTest("MCP_AUTH_MODE", "oauth");
+    const { status, res } = await rpc("tools/list", {});
+    assertEquals(status, 401);
+    assert(
+      (res.headers.get("www-authenticate") ?? "").includes(
+        "/.well-known/oauth-protected-resource",
+      ),
+    );
+  },
+);
 
 dbTest("mcp agent tools: an anonymous caller in public mode gets no agent tools", async () => {
   assertEquals(await agentToolNames(), []);
@@ -141,34 +150,41 @@ dbTest("mcp agent tools: an anonymous caller in public mode gets no agent tools"
   assertEquals(body.result?.isError ?? true, true);
 });
 
-dbTest("mcp agent tools: an OAuth token gets the agent tools, with confirmation hints on writes", async () => {
-  __setEnvForTest("MCP_AUTH_MODE", "oauth");
-  const a = await createIsolatedUser("owner");
-  try {
-    const token = await oauthToken(a.user.id);
-    assertEquals(await agentToolNames(token), STARTER_ALL);
-    const tools = await listTools(token);
-    const write = tools.find((t) => t.name === "update_my_profile");
-    assertEquals(write.annotations.destructiveHint, true);
-    assertEquals(write.annotations.readOnlyHint, false);
-    const read = tools.find((t) => t.name === "list_team_members");
-    assertEquals(read.annotations.readOnlyHint, true);
-    // The real argument shape is advertised.
-    const getFile = tools.find((t) => t.name === "get_file");
-    assertExists(getFile.inputSchema.properties.fileId);
+dbTest(
+  "mcp agent tools: an OAuth token gets the agent tools, with confirmation hints on writes",
+  async () => {
+    __setEnvForTest("MCP_AUTH_MODE", "oauth");
+    const a = await createIsolatedUser("owner");
+    try {
+      const token = await oauthToken(a.user.id);
+      assertEquals(await agentToolNames(token), STARTER_ALL);
+      const tools = await listTools(token);
+      const write = tools.find((t) => t.name === "update_my_profile");
+      assertEquals(write.annotations.destructiveHint, true);
+      assertEquals(write.annotations.readOnlyHint, false);
+      const read = tools.find((t) => t.name === "list_team_members");
+      assertEquals(read.annotations.readOnlyHint, true);
+      // The real argument shape is advertised.
+      const getFile = tools.find((t) => t.name === "get_file");
+      assertExists(getFile.inputSchema.properties.fileId);
 
-    const { body } = await rpc("tools/call", { name: "get_current_user", arguments: {} }, token);
-    assertEquals(body.result.isError ?? false, false);
-    assertEquals(body.result.structuredContent.user.email, a.user.email);
-  } finally {
-    await a.cleanup();
-  }
-});
+      const { body } = await rpc("tools/call", { name: "get_current_user", arguments: {} }, token);
+      assertEquals(body.result.isError ?? false, false);
+      assertEquals(body.result.structuredContent.user.email, a.user.email);
+    } finally {
+      await a.cleanup();
+    }
+  },
+);
 
 dbTest("mcp agent tools: a read-only token gets no write tools", async () => {
   const a = await createIsolatedUser("owner");
   try {
-    const key = await mcpApiKeyService.mint({ userId: a.user.id, name: "ro", scopes: ["tools:read"] });
+    const key = await mcpApiKeyService.mint({
+      userId: a.user.id,
+      name: "ro",
+      scopes: ["tools:read"],
+    });
     const names = await agentToolNames(key.key);
     assert(names.includes("list_team_members"));
     assert(!names.includes("update_my_profile"));
@@ -180,7 +196,11 @@ dbTest("mcp agent tools: a read-only token gets no write tools", async () => {
 dbTest("mcp agent tools: the role is re-read on every request", async () => {
   const a = await createIsolatedUser("owner");
   try {
-    const key = await mcpApiKeyService.mint({ userId: a.user.id, name: "k", scopes: ["tools:write"] });
+    const key = await mcpApiKeyService.mint({
+      userId: a.user.id,
+      name: "k",
+      scopes: ["tools:write"],
+    });
     const before = await allToolNames(key.key);
     assert(before.includes(ADMIN_TOOL));
     await db.updateTable("users").set({ role: "viewer" }).where("id", "=", a.user.id).execute();
@@ -212,7 +232,11 @@ dbTest("mcp agent tools: another org's file id is not found", async () => {
       .returning(["id"])
       .executeTakeFirstOrThrow();
     const token = await oauthToken(a.user.id);
-    const { body } = await rpc("tools/call", { name: "get_file", arguments: { fileId: file.id } }, token);
+    const { body } = await rpc(
+      "tools/call",
+      { name: "get_file", arguments: { fileId: file.id } },
+      token,
+    );
     assertEquals(body.result.isError, true);
     assert(!JSON.stringify(body).includes("b-secret.pdf"));
   } finally {
@@ -253,6 +277,80 @@ dbTest("mcp agent tools: a portal viewer gets only portal-safe tools", async () 
     await org.cleanup();
   }
 });
+
+dbTest("mcp agent tools: the discovery document advertises the bridge", async () => {
+  for (
+    const path of [
+      "/.well-known/oauth-protected-resource",
+      "/.well-known/oauth-protected-resource/api/mcp",
+    ]
+  ) {
+    const res = await app.request(path);
+    assertEquals(res.status, 200);
+    const doc = await res.json();
+    assertExists(doc.resource);
+    assertEquals(doc.chipp_agent_tools, AGENT_TOOLS_BRIDGE_VERSION);
+  }
+});
+
+dbTest("mcp agent tools: logout-all disconnects every assistant", async () => {
+  __setEnvForTest("MCP_AUTH_MODE", "oauth");
+  const a = await createIsolatedUser("owner");
+  try {
+    const { clientId } = await clientService.register({
+      redirectUris: ["http://localhost:9999/cb"],
+      clientName: "logout-all test",
+    });
+    const pair = await oauthTokenService.issueTokens({
+      userId: a.user.id,
+      clientId,
+      scopes: ["tools:write"],
+    });
+    assertEquals(await agentToolNames(pair.accessToken), STARTER_ALL);
+
+    const session = await createSessionToken(a.user);
+    const out = await app.request("/api/auth/logout-all", {
+      method: "POST",
+      headers: { cookie: `session_id=${session}` },
+    });
+    assertEquals(out.status, 200);
+    await out.body?.cancel();
+
+    assertEquals((await rpc("tools/list", {}, pair.accessToken)).status, 401);
+    assertEquals(await oauthTokenService.refreshTokens(pair.refreshToken, clientId), null);
+  } finally {
+    await a.cleanup();
+  }
+});
+
+dbTest(
+  "mcp agent tools: a token pair issued before the logout-all cutoff is refused even unrevoked",
+  async () => {
+    __setEnvForTest("MCP_AUTH_MODE", "oauth");
+    const a = await createIsolatedUser("owner");
+    try {
+      const { clientId } = await clientService.register({
+        redirectUris: ["http://localhost:9999/cb"],
+        clientName: "cutoff test",
+      });
+      const pair = await oauthTokenService.issueTokens({
+        userId: a.user.id,
+        clientId,
+        scopes: ["tools:write"],
+      });
+      assertEquals(await agentToolNames(pair.accessToken), STARTER_ALL);
+      // The cutoff set by another path, with no revoke of the rows.
+      await db.updateTable("users")
+        .set({ tokenInvalidatedBefore: new Date(Date.now() + 60_000) })
+        .where("id", "=", a.user.id)
+        .execute();
+      assertEquals(await oauthTokenService.lookupByAccessToken(pair.accessToken), null);
+      assertEquals(await oauthTokenService.refreshTokens(pair.refreshToken, clientId), null);
+    } finally {
+      await a.cleanup();
+    }
+  },
+);
 
 // ── Pure ──────────────────────────────────────────────────────────────────
 

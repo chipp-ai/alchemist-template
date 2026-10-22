@@ -32,7 +32,13 @@ time.
   /api/agent-mcp; reads need the `tools:read` scope, writes `tools:write`;
   write tools carry `destructiveHint`. An anonymous caller never sees them.
   So a new agent tool is automatically available to ChatGPT and Claude: do
-  not also register it with registerMcpTool.
+  not also register it with registerMcpTool. The protected-resource
+  document carries `chipp_agent_tools` (`AGENT_TOOLS_BRIDGE_VERSION` in
+  src/api/routes/well-known.ts); the platform's status probe reads it to
+  tell a bridged app from an older one, so never remove it.
+  POST /api/auth/logout-all revokes every MCP OAuth token pair the person
+  holds, and token lookup and refresh refuse a pair issued before the
+  person's logout-all cutoff. mcp_sk_ keys keep their own revoke.
 - src/mcp/registry.ts: registerMcpTool({ name, description, inputSchema,
   handler, price?, requiredProductKey?, creditCost? }). Names are unique.
 - src/mcp/tools/*.ts: one tool per file, registered by a side-effect import
