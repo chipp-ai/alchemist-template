@@ -30,6 +30,7 @@ Moving such an app to Chipp Payments is the owner's decision.
 | Upgrade button | `web/src/components/chipp-payments/UpgradeButton.svelte` |
 | Manage billing link | `web/src/components/chipp-payments/ManageBillingLink.svelte` |
 | Test mode banner (once, in `App.svelte`) | `web/src/components/chipp-payments/TestModeBanner.svelte` |
+| Checkout return wait (`waitForPurchase`) | `web/src/lib/chipp-payments.ts`, logic in `web/src/lib/chipp-payments-return.ts` |
 | Mirror columns | `db/migrations/*_chipp_payments_mirror.sql` |
 
 ## Wiring a paid feature
@@ -41,12 +42,51 @@ Moving such an app to Chipp Payments is the owner's decision.
 4. Gate the feature on the SERVER: `requirePurchase("pro")` or
    `hasActiveEntitlement(orgId, "pro")`. On the client,
    `billingStore.isEntitled("pro")` is UX only.
+5. On the gated page, decide locked or unlocked with `waitForPurchase`.
+   Stripe sends the buyer back before Chipp has always settled the sale, so
+   a single read on the checkout return can still say locked. On a return,
+   `waitForPurchase` pulls the sale and reads again with backoff, so the
+   page unlocks without a reload. Show "Confirming your purchase…" while it
+   waits, never the lock.
+
+```svelte
+<script lang="ts">
+  import { onMount } from "svelte";
+  import { api } from "../lib/api";
+  import { isCheckoutReturn, waitForPurchase } from "../lib/chipp-payments";
+
+  type State = "loading" | "confirming" | "locked" | "pro" | "error";
+  let state = $state<State>(isCheckoutReturn() ? "confirming" : "loading");
+
+  onMount(async () => {
+    try {
+      const unlocked = await waitForPurchase(async () => {
+        try {
+          await api.get("/pro"); // requirePurchase("pro") on the server
+          return true;
+        } catch (err) {
+          if ((err as { status?: number }).status === 402) return false;
+          throw err;
+        }
+      });
+      state = unlocked ? "pro" : "locked";
+    } catch {
+      state = "error";
+    }
+  });
+</script>
+
+{#if state === "confirming"}
+  <p class="text-muted" role="status" data-testid="pro-confirming">Confirming your purchase…</p>
+{/if}
+```
 
 ## Rules
 
 - Never grant access on the checkout return page. Chipp tells the app with
   a signed `entitlement.changed` event, and the return page only calls
-  `/api/chipp-payments/sync` to pull sooner.
+  `/api/chipp-payments/sync` to pull sooner. `waitForPurchase` only waits
+  for the server gate; it never grants access itself.
 - Never send a price, an amount or a full URL to Chipp. Send the product
   key and a relative return path. Chipp builds the origin.
 - Never create or edit products in this app while Chipp Payments is on.

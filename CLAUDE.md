@@ -1351,6 +1351,10 @@ unchanged. Full guide: `docs/agent-guidance/chipp-payments.md`.
   test-mode banner already mounted in `App.svelte`.
 - **Never grant access on the checkout return.** The return only pulls
   sooner (`/api/chipp-payments/sync`).
+- **A gated page decides with `waitForPurchase(check)`** from
+  `web/src/lib/chipp-payments.ts` and shows "Confirming your purchase…"
+  while `isCheckoutReturn()` is true. A single read on the return can run
+  before the sale settles and show the lock until a reload.
 - **Products are managed in Chipp** (the Sell tab). `createProduct` and
   `updateProduct` refuse while Chipp Payments is on.
 - **Test sales run in the preview only.** The published app gets the

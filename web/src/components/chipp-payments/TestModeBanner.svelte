@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import { chippPaymentsStatus, isCheckoutReturn, syncPurchases } from "../../lib/chipp-payments";
+  import { checkoutReturnSync, chippPaymentsStatus, isCheckoutReturn } from "../../lib/chipp-payments";
 
   let testMode = $state(false);
 
@@ -15,7 +15,7 @@
     chippPaymentsStatus().then((s) => {
       testMode = s.active && s.testMode;
       if (s.active && isCheckoutReturn()) {
-        syncPurchases().catch((err) => console.warn("Chipp Payments sync after checkout failed", err));
+        checkoutReturnSync().catch((err) => console.warn("Chipp Payments sync after checkout failed", err));
       }
     });
   });
