@@ -24,8 +24,11 @@ import { z } from "zod";
 import { listMcpTools } from "@/mcp/registry.ts";
 import { formatToolPrice, gatePaidToolCall, mppEnabled, paymentRequiredToolResult } from "@/mcp/mpp.ts";
 import { monetizationDescriptionSuffix, runMonetizationGates } from "@/mcp/gates.ts";
+import type { Context } from "hono";
 import type { McpAuthContext } from "@/api/middleware/mcp-auth.ts";
 import { log } from "@/lib/logger.ts";
+import { BRAND } from "@/config/brand.ts";
+import { type AgentToolCaller, registerBridgedAgentTools } from "@/mcp/agent-tools-bridge.ts";
 
 // Ensure example tools are registered (side-effect import)
 import "@/mcp/tools/echo.ts";
@@ -36,6 +39,11 @@ export interface McpServerContext {
   auth?: McpAuthContext | null;
   /** Public base URL of THIS request (for minting checkout return URLs). */
   baseUrl?: string | null;
+  /**
+   * The signed-in person for the agent-tools bridge (resolveAgentToolCaller),
+   * with the request context the tools run in. Absent: no agent tools.
+   */
+  agentTools?: { caller: AgentToolCaller; c: Context } | null;
 }
 
 export function createMcpServer(context: McpServerContext = {}): McpServer {
@@ -44,15 +52,29 @@ export function createMcpServer(context: McpServerContext = {}): McpServer {
 
   const server = new McpServer(
     {
-      name: "alchemist-mcp-server",
+      // The assistant shows this name, so it is the app's own name.
+      name: BRAND.name,
       version: "0.1.0",
     },
     {
       capabilities: {
         tools: {},
       },
+      instructions: `Tools for ${BRAND.name}. They act as the signed-in person, inside their ` +
+        "organization only, with the same permissions they have in the app. Tools marked " +
+        "destructive change data: ask the person before calling one.",
     },
   );
+
+  // The app's own capabilities for the signed-in person (agent-tools bridge).
+  if (context.agentTools) {
+    registerBridgedAgentTools(
+      server,
+      context.agentTools.caller,
+      context.agentTools.c,
+      new Set(listMcpTools().map((t) => t.name)),
+    );
+  }
 
   // Register all tools from the registry
   for (const tool of listMcpTools()) {

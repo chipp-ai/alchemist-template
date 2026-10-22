@@ -34,6 +34,7 @@ import { createMcpServer } from "@/mcp/server.ts";
 import { getMcpAuth, mcpAuthMiddleware } from "@/api/middleware/mcp-auth.ts";
 import { requestBaseUrl } from "@/api/routes/well-known.ts";
 import { getEnv } from "@/lib/env.ts";
+import { resolveAgentToolCaller } from "@/mcp/agent-tools-bridge.ts";
 
 const mcpRoutes = new Hono();
 
@@ -87,10 +88,15 @@ mcpRoutes.use("/", async (c, next) => {
 
 mcpRoutes.all("/", mcpAuthMiddleware, async (c) => {
   // Fresh server + transport per request (stateless mode). The resolved
-  // caller identity + request base URL feed the monetization gates.
+  // caller identity + request base URL feed the monetization gates. A
+  // signed-in caller also gets the app's agent tools (agent-tools-bridge.ts),
+  // filtered by their CURRENT role, re-read here.
+  const auth = getMcpAuth(c);
+  const caller = await resolveAgentToolCaller(auth);
   const server = createMcpServer({
-    auth: getMcpAuth(c),
+    auth,
     baseUrl: requestBaseUrl(c),
+    agentTools: caller ? { caller, c } : null,
   });
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,

@@ -10,7 +10,8 @@
  * This is NOT the optional public MCP feature (src/mcp/, /api/mcp, gated by
  * ALCHEMIST_FEATURE_MCP). That one serves third-party clients over OAuth.
  * This one serves only the embedded Chipp agent, acting as one signed-in
- * user, and is always on.
+ * user, and is always on. Both serve the same agent tools through
+ * `runAgentTool` (src/mcp/agent-tools-bridge.ts is the public side).
  */
 
 import type { Context } from "hono";
@@ -18,6 +19,8 @@ import type { AuthUser } from "@/api/middleware/auth.ts";
 import { log } from "@/lib/logger.ts";
 import { AppError } from "@/utils/errors.ts";
 import {
+  type AgentTool,
+  type AgentToolContext,
   agentToolsFor,
   findAgentToolFor,
   portalBindingsFor,
@@ -126,27 +129,53 @@ async function callTool(
   const tool = findAgentToolFor(name, ctx.user, bindings);
   if (!tool) return rpcError(id, INVALID_PARAMS, `Unknown tool: ${name}`);
 
+  return rpcResult(
+    id,
+    await runAgentTool(tool, { user: ctx.user, c: ctx.c, portalBindings: bindings }, params.arguments),
+  );
+}
+
+/** The MCP tools/call result of one agent tool run. */
+export interface AgentToolCallResult {
+  [key: string]: unknown;
+  content: Array<{ type: "text"; text: string }>;
+  isError: boolean;
+  structuredContent?: Record<string, unknown>;
+}
+
+/**
+ * Validate the arguments, run the tool, and shape the MCP result. This is the
+ * one dispatch path for every transport that serves agent tools: this file's
+ * /api/agent-mcp server and the public /api/mcp bridge
+ * (src/mcp/agent-tools-bridge.ts). The caller must already have checked that
+ * `ctx.user` may call `tool` (findAgentToolFor or agentToolsFor).
+ */
+export async function runAgentTool(
+  tool: AgentTool,
+  ctx: AgentToolContext,
+  rawArgs: unknown,
+): Promise<AgentToolCallResult> {
   try {
-    const args = validateAgentToolArgs(tool.inputSchema, params.arguments);
-    const result = await tool.handler({ user: ctx.user, c: ctx.c, portalBindings: bindings }, args);
+    const args = validateAgentToolArgs(tool.inputSchema, rawArgs);
+    const result = await tool.handler(ctx, args);
     const structured = result === undefined ? null : JSON.parse(JSON.stringify(result));
-    const response: Record<string, unknown> = {
+    const response: AgentToolCallResult = {
       content: [{ type: "text", text: JSON.stringify(structured) }],
       isError: false,
     };
     if (structured !== null && typeof structured === "object" && !Array.isArray(structured)) {
       response.structuredContent = structured;
     }
-    return rpcResult(id, response);
+    return response;
   } catch (err) {
     if (err instanceof AppError) {
       // A user-facing failure (not found, forbidden, bad input): the model
       // reads it and can recover, so it is a tool result, not a protocol error.
-      return rpcResult(id, {
+      return {
         content: [{ type: "text", text: err.message }],
         isError: true,
         structuredContent: { error: err.message, code: err.code },
-      });
+      };
     }
     log.error("Agent tool failed", {
       source: "agent-tools",
@@ -154,9 +183,9 @@ async function callTool(
       toolName: tool.name,
       userId: ctx.user.id,
     }, err as Error);
-    return rpcResult(id, {
+    return {
       content: [{ type: "text", text: `The ${tool.name} tool failed. Try again later.` }],
       isError: true,
-    });
+    };
   }
 }

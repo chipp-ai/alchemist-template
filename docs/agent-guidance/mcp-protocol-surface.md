@@ -6,9 +6,11 @@ should be usable from Claude, ChatGPT or any MCP client: an MCP server at
 
 ## Turning it on
 
-- On the Alchemist platform: the builder, or the builder's agent, calls the
+- On the Alchemist platform: the builder turns on "Connect to AI assistants"
+  in project settings, or the builder's agent calls the
   `set_project_feature` tool with `feature: "mcp"`, `enabled: true`. The
-  platform sets `ALCHEMIST_FEATURE_MCP=1` in the project env and redeploys.
+  platform sets `ALCHEMIST_FEATURE_MCP=1` and `MCP_AUTH_MODE=oauth` in the
+  project env and redeploys.
 - Local dev and tests: `ALCHEMIST_FEATURE_MCP=1` in `.env`, then restart.
   In a test, call `setFeatureForTests("mcp", true)` (src/lib/features.ts).
 
@@ -23,6 +25,14 @@ time.
   src/services/mcp-protocol/well-known-router.ts: OAuth discovery at the
   origin root (/.well-known), as RFC 8414 and RFC 9728 require. Never edit
   app.ts.
+- src/mcp/agent-tools-bridge.ts: serves the app's agent tools
+  (src/services/agent-tools/, the same tools the embedded Chipp agent calls)
+  on /api/mcp to a signed-in caller (OAuth token or mcp_sk_ key). Same role
+  filter, portal filter, argument check and dispatch (`runAgentTool`) as
+  /api/agent-mcp; reads need the `tools:read` scope, writes `tools:write`;
+  write tools carry `destructiveHint`. An anonymous caller never sees them.
+  So a new agent tool is automatically available to ChatGPT and Claude: do
+  not also register it with registerMcpTool.
 - src/mcp/registry.ts: registerMcpTool({ name, description, inputSchema,
   handler, price?, requiredProductKey?, creditCost? }). Names are unique.
 - src/mcp/tools/*.ts: one tool per file, registered by a side-effect import
@@ -52,5 +62,6 @@ time.
   context.auth.organizationId. Never trust an org or tenant id passed as a
   tool argument (CWE-639). With no auth context, return a "connect with
   OAuth" message.
-- Tests: src/__tests__/routes/mcp-feature.test.ts and
+- Tests: src/__tests__/routes/mcp-feature.test.ts,
+  src/__tests__/routes/mcp-agent-tools.test.ts and
   src/__tests__/routes/builtin-features.test.ts.
