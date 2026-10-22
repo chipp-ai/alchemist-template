@@ -57,23 +57,23 @@ async function checkAuth(): Promise<void> {
   state.isLoading = true;
   state.error = null;
   try {
-    // silent401: we expect this to 401 when no session exists yet (e.g.
-    // the very first page load after a fresh open, or right after the
-    // user lands on /signup). Without the silent flag, the api client
-    // redirects to /login on 401 — which fights with App.svelte's own
-    // routing and bounces a freshly-signed-up user from /signup back to
-    // /login the moment checkAuth runs on mount.
+    // GET /auth/session answers 200 `{ user: null }` for an anonymous
+    // visitor, so a public page logs no console error. (GET /auth/me
+    // answers 401 there, and the browser prints every 4xx fetch.)
+    // silent401 stays for a stale cookie the server still rejects: without
+    // it the api client redirects to /login, which fights App.svelte's own
+    // routing and bounces a freshly-signed-up user from /signup.
     const data = await api.get<{
-      user: User;
+      user: User | null;
       hipaaEnabled?: boolean;
       sessionDurationMs?: number;
-    }>("/auth/me", { silent401: true });
+    }>("/auth/session", { silent401: true });
     state.user = data.user;
     state.hipaaEnabled = data.hipaaEnabled ?? false;
     state.sessionDurationMs = data.sessionDurationMs ?? 30 * 24 * 60 * 60 * 1000;
-    identifyChippInsightsUser(data.user.email);
+    if (data.user) identifyChippInsightsUser(data.user.email);
   } catch (err) {
-    // 401 is expected when not logged in.
+    // 401 is still possible (a rejected cookie) and means "signed out".
     if (err instanceof ApiError && err.status === 401) {
       state.user = null;
     } else {

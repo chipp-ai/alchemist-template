@@ -83,6 +83,15 @@ owner leaving (transfer, then `POST /leave`), owner switching to a new
 email (change email via the verify-first flow below, or invite the new
 address and transfer to it).
 
+## The startup session check never 401s
+
+`checkAuth()` (web/src/stores/auth.svelte.ts) calls `GET /auth/session`,
+not `GET /auth/me`. For an anonymous visitor it answers 200
+`{ user: null }`; signed in, it answers the same body as `/auth/me`. The
+browser prints every 4xx fetch as a console error, so a 401 here logged an
+error on every public page. Keep `/auth/me` at 401 for callers that need a
+hard auth check. Test: `src/__tests__/routes/auth-session.test.ts`.
+
 ## Email change is verify-first
 
 `PATCH /auth/me` does NOT accept `email`. The address changes only via

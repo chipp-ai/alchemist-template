@@ -24,7 +24,14 @@ import { db } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
 import { BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
-import { createSessionToken, createWsToken, getUser, requireAuth } from "@/api/middleware/auth.ts";
+import {
+  type AuthUser,
+  createSessionToken,
+  createWsToken,
+  getUser,
+  requireAuth,
+  resolveOptionalUser,
+} from "@/api/middleware/auth.ts";
 import { getSessionDurationMs, isHipaaEnabled } from "@/utils/session-duration.ts";
 import { sendOtpEmail } from "@/services/email.ts";
 import {
@@ -355,15 +362,41 @@ authRoutes.post("/logout-all", requireAuth, async (c) => {
  * src/utils/session-duration.ts for the rationale.
  */
 authRoutes.get("/me", requireAuth, async (c) => {
-  const user = getUser(c);
+  return c.json(await sessionBody(getUser(c)));
+});
 
+/**
+ * GET /session
+ * The SPA's startup session check. Same body as GET /me for a signed-in
+ * user; for an anonymous visitor it answers 200 `{ user: null }` instead
+ * of a 401. A 401 is the expected answer for a visitor on a public page,
+ * but the browser still prints every 4xx fetch as a console error, so every
+ * public page logged one. GET /me keeps its 401 for callers that need it.
+ *
+ * Read-only and it authorizes nothing: the user comes from the same verify
+ * path `requireAuth` uses (`resolveOptionalUser`).
+ */
+authRoutes.get("/session", async (c) => {
+  const user = await resolveOptionalUser(c);
+  if (!user) {
+    return c.json({
+      user: null,
+      organization: null,
+      hipaaEnabled: isHipaaEnabled(),
+      sessionDurationMs: getSessionDurationMs(),
+    });
+  }
+  return c.json(await sessionBody(user));
+});
+
+async function sessionBody(user: AuthUser) {
   const org = await db
     .selectFrom("organizations")
     .select(["id", "name", "slug", "subscriptionTier"])
     .where("id", "=", user.organizationId)
     .executeTakeFirst();
 
-  return c.json({
+  return {
     user: {
       id: user.id,
       email: user.email,
@@ -373,8 +406,8 @@ authRoutes.get("/me", requireAuth, async (c) => {
     organization: org ?? null,
     hipaaEnabled: isHipaaEnabled(),
     sessionDurationMs: getSessionDurationMs(),
-  });
-});
+  };
+}
 
 /**
  * POST /touch
