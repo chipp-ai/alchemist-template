@@ -190,6 +190,7 @@ when you work in its area, so the hub stays focused.
 | `events.md` | `src/lib/events.ts`, `src/jobs/event-consumer.ts`, `src/api/routes/events/**`, the events migration | Durable events: publish, consumer, inbox, outbound webhooks, retry and replay mechanics |
 | `design.md` | `web/src/design/**`, `app.css`, `*.svelte` | design.json, presets, font catalog, token rules, the /#/design sheet |
 | `frontend-state.md` | `web/src/App.svelte`, `web/src/routes/**`, `web/src/stores/**`, `query.svelte.ts`, `context-switch.svelte.ts` | Page lifetime and tenant context: the Router key, `runContextSwitch()`, store resets, the switcher checklist |
+| `files.md` | `src/services/storage*.ts`, `uploaded-file.service.ts`, `upload-types.ts`, `src/api/routes/files/**`, `web/src/stores/uploads.svelte.ts`, `web/src/components/*Upload*` | Storage service, managed uploads, org-scoped files, presigned URLs, type allowlist, cross-tenant key contract |
 | `ssr.md` | `src/services/ssr/**`, `src/services/storefront/**`, `web/src/islands/**`, `optional-session.ts`, `spa-shell.ts` | Server-rendered public pages: route-module discovery, escaping, JSON-LD, design tokens, `optionalSession`, caching, Svelte islands |
 
 In Claude Code these load when you read a matching file. The Alchemist
@@ -1972,7 +1973,7 @@ curl -sS -b /tmp/jar.txt http://localhost:8000/api/auth/me
 
 The dev login sets a real `session_id` cookie that's identical to
 what `/verify-otp` would set, so once you've POSTed to
-`/api/dev/login` from the page (e.g. via `browser_evaluate`), the SPA
+`/api/dev/login` from the page (e.g. via `browser_execute_js`), the SPA
 behaves as if the user is logged in.
 
 ```ts
@@ -1982,8 +1983,8 @@ behaves as if the user is logged in.
 browser_navigate({ url: "http://localhost:__VITE_PORT__/" })
 
 // Bypass OTP — set the session via dev-login from the page itself.
-browser_evaluate({
-  expression: `(async () => {
+browser_execute_js({
+  code: `(async () => {
     const r = await fetch('/api/dev/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1995,7 +1996,7 @@ browser_evaluate({
 })
 
 browser_navigate({ url: "http://localhost:__VITE_PORT__/dashboard" })  // now authed
-browser_screenshot()  // capture the proof
+browser_take_screenshot()  // capture the proof
 ```
 
 ### Recipe — populate mock domain data for visual verification

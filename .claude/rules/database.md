@@ -4,7 +4,7 @@ description: Database conventions — Postgres extensions, Kysely + CamelCasePlu
 paths:
   - "db/**"
   - "src/db/**"
-  - "src/services/**.service.ts"
+  - "src/services/**/*.service.ts"
 ---
 
 # Database conventions
