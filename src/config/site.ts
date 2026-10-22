@@ -10,7 +10,9 @@
  * `appPath("/#/login")` is "/app/#/login". The landing pages forward old
  * "/#/..." links to "/app/#/...", so links sent before the move keep
  * working. When `landing/dist` is not built, app.ts still serves the SPA at
- * every non-API path, so "/" keeps working too.
+ * every non-API path, so "/" keeps working too. An app-first project sets
+ * `"homepage": "app"` in landing/src/content/site.json and the SPA is served
+ * at "/" as well (src/lib/landing-site.ts).
  *
  * Vite `base` stays "/": the shell's `/assets/...` URLs resolve through the
  * static handler at any prefix. Change `APP_BASE_PATH` here and every link

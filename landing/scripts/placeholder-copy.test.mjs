@@ -53,27 +53,30 @@ test("a project with only base routes is new; one more route means built on", ()
 });
 
 // The real check. A new project may still hold its draft copy; a project
-// with its own app pages may not. Fix it in landing/src/content/site.json
-// (or, for an app-first product, serve the app at "/" and remove landing/).
+// with its own app pages may not. Fix it in landing/src/content/site.json,
+// or, for an app-first product, set "homepage": "app" there: the server
+// then serves the app at "/" and never serves this copy.
 const { site, routeFiles, strayAppFolders } = loadRepoState(REPO_ROOT);
 const builtOn = projectIsBuiltOn(routeFiles) || strayAppFolders.length > 0;
+const appFirst = site.homepage === "app";
 
 test("this repo: build only in web/ or landing/", () => {
   assert.deepEqual(
     strayAppFolders,
     [],
     `These folders are separate front ends that nothing builds or deploys: ${strayAppFolders.join(", ")}. ` +
-      `Build the app in web/ (served at /app, or at "/" for an app-first product) and the marketing pages in landing/.`,
+      `Build the app in web/ (served at /app, and at "/" with "homepage": "app" in site.json) and the marketing pages in landing/.`,
   );
 });
 
-test("this repo: no factory placeholder copy once the project is built on", { skip: !builtOn }, () => {
+test("this repo: no factory placeholder copy once the project is built on", { skip: !builtOn || appFirst }, () => {
   const found = findPlaceholderCopy(site);
   assert.deepEqual(
     found,
     [],
     `landing/src/content/site.json still holds factory placeholder copy, but the app has its own pages. ` +
-      `The landing site at "/" must describe the real product:\n  ${found.join("\n  ")}`,
+      `The landing site at "/" must describe the real product. If the app IS the homepage, set ` +
+      `"homepage": "app" in site.json instead:\n  ${found.join("\n  ")}`,
   );
 });
 

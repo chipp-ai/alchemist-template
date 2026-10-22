@@ -119,9 +119,11 @@ placeholder landing at `/` and put the real homepage at `/app/#/`.
 - **Marketing-first product:** write the real copy in
   `landing/src/content/site.json`. The seeded draft ("X is a web app.",
   "It is for anyone who needs what X does.") must never ship.
-- **App-first product** (the app IS the homepage): serve the app at `/`.
-  Make `landing/` redirect to `/app/`, or remove `landing/` (then `/` serves
-  the SPA, `src/lib/landing-site.ts`).
+- **App-first product** (the app IS the homepage): set `"homepage": "app"`
+  in `landing/src/content/site.json`. The server then serves the SPA at `/`
+  (hash routes work: `/#/settings`), `/app/...` keeps working for old
+  links, and the landing site is not served (`src/lib/landing-site.ts`).
+  Never redirect `/` to `/app/`.
 - **Build only in `web/` or `landing/`.** The image builds and serves only
   those two. A new top-level app folder is never deployed.
 - **Verify with a production build and a screenshot of `/`,** not of
@@ -139,8 +141,8 @@ folder other than `web/` and `landing/` is a separate front end
   `appPath("/#/...")`, never a hard-coded `"/#/..."`. Old `/#/x` links still
   work: the landing pages forward them to `/app/#/x`. `/api/*`, `/health`,
   `/.well-known` and the recipe routers are mounted ahead and are unchanged.
-  If `landing/dist` is not built, `/` serves the SPA as before
-  (`src/lib/landing-site.ts`).
+  If `landing/dist` is not built, or site.json sets `"homepage": "app"`,
+  `/` serves the SPA (`src/lib/landing-site.ts`).
 - **Copy lives in `landing/src/content/site.json`.** Change the words there,
   not in the pages. The JSON-LD is built from the same values, so it always
   matches the visible text.
@@ -211,7 +213,7 @@ when you work in its area, so the hub stays focused.
 | `services-jobs.md` | `src/services/**`, `src/jobs/**` | Service structure, logging contract, `AppError` classes |
 | `events.md` | `src/lib/events.ts`, `src/jobs/event-consumer.ts`, `src/api/routes/events/**`, the events migration | Durable events: publish, consumer, inbox, outbound webhooks, retry and replay mechanics |
 | `design.md` | `web/src/design/**`, `app.css`, `*.svelte` | design.json, presets, font catalog, token rules, the /#/design sheet |
-| `frontend-state.md` | `web/src/App.svelte`, `web/src/routes/**`, `web/src/stores/**`, `query.svelte.ts`, `context-switch.svelte.ts` | Page lifetime and tenant context: the Router key, `runContextSwitch()`, store resets, the switcher checklist |
+| `frontend-state.md` | `web/src/App.svelte`, `web/src/routes.ts`, `web/src/recipe-routes.ts`, `web/src/routes/**`, `web/src/stores/**`, `query.svelte.ts`, `context-switch.svelte.ts` | Page lifetime and tenant context: the Router key, `runContextSwitch()`, store resets, the switcher checklist; public pages via `recipePublicRoutes` |
 | `files.md` | `src/services/storage*.ts`, `uploaded-file.service.ts`, `upload-types.ts`, `src/api/routes/files/**`, `web/src/stores/uploads.svelte.ts`, `web/src/components/*Upload*` | Storage service, managed uploads, org-scoped files, presigned URLs, type allowlist, cross-tenant key contract |
 | `landing.md` | `landing/**`, `src/lib/landing-site.ts` | The homepage at `/`, placeholder copy, app-first products, where front ends may live, brand colors on the landing site |
 | `ssr.md` | `src/services/ssr/**`, `src/services/storefront/**`, `web/src/islands/**`, `optional-session.ts`, `spa-shell.ts` | Server-rendered public pages: route-module discovery, escaping, JSON-LD, design tokens, `optionalSession`, caching, Svelte islands |
@@ -549,6 +551,18 @@ src/__tests__/
 > global handler format them.
 
 ## Frontend Conventions
+
+### App pages go in `web/src/recipe-routes.ts`; public pages too
+
+`web/src/routes.ts` and `Sidebar.svelte` are base-owned. Add a page to
+`recipeRoutes` and its link to `recipeNavItems`. To make a page public (a
+signed-out visitor sees it instead of the login form), list its route key
+in `recipePublicRoutes` (`"/"`, `"/pricing"`, `"/share/:id"`, `"/docs/*"`).
+Never edit `PUBLIC_LITERAL_ROUTES`, `PUBLIC_PREFIX_ROUTES` or
+`isPublicRoute` in `routes.ts`: `src/__tests__/recipe-public-routes.test.ts`
+fails when the base sets change. Public is a UI rule only; every API call
+behind the page still checks access on the server. Full guide:
+`docs/agent-guidance/dashboard-shell.md`.
 
 ### Design system — tokens, motion, dark mode, component kit: read `web/DESIGN.md`
 

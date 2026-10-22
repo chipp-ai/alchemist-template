@@ -6,7 +6,13 @@
 
 import { assert, assertEquals, assertFalse, assertStringIncludes } from "@std/assert";
 import { Hono } from "hono";
-import { isLandingPath, landingSiteBuilt, landingSiteMiddleware } from "@/lib/landing-site.ts";
+import {
+  type HomepageMode,
+  isLandingPath,
+  landingSiteBuilt,
+  landingSiteMiddleware,
+  readHomepageMode,
+} from "@/lib/landing-site.ts";
 import { APP_BASE_PATH } from "@/config/site.ts";
 
 const LANDING_HTML = "<!doctype html><html><body>LANDING HOME</body></html>";
@@ -23,13 +29,13 @@ async function landingBuild(): Promise<string> {
 }
 
 /** The same order app.ts uses: API, SPA prefix, landing site, SPA fallback. */
-function buildApp(landingDir: string): Hono {
+function buildApp(landingDir: string, mode: HomepageMode = "landing"): Hono {
   const app = new Hono();
   app.get("/health", (c) => c.json({ status: "ok" }));
   app.get("/api/thing", (c) => c.json({ ok: true }));
   app.get(APP_BASE_PATH, (c) => c.html(SPA_HTML));
   app.get(`${APP_BASE_PATH}/*`, (c) => c.html(SPA_HTML));
-  const landing = landingSiteMiddleware(landingDir);
+  const landing = landingSiteMiddleware(landingDir, mode);
   if (landing) app.use("/*", landing);
   app.use("/*", async (c, next) => {
     if (c.req.path.startsWith("/api/")) return await next();
@@ -100,4 +106,61 @@ Deno.test("app.ts mounts the SPA prefix and the landing site before the SPA fall
   assert(storefront < prefix, "storefront routes win over the SPA prefix");
   assert(prefix < landing, "the SPA prefix is mounted before the landing site");
   assert(landing < spaFallback, "the landing site is mounted before the SPA fallback");
+});
+
+async function siteJson(content: unknown): Promise<string> {
+  const file = await Deno.makeTempFile({ prefix: "site-json-", suffix: ".json" });
+  await Deno.writeTextFile(file, typeof content === "string" ? content : JSON.stringify(content));
+  return file;
+}
+
+Deno.test("readHomepageMode: \"app\" is app-first; missing, unknown or unreadable is the landing default", async () => {
+  const files = [
+    await siteJson({ name: "Acme", homepage: "app" }),
+    await siteJson({ name: "Acme" }),
+    await siteJson({ name: "Acme", homepage: "landing" }),
+    await siteJson({ name: "Acme", homepage: "App" }),
+    await siteJson("not json"),
+  ];
+  try {
+    assertEquals(readHomepageMode(files[0]), "app");
+    assertEquals(readHomepageMode(files[1]), "landing");
+    assertEquals(readHomepageMode(files[2]), "landing");
+    assertEquals(readHomepageMode(files[3]), "landing");
+    assertEquals(readHomepageMode(files[4]), "landing");
+    assertEquals(readHomepageMode("/no/such/site.json"), "landing");
+  } finally {
+    for (const f of files) await Deno.remove(f);
+  }
+});
+
+Deno.test("app-first mode: / serves the SPA, /app still works, the landing site is not served", async () => {
+  const dir = await landingBuild();
+  try {
+    assertEquals(landingSiteMiddleware(dir, "app"), null);
+    const app = buildApp(dir, "app");
+    assertEquals(await (await app.request("/")).text(), SPA_HTML);
+    assertEquals(await (await app.request("/app/")).text(), SPA_HTML);
+    assertEquals(await (await app.request("/app")).text(), SPA_HTML);
+    // The marketing pages are gone with the landing site.
+    assertEquals(await (await app.request("/pricing/")).text(), SPA_HTML);
+    assertEquals((await app.request("/health")).status, 200);
+    assertEquals((await app.request("/api/missing")).status, 404);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("default mode with the same build: / is the landing site", async () => {
+  const dir = await landingBuild();
+  try {
+    const app = buildApp(dir, "landing");
+    assertStringIncludes(await (await app.request("/")).text(), "LANDING HOME");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("the template ships in landing mode", () => {
+  assertEquals(readHomepageMode(new URL("../../../landing/src/content/site.json", import.meta.url).pathname), "landing");
 });

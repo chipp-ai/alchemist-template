@@ -21,9 +21,16 @@ homepage at `/app/#/`, so the product looked unfinished to every visitor.
   the browser, so there is nothing to install.", "X is made by the team
   that runs it." and the template's "Your product" copy must never ship.
 - **App-first product** (a calculator, an editor, a board: the app IS the
-  homepage). Serve the app at `/`. Either make the landing index redirect to
-  `/app/`, or remove `landing/`; with no `landing/dist`, `/` serves the SPA
-  (`src/lib/landing-site.ts`).
+  homepage). Set `"homepage": "app"` in `landing/src/content/site.json`.
+  The server reads it at boot (`readHomepageMode` in
+  `src/lib/landing-site.ts`), does not mount the landing site, and serves
+  the SPA shell at `/`: the address bar shows `/` and `/#/...` hash routes
+  work. `/app/...` keeps working for old links and `appPath()` links. Do
+  not redirect `/` to `/app/`, and do not hand-edit app.ts for this. A
+  missing field, or any other value, is the default landing mode. If the
+  app's home page needs no sign-in, also list `"/"` in `recipePublicRoutes`
+  (`web/src/recipe-routes.ts`), or a signed-out visitor lands on the login
+  form.
 
 ## Build only in `web/` or `landing/`
 
@@ -49,7 +56,8 @@ and in CI) fails when:
   end.
 
 A brand-new project passes: its draft copy is allowed until it has its own
-pages. If the template gains a route, update `BASE_ROUTE_FILES`; the test
+pages. An app-first project (`"homepage": "app"`) skips the copy check,
+because the landing site is not served. If the template gains a route, update `BASE_ROUTE_FILES`; the test
 fails in the template repo until you do.
 
 ## Brand colors

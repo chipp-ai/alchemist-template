@@ -29,6 +29,12 @@ export interface SitePlan {
 }
 
 export interface SiteContent {
+  /**
+   * What the deployed root URL "/" serves. "landing" (the default) serves
+   * this site; "app" serves the app there instead (an app-first product),
+   * and this site is not served at all. Read by src/lib/landing-site.ts.
+   */
+  homepage?: "landing" | "app";
   name: string;
   /** The public origin, e.g. "https://acme.on.chipp.ai". "" when unknown. */
   url: string;
