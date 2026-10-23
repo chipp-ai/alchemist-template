@@ -186,9 +186,5 @@ export function scriptJson(value: unknown): string {
   return JSON.stringify(value).replace(/</g, "\\u003c");
 }
 
-/** The pages in the nav and the sitemap. */
-export const PAGES: { path: string; label: string }[] = [
-  { path: "/", label: "Home" },
-  { path: "/pricing/", label: "Pricing" },
-  { path: "/about/", label: "About" },
-];
+/** The pages in the nav and the sitemap (lib/pages.ts). */
+export { PAGES, sitemapPages } from "./pages";

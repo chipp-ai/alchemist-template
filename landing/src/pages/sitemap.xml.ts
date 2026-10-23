@@ -1,6 +1,8 @@
 // /sitemap.xml with lastmod = the site's Updated date. Sitemap URLs must be
 // absolute, so the file lists pages only when site.json has a `url`.
-import { PAGES, absoluteUrl, site } from "../lib/site";
+// In app-first mode ("homepage": "app") the marketing pages are not served,
+// so only "/" is listed (sitemapPages in lib/pages.ts).
+import { absoluteUrl, site, sitemapPages } from "../lib/site";
 
 function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -8,7 +10,7 @@ function escapeXml(s: string): string {
 
 export function GET(): Response {
   const urls = site.url
-    ? PAGES.map((p) =>
+    ? sitemapPages(site.homepage).map((p) =>
       `  <url>\n    <loc>${escapeXml(absoluteUrl(p.path))}</loc>\n    <lastmod>${site.updatedAt}</lastmod>\n  </url>`
     ).join("\n")
     : "";

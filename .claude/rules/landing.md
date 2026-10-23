@@ -23,9 +23,13 @@ homepage at `/app/#/`, so the product looked unfinished to every visitor.
 - **App-first product** (a calculator, an editor, a board: the app IS the
   homepage). Set `"homepage": "app"` in `landing/src/content/site.json`.
   The server reads it at boot (`readHomepageMode` in
-  `src/lib/landing-site.ts`), does not mount the landing site, and serves
-  the SPA shell at `/`: the address bar shows `/` and `/#/...` hash routes
-  work. `/app/...` keeps working for old links and `appPath()` links. Do
+  `src/lib/landing-site.ts`) and serves the SPA shell at `/`: the address
+  bar shows `/` and `/#/...` hash routes work. The landing pages (`/about`,
+  `/pricing`, any HTML page in landing/dist) answer a 302 redirect to `/`.
+  `llms.txt`, `llms-full.txt`, `robots.txt`, `sitemap.xml`, the favicon and
+  other static files are still served from landing/ (the Builder's SEO
+  settings write `landing/public/llms.txt`), and the sitemap lists only
+  `/`. Keep those files in landing/; never move them into web/. `/app/...` keeps working for old links and `appPath()` links. Do
   not redirect `/` to `/app/`, and do not hand-edit app.ts for this. A
   missing field, or any other value, is the default landing mode. If the
   app's home page needs no sign-in, also list `"/"` in `recipePublicRoutes`

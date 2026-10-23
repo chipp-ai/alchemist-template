@@ -12,7 +12,9 @@ import {
   landingSiteBuilt,
   landingSiteMiddleware,
   readHomepageMode,
+  scanLandingDist,
 } from "@/lib/landing-site.ts";
+import { PAGES, sitemapPages } from "../../../landing/src/lib/pages.ts";
 import { APP_BASE_PATH } from "@/config/site.ts";
 
 const LANDING_HTML = "<!doctype html><html><body>LANDING HOME</body></html>";
@@ -24,7 +26,18 @@ async function landingBuild(): Promise<string> {
   await Deno.writeTextFile(`${dir}/index.html`, LANDING_HTML);
   await Deno.mkdir(`${dir}/pricing`);
   await Deno.writeTextFile(`${dir}/pricing/index.html`, PRICING_HTML);
+  await Deno.mkdir(`${dir}/about`);
+  await Deno.writeTextFile(
+    `${dir}/about/index.html`,
+    "<!doctype html><html><body>LANDING ABOUT</body></html>",
+  );
   await Deno.writeTextFile(`${dir}/robots.txt`, "User-agent: *\nAllow: /\n");
+  await Deno.writeTextFile(`${dir}/sitemap.xml`, '<?xml version="1.0"?><urlset></urlset>\n');
+  await Deno.writeTextFile(`${dir}/llms.txt`, "# Acme\n\n> LLMS SUMMARY\n");
+  await Deno.writeTextFile(`${dir}/llms-full.txt`, "# Acme\n\nLLMS FULL\n");
+  await Deno.writeTextFile(`${dir}/favicon.svg`, "<svg>FAVICON</svg>");
+  await Deno.mkdir(`${dir}/_astro`);
+  await Deno.writeTextFile(`${dir}/_astro/site.css`, "body{color:red}");
   return dir;
 }
 
@@ -114,7 +127,7 @@ async function siteJson(content: unknown): Promise<string> {
   return file;
 }
 
-Deno.test("readHomepageMode: \"app\" is app-first; missing, unknown or unreadable is the landing default", async () => {
+Deno.test('readHomepageMode: "app" is app-first; missing, unknown or unreadable is the landing default', async () => {
   const files = [
     await siteJson({ name: "Acme", homepage: "app" }),
     await siteJson({ name: "Acme" }),
@@ -134,21 +147,130 @@ Deno.test("readHomepageMode: \"app\" is app-first; missing, unknown or unreadabl
   }
 });
 
-Deno.test("app-first mode: / serves the SPA, /app still works, the landing site is not served", async () => {
+Deno.test("app-first mode: / serves the SPA, /app still works, the landing pages are not served", async () => {
   const dir = await landingBuild();
   try {
-    assertEquals(landingSiteMiddleware(dir, "app"), null);
     const app = buildApp(dir, "app");
     assertEquals(await (await app.request("/")).text(), SPA_HTML);
     assertEquals(await (await app.request("/app/")).text(), SPA_HTML);
     assertEquals(await (await app.request("/app")).text(), SPA_HTML);
-    // The marketing pages are gone with the landing site.
-    assertEquals(await (await app.request("/pricing/")).text(), SPA_HTML);
+    // The marketing pages redirect to "/" (302: the mode can flip back).
+    for (const path of ["/pricing", "/pricing/", "/pricing/index.html", "/about", "/about/"]) {
+      const res = await app.request(path);
+      assertEquals(res.status, 302, path);
+      assertEquals(res.headers.get("location"), "/", path);
+    }
+    // /index.html stays the SPA shell, unknown paths still fall through to the SPA.
+    assertEquals(await (await app.request("/index.html")).text(), SPA_HTML);
+    assertEquals(await (await app.request("/settings/billing")).text(), SPA_HTML);
     assertEquals((await app.request("/health")).status, 200);
+    assertEquals((await (await app.request("/api/thing")).json()).ok, true);
     assertEquals((await app.request("/api/missing")).status, 404);
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+Deno.test("app-first mode still serves llms.txt, robots.txt, sitemap.xml, the favicon and assets from landing/dist", async () => {
+  const dir = await landingBuild();
+  try {
+    const app = buildApp(dir, "app");
+    const cases: [string, string, string][] = [
+      ["/llms.txt", "LLMS SUMMARY", "text/plain"],
+      ["/llms-full.txt", "LLMS FULL", "text/plain"],
+      ["/robots.txt", "User-agent", "text/plain"],
+      ["/sitemap.xml", "<urlset>", "xml"],
+      ["/favicon.svg", "FAVICON", "image/svg"],
+      ["/_astro/site.css", "color:red", "text/css"],
+    ];
+    for (const [path, body, type] of cases) {
+      const res = await app.request(path);
+      assertEquals(res.status, 200, path);
+      assertStringIncludes(res.headers.get("content-type") ?? "", type, path);
+      assertStringIncludes(await res.text(), body, path);
+    }
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("landing mode serves the same machine-readable files and the pages", async () => {
+  const dir = await landingBuild();
+  try {
+    const app = buildApp(dir, "landing");
+    for (
+      const [path, body] of [
+        ["/llms.txt", "LLMS SUMMARY"],
+        ["/llms-full.txt", "LLMS FULL"],
+        ["/sitemap.xml", "<urlset>"],
+        ["/favicon.svg", "FAVICON"],
+        ["/about/", "LANDING ABOUT"],
+      ]
+    ) {
+      const res = await app.request(path);
+      assertEquals(res.status, 200, path);
+      assertStringIncludes(await res.text(), body, path);
+    }
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("app-first mode without a landing build: everything is the SPA", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "landing-missing-" });
+  try {
+    assertEquals(landingSiteMiddleware(dir, "app"), null);
+    const app = buildApp(dir, "app");
+    assertEquals(await (await app.request("/")).text(), SPA_HTML);
+    assertEquals(await (await app.request("/pricing/")).text(), SPA_HTML);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("scanLandingDist splits files from pages in every path form", async () => {
+  const dir = await landingBuild();
+  try {
+    await Deno.writeTextFile(`${dir}/404.html`, "<!doctype html>NOT FOUND");
+    const { files, pages } = scanLandingDist(dir);
+    for (
+      const f of [
+        "/robots.txt",
+        "/sitemap.xml",
+        "/llms.txt",
+        "/llms-full.txt",
+        "/favicon.svg",
+        "/_astro/site.css",
+      ]
+    ) {
+      assert(files.has(f), f);
+    }
+    for (
+      const p of [
+        "/",
+        "/index.html",
+        "/pricing",
+        "/pricing/",
+        "/pricing/index.html",
+        "/about",
+        "/404",
+        "/404.html",
+      ]
+    ) {
+      assert(pages.has(p), p);
+    }
+    assertFalse(files.has("/index.html"));
+    assertFalse(pages.has("/llms.txt"));
+    assertEquals(scanLandingDist("/no/such/dir").files.size, 0);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("the sitemap lists every page in landing mode and only / in app-first mode", () => {
+  assertEquals(sitemapPages(undefined).map((p) => p.path), PAGES.map((p) => p.path));
+  assertEquals(sitemapPages("landing").map((p) => p.path), ["/", "/pricing/", "/about/"]);
+  assertEquals(sitemapPages("app").map((p) => p.path), ["/"]);
 });
 
 Deno.test("default mode with the same build: / is the landing site", async () => {
@@ -162,5 +284,8 @@ Deno.test("default mode with the same build: / is the landing site", async () =>
 });
 
 Deno.test("the template ships in landing mode", () => {
-  assertEquals(readHomepageMode(new URL("../../../landing/src/content/site.json", import.meta.url).pathname), "landing");
+  assertEquals(
+    readHomepageMode(new URL("../../../landing/src/content/site.json", import.meta.url).pathname),
+    "landing",
+  );
 });

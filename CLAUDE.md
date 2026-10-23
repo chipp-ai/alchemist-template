@@ -122,8 +122,11 @@ placeholder landing at `/` and put the real homepage at `/app/#/`.
 - **App-first product** (the app IS the homepage): set `"homepage": "app"`
   in `landing/src/content/site.json`. The server then serves the SPA at `/`
   (hash routes work: `/#/settings`), `/app/...` keeps working for old
-  links, and the landing site is not served (`src/lib/landing-site.ts`).
-  Never redirect `/` to `/app/`.
+  links, and the landing pages are not served: `/about`, `/pricing` and
+  other landing pages redirect to `/` (`src/lib/landing-site.ts`).
+  `llms.txt`, `llms-full.txt`, `robots.txt`, `sitemap.xml`, the favicon and
+  other static files are still served from `landing/`, so keep them there;
+  the sitemap then lists only `/`. Never redirect `/` to `/app/`.
 - **Build only in `web/` or `landing/`.** The image builds and serves only
   those two. A new top-level app folder is never deployed.
 - **Verify with a production build and a screenshot of `/`,** not of
@@ -142,7 +145,9 @@ folder other than `web/` and `landing/` is a separate front end
   work: the landing pages forward them to `/app/#/x`. `/api/*`, `/health`,
   `/.well-known` and the recipe routers are mounted ahead and are unchanged.
   If `landing/dist` is not built, or site.json sets `"homepage": "app"`,
-  `/` serves the SPA (`src/lib/landing-site.ts`).
+  `/` serves the SPA (`src/lib/landing-site.ts`). App-first mode still
+  serves landing/dist's non-HTML files (llms.txt, robots.txt, sitemap.xml,
+  favicon, `/_astro/*`) and redirects its HTML pages to `/`.
 - **Copy lives in `landing/src/content/site.json`.** Change the words there,
   not in the pages. The JSON-LD is built from the same values, so it always
   matches the visible text.
