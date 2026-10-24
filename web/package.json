@@ -7,7 +7,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "svelte": "^5.0.0",
+    "svelte": "^5.55.7",
     "svelte-spa-router": "^4.0.0"
   },
   "devDependencies": {
