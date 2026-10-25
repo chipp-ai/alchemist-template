@@ -258,28 +258,10 @@ fi
 
 # ── Run migrations ──
 #
-# Refresh the migration runner from the template before invoking
-# migrate. Customer projects import the runner via raw.githubusercontent
-# (https://.../alchemist-template/staging/db/_runner.ts) so template
-# fixes propagate without per-project commits — but the customer
-# project's deno.lock pins the runner's content hash. Without an
-# explicit reload, a template push that changes _runner.ts triggers
-# Deno's integrity check on every customer's next dev.sh:
-#   "Integrity check failed for remote specifier. The source code is
-#   invalid, as it does not match the expected hash in the lock file."
-# The reload below refetches AND rewrites the lock entry in one step,
-# so the customer never sees that error — they just get the latest
-# runner transparently. Cost: ~200ms per dev.sh (the URL has a short
-# cache TTL anyway).
+# db/migrate.ts imports the LOCAL db/_runner.ts, so there is no remote
+# runner to refresh and no lock pin to heal.
 
-RUNNER_URL="https://raw.githubusercontent.com/chipp-ai/alchemist-template/staging/db/_runner.ts"
-echo "Refreshing migration runner from template..."
 cd "$PROJECT_ROOT"
-# --reload alone does NOT heal a stale pin (Deno raises the integrity error
-# against it first), so drop the one _runner.ts pin, then cache. Same fix as
-# alchemist-infra/customer-build/Dockerfile.template and the CI step.
-deno eval 'const p="deno.lock";try{const l=JSON.parse(Deno.readTextFileSync(p));let ch=false;if(l.remote){for(const k of Object.keys(l.remote)){if(k.endsWith("/db/_runner.ts")){delete l.remote[k];ch=true;}}if(ch)Deno.writeTextFileSync(p,JSON.stringify(l,null,2)+"\n");}}catch(_){}'
-deno cache db/migrate.ts > /dev/null 2>&1 || true
 
 echo "Running database migrations..."
 deno task db:migrate

@@ -1,18 +1,18 @@
 /**
  * Database migration entry point.
  *
- * This file is intentionally TINY. The actual runner lives at:
+ * This file is intentionally TINY. The runner is the LOCAL sibling file
+ * `./_runner.ts`, committed in this repo.
  *
- *   https://raw.githubusercontent.com/chipp-ai/alchemist-template/staging/db/_runner.ts
- *
- * Customer projects scaffolded from this template get this file
- * verbatim. Fixes to the runner (bugs, new SQL constructs, lock
- * behavior, ledger schema, etc.) are made to `_runner.ts` on the
- * template's `staging` branch and propagate to every customer
- * automatically — `deno cache --reload` on local dev, or via a
- * customer-runtime base-image rebuild for prod pods (the image's
- * /opt/deno-cache-seed layer is regenerated on each release and
- * pre-caches this exact URL; see customer-runtime/precache/).
+ * It must stay a local import. Until 2026-10-25 this file imported the
+ * runner from the template's MUTABLE `staging` branch on
+ * raw.githubusercontent.com, while each project's deno.lock pinned that
+ * module's content hash. Every template change to the runner made the pin
+ * stale, and a pod built against the old lock crash-looped at start with
+ * "Integrity check failed for remote specifier" (six apps down on
+ * 2026-10-25). A pod must never fetch code at start, and a template change
+ * must never break a deployed app. A runner fix now reaches a project as a
+ * normal commit to its own db/_runner.ts.
  *
  * The runner reads SQL files from `db/migrations/` relative to THIS
  * file's location (via `import.meta.url`). Customers add their own
@@ -24,7 +24,7 @@
  *   deno task db:migrate
  */
 
-import { runMigrations } from "https://raw.githubusercontent.com/chipp-ai/alchemist-template/staging/db/_runner.ts";
+import { runMigrations } from "./_runner.ts";
 
 try {
   await runMigrations({
