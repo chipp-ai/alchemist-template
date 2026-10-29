@@ -22,12 +22,31 @@ In the Builder it runs as a second preview app named "Landing site".
 - **Words:** `src/content/site.json`. Every page and the JSON-LD read it.
 - **Pages:** `src/pages/` (index, pricing, about, sitemap.xml, robots.txt).
 - **Layout:** `src/layouts/Layout.astro` (header, nav, main, footer, dates, JSON-LD).
-- **Colors and fonts:** read from `../web/src/design/design.json` at build time.
-  Label and link colors come from `bestTextOn` / `contrastRatio` in
-  `../web/src/design/tokens.ts`, so a light primary gets a dark label.
+- **Look:** colors, fonts, corners and shadows are read from
+  `../web/src/design/design.json` at build time, so the site matches the app.
+  Label, link and muted colors come from `bestTextOn` / `contrastRatio` /
+  `tintForContrast` in `../web/src/design/tokens.ts`, so text always reads.
+  `src/styles/theme.css` overrides any token (the build fills it from the
+  approved plan's prototype styles).
+- **Product picture:** `productShot` in site.json points at a screenshot in
+  `public/` (for example `/product.png`). Without one the home page draws a
+  product sketch from the features.
 
-To add a page: create `src/pages/<name>.astro` with `Layout`, an H1, then a
-question as the first H2, then a short answer. Add it to `PAGES` in
+## The home page
+
+A hero (`hero.headline` is the H1, `hero.subhead` the plain definition under
+it, the main and a second call to action), the product picture, features,
+who it is for (`audience`), how it works (`steps`), pricing when there are
+plans, the FAQ, and a closing call to action. The reader's main question
+(`mainQuestion` and `itDependsAnswer`) is the first FAQ entry.
+
+`"starter": true` marks the platform's first draft. The build may rewrite a
+starter landing from the approved plan. When a person asks for any change to
+the landing copy, set it to `false` so nothing rewrites their words.
+
+To add a page: create `src/pages/<name>.astro` with `Layout`, an H1, a plain
+definition paragraph under it, and at least one question heading with a
+short answer. Add it to `PAGES` in
 `src/lib/site.ts` so it is in the nav and the sitemap.
 
 ## The AEO rules
@@ -41,10 +60,13 @@ image. A page that breaks a rule fails the build.
    tree, not the pixels.
 2. **Key product info in static HTML.** Facts go in the page's HTML, not in
    client JavaScript, tabs that load later, or images.
-3. **The reader's main question is the first H2 under the H1.** Write it the
-   way a person would ask it ("Is Acme right for my team?").
-4. **An honest "it depends" answer in 100 words or less** right under that
-   question. Say when the product is a good fit and when it is not.
+3. **A plain definition right under the H1**, 60 words or less. The H1 can be
+   a sharp headline; the paragraph under it says what the product is.
+4. **The reader's questions, answered in 100 words or less.** Every page has
+   at least one H2 or H3 that is a question, written the way a person asks
+   it, with the answer in the paragraph under it. On the home page this is
+   the FAQ, which opens with an honest "it depends" answer to the main
+   question: say when the product is a good fit and when it is not.
 5. **A clear definition, not a slogan.** Say what it is, who it is for, and
    what it does, in plain words (`definition` in site.json).
 6. **Testimonials as plain text.** Quote, name, role. Never an image of a

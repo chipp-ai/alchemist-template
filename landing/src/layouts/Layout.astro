@@ -3,8 +3,13 @@
  * The one layout every landing page uses: header with nav, main, footer.
  * It prints the visible Published and Updated dates and the JSON-LD.
  * See landing/README.md for the AEO rules.
+ *
+ * The look comes from ../web/src/design/design.json (loadBrand), so the
+ * landing site matches the app. src/styles/theme.css loads after these
+ * styles and may override any token.
  */
 import { PAGES, absoluteUrl, formatDate, jsonLd, loadBrand, scriptJson, site, type SiteFaq } from "../lib/site";
+import "../styles/theme.css";
 
 interface Props {
   /** The <title>. */
@@ -19,13 +24,16 @@ interface Props {
 
 const { title, description, path, faq } = Astro.props;
 const brand = loadBrand();
+const weights = [...new Set([brand.bodyWeight, 600, brand.headingWeight, 700])].sort((a, b) => a - b).join(";");
 const families = [...new Set([brand.headingFont, brand.bodyFont])]
-  .map((f) => `family=${encodeURIComponent(f).replace(/%20/g, "+")}:wght@${brand.bodyWeight};${brand.headingWeight}`)
+  .map((f) => `family=${encodeURIComponent(f).replace(/%20/g, "+")}:wght@${weights}`)
   .join("&");
 const fontsHref = `https://fonts.googleapis.com/css2?${families}&display=swap`;
 const ld = scriptJson(jsonLd({ path, title, description, faq }));
 const canonical = site.url ? absoluteUrl(path) : null;
+const ogImage = site.productShot?.src ? absoluteUrl(site.productShot.src) : null;
 const year = site.updatedAt.slice(0, 4);
+const navPages = PAGES.filter((p) => p.path !== "/");
 ---
 <!doctype html>
 <html lang="en">
@@ -38,8 +46,10 @@ const year = site.updatedAt.slice(0, 4);
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    {ogImage && <meta property="og:image" content={ogImage} />}
     <meta property="article:published_time" content={site.publishedAt} />
     <meta property="article:modified_time" content={site.updatedAt} />
+    <meta name="theme-color" content={brand.background} />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href={fontsHref} />
@@ -61,80 +71,183 @@ const year = site.updatedAt.slice(0, 4);
         bg: brand.background,
         surface: brand.surface,
         text: brand.text,
-        headingFont: `"${brand.headingFont}", system-ui, sans-serif`,
-        bodyFont: `"${brand.bodyFont}", system-ui, sans-serif`,
+        muted: brand.muted,
+        tint: brand.tint,
+        line: brand.line,
+        shadowSm: brand.shadowSm,
+        shadowMd: brand.shadowMd,
+        shadowLg: brand.shadowLg,
+        borderWidth: `${brand.borderWidth}px`,
+        headingFont: `"${brand.headingFont}", ui-sans-serif, system-ui, sans-serif`,
+        bodyFont: `"${brand.bodyFont}", ui-sans-serif, system-ui, sans-serif`,
         headingWeight: brand.headingWeight,
+        headingTracking: `${brand.headingTracking}em`,
+        headingCase: brand.headingCase === "upper" ? "uppercase" : "none",
         bodyWeight: brand.bodyWeight,
         radius: brand.radius,
       }}
       is:global
     >
       *, *::before, *::after { box-sizing: border-box; }
+      html { -webkit-text-size-adjust: 100%; }
       body {
         margin: 0;
         background: var(--bg);
         color: var(--text);
         font-family: var(--bodyFont);
         font-weight: var(--bodyWeight);
+        font-size: 1.0625rem;
         line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
       }
-      h1, h2, h3 { font-family: var(--headingFont); font-weight: var(--headingWeight); line-height: 1.2; }
-      h1 { font-size: clamp(2rem, 5vw, 3rem); margin: 0 0 0.5rem; }
-      h2 { font-size: 1.5rem; margin: 2.5rem 0 0.75rem; }
-      h3 { font-size: 1.125rem; margin: 1.25rem 0 0.25rem; }
-      a { color: var(--link); }
-      a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-      .wrap { max-width: 56rem; margin: 0 auto; padding: 0 1.25rem; }
-      .site-header { background: var(--surface); border-bottom: 1px solid rgba(0, 0, 0, 0.08); }
-      .site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 1rem; padding-bottom: 1rem; flex-wrap: wrap; }
-      .brand { font-family: var(--headingFont); font-weight: var(--headingWeight); color: var(--text); text-decoration: none; font-size: 1.125rem; }
-      .site-header ul { display: flex; gap: 1.25rem; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
-      .site-header a[aria-current="page"] { font-weight: 700; }
-      main { padding: 3rem 0; }
+      h1, h2, h3 {
+        font-family: var(--headingFont);
+        font-weight: var(--headingWeight);
+        letter-spacing: var(--headingTracking);
+        text-transform: var(--headingCase);
+        line-height: 1.15;
+        margin: 0;
+        text-wrap: balance;
+      }
+      h1 { font-size: clamp(2.25rem, 5.2vw, 3.75rem); line-height: 1.05; }
+      h2 { font-size: clamp(1.625rem, 3vw, 2.25rem); }
+      h3 { font-size: 1.125rem; line-height: 1.3; }
+      p { margin: 0; text-wrap: pretty; }
+      a { color: var(--link); text-underline-offset: 0.18em; }
+      a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+      img { max-width: 100%; height: auto; display: block; }
+      ul { margin: 0; padding: 0; list-style: none; }
+      .wrap { width: 100%; max-width: 72rem; margin: 0 auto; padding: 0 1.25rem; }
+      .narrow { max-width: 46rem; }
+      .muted { color: var(--muted); }
+      .skip { position: absolute; left: -999px; top: 0; }
+      .skip:focus { left: 1rem; top: 1rem; z-index: 10; background: var(--surface); padding: 0.5rem 0.75rem; }
+
+      /* Header */
+      .site-header {
+        position: sticky; top: 0; z-index: 5;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: saturate(1.4) blur(10px);
+        border-bottom: 1px solid var(--line);
+      }
+      .site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4rem; }
+      .brand {
+        display: inline-flex; align-items: center; gap: 0.6rem;
+        font-family: var(--headingFont); font-weight: var(--headingWeight);
+        letter-spacing: var(--headingTracking);
+        color: var(--text); text-decoration: none; font-size: 1.125rem;
+      }
+      .brand-mark {
+        width: 1.75rem; height: 1.75rem; border-radius: min(var(--radius), 8px);
+        background: var(--primary); color: var(--primaryContrast);
+        display: inline-grid; place-items: center; font-size: 0.95rem;
+      }
+      .site-nav ul { display: flex; align-items: center; gap: 0.25rem 1.25rem; flex-wrap: wrap; justify-content: flex-end; }
+      .site-nav a { color: var(--text); text-decoration: none; font-size: 0.95rem; }
+      .site-nav a:hover { color: var(--link); }
+      .site-nav a[aria-current="page"] { color: var(--link); font-weight: 600; }
+
+      /* Buttons */
       .button {
-        display: inline-block;
-        background: var(--primary);
-        color: var(--primaryContrast);
-        padding: 0.75rem 1.25rem;
+        display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+        min-height: 2.75rem; padding: 0.7rem 1.2rem;
         border-radius: var(--radius);
-        text-decoration: none;
-        font-weight: 600;
+        border: var(--borderWidth) solid var(--primary);
+        background: var(--primary); color: var(--primaryContrast);
+        font-weight: 600; font-size: 1rem; text-decoration: none; line-height: 1.2;
+        box-shadow: var(--shadowSm);
+        transition: transform 120ms ease, box-shadow 120ms ease;
       }
-      .card { background: var(--surface); border-radius: var(--radius); padding: 1.25rem; border: 1px solid rgba(0, 0, 0, 0.08); }
-      .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); padding: 0; list-style: none; }
-      .as-of { font-size: 0.875rem; opacity: 0.8; }
-      .page-dates { margin-top: 3rem; font-size: 0.875rem; opacity: 0.8; }
-      .site-footer { border-top: 1px solid rgba(0, 0, 0, 0.08); padding: 2rem 0; font-size: 0.875rem; }
+      .button:hover { transform: translateY(-1px); box-shadow: var(--shadowMd); }
+      .button.secondary { background: transparent; color: var(--text); border-color: var(--line); box-shadow: none; }
+      .button.secondary:hover { border-color: var(--text); }
+      .site-nav .button { min-height: 2.25rem; padding: 0.45rem 0.9rem; font-size: 0.9rem; color: var(--primaryContrast); }
+      .site-nav .button:hover { color: var(--primaryContrast); }
+
+      /* Sections */
+      main { display: block; }
+      .section { padding: clamp(3.5rem, 8vw, 6rem) 0; }
+      .section + .section { border-top: 1px solid var(--line); }
+      .section-head { max-width: 40rem; margin-bottom: 2.5rem; }
+      .section-head p { margin-top: 0.75rem; color: var(--muted); font-size: 1.0625rem; }
+      .kicker {
+        display: inline-block; margin-bottom: 0.75rem;
+        font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+        color: var(--muted);
+      }
+      .card {
+        background: var(--surface); border-radius: var(--radius);
+        border: var(--borderWidth) solid var(--line); padding: 1.5rem; box-shadow: var(--shadowSm);
+      }
+      .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+      .as-of { font-size: 0.875rem; color: var(--muted); margin-top: 1.5rem; }
+      .page-dates { font-size: 0.875rem; color: var(--muted); }
       dl { margin: 0; }
       dt { font-weight: 700; margin-top: 1rem; }
       dd { margin: 0.25rem 0 0; }
       blockquote { margin: 0; }
+
+      /* Simple pages (pricing, about) */
+      .page { padding: clamp(3rem, 7vw, 5rem) 0; }
+      .page h1 { margin-bottom: 1rem; }
+      .page h2 { margin: 2.5rem 0 0.75rem; font-size: 1.5rem; }
+      .page p + p { margin-top: 0.75rem; }
+      .page .grid { margin-top: 1rem; }
+      .page .card ul { list-style: disc; padding-left: 1.25rem; margin-top: 0.75rem; }
+      .page .card h3 + p { margin-top: 0.5rem; }
+      .page > p:last-child .button { margin-top: 2rem; }
+
+      /* Footer */
+      .site-footer { border-top: 1px solid var(--line); padding: 2.5rem 0 3rem; font-size: 0.9375rem; background: var(--surface); }
+      .site-footer .wrap { display: grid; gap: 1.5rem; grid-template-columns: 1fr auto; align-items: start; }
+      .site-footer nav ul { display: flex; gap: 0.5rem 1.25rem; flex-wrap: wrap; }
+      .site-footer a { color: var(--text); }
+      .site-footer p + p { margin-top: 0.35rem; }
+
+      @media (max-width: 40rem) {
+        .site-nav .hide-sm { display: none; }
+        .site-footer .wrap { grid-template-columns: 1fr; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { transition: none !important; animation: none !important; }
+      }
     </style>
   </head>
   <body>
+    <a class="skip" href="#content">Skip to content</a>
     <header class="site-header">
       <div class="wrap">
-        <a class="brand" href="/">{site.name}</a>
-        <nav aria-label="Main">
+        <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">{site.name.trim().charAt(0).toUpperCase()}</span>{site.name}</a>
+        <nav class="site-nav" aria-label="Main">
           <ul>
-            {PAGES.map((p) => (
-              <li><a href={p.path} aria-current={p.path === path ? "page" : undefined}>{p.label}</a></li>
+            {navPages.map((p) => (
+              <li class="hide-sm"><a href={p.path} aria-current={p.path === path ? "page" : undefined}>{p.label}</a></li>
             ))}
-            <li><a href={site.cta.href}>{site.cta.label}</a></li>
+            <li><a class="button" href={site.cta.href}>{site.cta.label}</a></li>
           </ul>
         </nav>
       </div>
     </header>
-    <main class="wrap">
+    <main id="content">
       <slot />
-      <p class="page-dates">
-        Published <time datetime={site.publishedAt}>{formatDate(site.publishedAt)}</time>.
-        Updated <time datetime={site.updatedAt}>{formatDate(site.updatedAt)}</time>.
-      </p>
     </main>
     <footer class="site-footer">
       <div class="wrap">
-        <p>&copy; {year} {site.name}. Facts on this site are current as of {site.asOf}.</p>
+        <div>
+          <p><strong>{site.name}</strong></p>
+          <p class="muted">Facts on this site are current as of {site.asOf}.</p>
+          <p class="page-dates">
+            Published <time datetime={site.publishedAt}>{formatDate(site.publishedAt)}</time>.
+            Updated <time datetime={site.updatedAt}>{formatDate(site.updatedAt)}</time>.
+          </p>
+          <p class="muted">&copy; {year} {site.name}</p>
+        </div>
+        <nav aria-label="Footer">
+          <ul>
+            {PAGES.map((p) => <li><a href={p.path}>{p.label}</a></li>)}
+            <li><a href={site.cta.href}>{site.cta.label}</a></li>
+          </ul>
+        </nav>
       </div>
     </footer>
   </body>

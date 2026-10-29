@@ -5,9 +5,10 @@ import { site } from "../lib/site";
 const title = `About ${site.name}`;
 ---
 <Layout title={title} description={site.about.answer} path="/about/">
-  <article>
+  <article class="page wrap narrow">
     <header>
       <h1>About {site.name}</h1>
+      <p class="muted">{site.definition.what}</p>
     </header>
 
     <section aria-labelledby="main-question">

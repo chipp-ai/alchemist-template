@@ -31,14 +31,26 @@ test("a good page passes", () => {
   assert.deepEqual(checkPage(page(), { resolves: ok }), []);
 });
 
-test("the first H2 must be a question", () => {
-  const errors = checkPage(page({ h2: "Why Acme" }), { resolves: ok });
-  assert.ok(errors.some((e) => e.includes("not a question")), errors.join("\n"));
+test("a page needs at least one question heading", () => {
+  const html = page({ h2: "Why Acme" }).replace("<h3>Is it free?</h3>", "<h3>Pricing</h3>");
+  const errors = checkPage(html, { resolves: ok });
+  assert.ok(errors.some((e) => e.includes("no question heading")), errors.join("\n"));
 });
 
-test("the answer under the first H2 is 100 words or less", () => {
+test("the first H2 does not have to be the question (a styled FAQ further down counts)", () => {
+  assert.deepEqual(checkPage(page({ h2: "What you can do with Acme" }), { resolves: ok }), []);
+});
+
+test("every question is answered in 100 words or less", () => {
   const errors = checkPage(page({ answer: "word ".repeat(101) }), { resolves: ok });
   assert.ok(errors.some((e) => e.includes("101 words")), errors.join("\n"));
+});
+
+test("a plain definition paragraph sits right under the H1", () => {
+  const none = page().replace(/<h1>Acme<\/h1><p>[^<]*<\/p>/, "<h1>Acme</h1>");
+  assert.ok(checkPage(none, { resolves: ok }).some((e) => e.includes("no paragraph under the <h1>")));
+  const long = page().replace(/<h1>Acme<\/h1><p>[^<]*<\/p>/, "<h1>Acme</h1><p>" + "word ".repeat(61) + "</p>");
+  assert.ok(checkPage(long, { resolves: ok }).some((e) => e.includes("61 words")));
 });
 
 test("an icon-only button needs an aria-label", () => {

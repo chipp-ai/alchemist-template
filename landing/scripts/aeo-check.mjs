@@ -4,8 +4,8 @@
 // landing/README.md, so answer engines and assistive tech can always read
 // the site:
 //
-//   - one H1, and the first H2 under it is a question
-//   - the answer under that question is 100 words or less
+//   - one H1, with a plain definition (60 words or less) right under it
+//   - at least one H2 or H3 question, each answered in 100 words or less
 //   - header, nav, main and footer landmarks are present
 //   - icon-only buttons and links have an aria-label
 //   - every img has alt text
@@ -35,6 +35,7 @@ const APP_SERVED_EXACT = new Set(["/app"]);
 const REQUIRED_CRAWLERS = ["meta-webindexer", "GPTBot", "OAI-SearchBot", "ClaudeBot", "PerplexityBot"];
 
 const MAX_ANSWER_WORDS = 100;
+const MAX_DEFINITION_WORDS = 60;
 
 // ── HTML helpers ──
 
@@ -119,27 +120,43 @@ export function checkPage(html, { resolves = () => true } = {}) {
   const errors = [];
   const body = bodyOf(html);
 
-  // Headings: one H1, and the first H2 after it is the reader's question.
+  // Headings: one H1 with a plain definition right under it, H2s after it,
+  // and at least one question heading (H2 or H3) with a short answer.
   const h1s = [...body.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)];
   if (h1s.length !== 1) errors.push(`expected exactly one <h1>, found ${h1s.length}`);
-  const h1Index = h1s[0]?.index ?? -1;
-  const firstH2 = /<h2\b[^>]*>([\s\S]*?)<\/h2>/i.exec(body);
-  if (!firstH2) {
-    errors.push("no <h2>: the reader's main question must be the first H2 under the H1");
-  } else {
-    if (h1Index < 0 || firstH2.index < h1Index) errors.push("the first <h2> comes before the <h1>");
-    const question = textOf(firstH2[1]);
-    if (!question.endsWith("?")) errors.push(`the first <h2> is not a question: "${question}"`);
-    // The answer: the first paragraph after that H2.
-    const after = body.slice(firstH2.index + firstH2[0].length);
+  const h1 = h1s[0];
+  const h1Index = h1?.index ?? -1;
+  if (h1) {
+    const afterH1 = body.slice(h1.index + h1[0].length);
+    const definition = /<p\b[^>]*>([\s\S]*?)<\/p>/i.exec(afterH1);
+    const nextHeading = /<h[2-6]\b/i.exec(afterH1);
+    if (!definition || (nextHeading && nextHeading.index < definition.index)) {
+      errors.push("no paragraph under the <h1>: say what the product is in plain words right under it");
+    } else if (wordCount(textOf(definition[1])) > MAX_DEFINITION_WORDS) {
+      errors.push(
+        `the paragraph under the <h1> is ${wordCount(textOf(definition[1]))} words; keep it to ${MAX_DEFINITION_WORDS} or less`,
+      );
+    }
+  }
+  const firstH2 = /<h2\b[^>]*>/i.exec(body);
+  if (firstH2 && (h1Index < 0 || firstH2.index < h1Index)) errors.push("the first <h2> comes before the <h1>");
+  const questions = [...body.matchAll(/<(h[23])\b[^>]*>([\s\S]*?)<\/\1>/gi)]
+    .filter((m) => textOf(m[2]).endsWith("?"));
+  if (questions.length === 0) {
+    errors.push("no question heading: answer the reader's main question in an H2 or H3 that ends in \"?\"");
+  }
+  for (const q of questions) {
+    // The answer: the first paragraph after the question.
+    const after = body.slice(q.index + q[0].length);
     const answer = /<p\b[^>]*>([\s\S]*?)<\/p>/i.exec(after);
+    const question = textOf(q[2]);
     if (!answer) {
-      errors.push("no answer paragraph under the first <h2>");
-    } else {
-      const words = wordCount(textOf(answer[1]));
-      if (words > MAX_ANSWER_WORDS) {
-        errors.push(`the answer under the first <h2> is ${words} words; keep it to ${MAX_ANSWER_WORDS} or less`);
-      }
+      errors.push(`no answer paragraph under the question "${question}"`);
+      continue;
+    }
+    const words = wordCount(textOf(answer[1]));
+    if (words > MAX_ANSWER_WORDS) {
+      errors.push(`the answer to "${question}" is ${words} words; keep it to ${MAX_ANSWER_WORDS} or less`);
     }
   }
 

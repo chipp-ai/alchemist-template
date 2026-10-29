@@ -1,0 +1,22 @@
+/*
+ * Landing theme overrides.
+ *
+ * The landing site already takes its colors, fonts, corners and shadows from
+ * ../web/src/design/design.json (see src/lib/site.ts). Put anything extra the
+ * approved design needs here: the prototype's own tokens
+ * (.chipp/plans/<plan>/prototype/styles.css), a hero background, a tighter
+ * type scale.
+ *
+ * Override a token on `html:root` so it wins over the defaults, for example:
+ *
+ *   html:root {
+ *     --tint: #eef4ef;
+ *     --shadowLg: 0 24px 48px -20px rgba(36, 48, 42, 0.35);
+ *   }
+ *
+ * Tokens: --primary --primaryContrast --link --accent --bg --surface --text
+ * --muted --tint --line --shadowSm --shadowMd --shadowLg --borderWidth
+ * --headingFont --bodyFont --headingWeight --headingTracking --radius
+ *
+ * Keep text contrast at 4.5:1 or more. No external URLs except fonts.
+ */

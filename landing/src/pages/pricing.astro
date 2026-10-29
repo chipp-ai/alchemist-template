@@ -6,9 +6,10 @@ const title = `${site.name} pricing`;
 const description = `${site.pricing.answer} Prices as of ${site.asOf}.`;
 ---
 <Layout title={title} description={description} path="/pricing/">
-  <article>
+  <article class="page wrap narrow">
     <header>
       <h1>{site.name} pricing</h1>
+      <p class="muted">{site.definition.what}</p>
     </header>
 
     <section aria-labelledby="main-question">

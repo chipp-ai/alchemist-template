@@ -2,6 +2,11 @@
   "name": "Your product",
   "url": "",
   "description": "Your product is a web app that helps a team do one job well. This page says what it is, who it is for, and what it does.",
+  "hero": {
+    "eyebrow": "For teams that run one job every week",
+    "headline": "Keep the whole job in one place",
+    "subhead": "Your product is a web app that helps a team do one job well. It keeps the work in one place, shows what is left to do, and records what changed."
+  },
   "definition": {
     "what": "Your product is a web app that helps a team do one job well.",
     "who": "It is for teams that do this job every week and want one place to do it.",
@@ -21,6 +26,30 @@
     {
       "title": "A record of changes",
       "body": "Every change is saved with who made it and when."
+    }
+  ],
+  "audience": [
+    {
+      "title": "Teams that run the job weekly",
+      "body": "Everyone sees the same list, so nothing waits on an email thread."
+    },
+    {
+      "title": "The person who signs off",
+      "body": "Each change has a name and a time, so a review takes minutes."
+    }
+  ],
+  "steps": [
+    {
+      "title": "Create an account",
+      "body": "Open the app and sign up with your work email."
+    },
+    {
+      "title": "Add your first item",
+      "body": "Bring in what you track today, or start a fresh list."
+    },
+    {
+      "title": "Invite your team",
+      "body": "Teammates see the same work and what is waiting on them."
     }
   ],
   "faq": [
@@ -54,5 +83,7 @@
   },
   "asOf": "October 2026",
   "publishedAt": "2026-10-19",
-  "updatedAt": "2026-10-19"
+  "updatedAt": "2026-10-19",
+  "productShot": null,
+  "starter": true
 }
