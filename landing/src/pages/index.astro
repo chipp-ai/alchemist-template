@@ -15,7 +15,10 @@ const plans = site.pricing.plans ?? [];
 const shot = site.productShot?.src ? site.productShot : null;
 const title = hero.headline === site.name ? `${site.name}: ${site.definition.what}` : `${site.name}: ${hero.headline}`;
 // The product sketch (no screenshot yet) labels its rows with the features.
-const sketchRows = (features.length > 0 ? features.map((f) => f.title) : [site.name]).slice(0, 4);
+// With no features yet it draws unlabeled bars, never placeholder words.
+const sketchLabels = features.map((f) => f.title).slice(0, 4);
+const sketchNav = sketchLabels.length > 0 ? sketchLabels : ['', '', '', ''];
+const sketchCols = [0, 1, 2].map((i) => sketchLabels[i] ?? '');
 ---
 <Layout title={title} description={site.description} path="/" faq={faq}>
   <section class="hero" aria-labelledby="hero-title">
@@ -50,14 +53,14 @@ const sketchRows = (features.length > 0 ? features.map((f) => f.title) : [site.n
             <div class="sketch" aria-hidden="true">
               <div class="sketch-side">
                 <span class="sketch-logo">{site.name}</span>
-                {sketchRows.map((r, i) => <span class={i === 0 ? "sketch-nav on" : "sketch-nav"}>{r}</span>)}
+                {sketchNav.map((r, i) => <span class={i === 0 ? "sketch-nav on" : "sketch-nav"}>{r || <i class="bar"></i>}</span>)}
               </div>
               <div class="sketch-main">
                 <div class="sketch-top"><span class="sketch-search"></span><span class="sketch-btn"></span></div>
                 <div class="sketch-cols">
-                  {sketchRows.slice(0, 3).map((r) => (
+                  {sketchCols.map((r) => (
                     <div class="sketch-col">
-                      <span class="sketch-col-title">{r}</span>
+                      <span class="sketch-col-title">{r || <i class="bar"></i>}</span>
                       <span class="sketch-card"><i></i><i></i></span>
                       <span class="sketch-card"><i></i><i></i></span>
                     </div>
@@ -91,23 +94,21 @@ const sketchRows = (features.length > 0 ? features.map((f) => f.title) : [site.n
   )}
 
   <section class="section" aria-labelledby="audience">
-    <div class="wrap split">
-      <div>
+    <div class={audience.length > 0 ? "wrap split" : "wrap"}>
+      <div class="section-head">
         <h2 id="audience">Who it is for</h2>
         <p class="lead">{site.definition.who}</p>
       </div>
-      {audience.length > 0
-        ? (
-          <ul class="audience">
-            {audience.map((a) => (
-              <li class="card">
-                <h3>{a.title}</h3>
-                <p>{a.body}</p>
-              </li>
-            ))}
-          </ul>
-        )
-        : <p class="card">{site.definition.what} {features.length === 0 ? site.definition.does : ""}</p>}
+      {audience.length > 0 && (
+        <ul class="audience">
+          {audience.map((a) => (
+            <li class="card">
+              <h3>{a.title}</h3>
+              <p>{a.body}</p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   </section>
 
@@ -190,7 +191,7 @@ const sketchRows = (features.length > 0 ? features.map((f) => f.title) : [site.n
     <div class="wrap closing-inner">
       <div>
         <h2 id="closing">Start with {site.name}</h2>
-        <p>{site.definition.what}</p>
+        <p>{site.definition.who}</p>
       </div>
       <a class="button inverse" href={site.cta.href}>{site.cta.label}</a>
     </div>
@@ -202,7 +203,7 @@ const sketchRows = (features.length > 0 ? features.map((f) => f.title) : [site.n
     background:
       linear-gradient(to bottom, var(--tint) 0, var(--tint) 62%, var(--bg) 62%, var(--bg) 100%);
     padding-top: clamp(3rem, 8vw, 6rem);
-    padding-bottom: clamp(2.5rem, 6vw, 4.5rem);
+    padding-bottom: clamp(1rem, 3vw, 2rem);
     overflow: hidden;
   }
   .hero-copy { max-width: 72rem; }
@@ -236,6 +237,7 @@ const sketchRows = (features.length > 0 ? features.map((f) => f.title) : [site.n
   .sketch-col { background: var(--bg); border-radius: var(--radius); padding: 0.65rem; display: flex; flex-direction: column; gap: 0.5rem; }
   .sketch-col-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sketch-card { display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.65rem; box-shadow: var(--shadowSm); }
+  .bar { display: inline-block; width: 70%; height: 8px; border-radius: 4px; background: var(--line); vertical-align: middle; }
   .sketch-card i { display: block; height: 7px; border-radius: 4px; background: var(--line); }
   .sketch-card i + i { width: 60%; background: color-mix(in srgb, var(--accent) 45%, var(--surface)); }
 
@@ -246,7 +248,8 @@ const sketchRows = (features.length > 0 ? features.map((f) => f.title) : [site.n
   .features p { color: var(--muted); }
 
   .split { display: grid; gap: 2.5rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); align-items: start; }
-  .lead { margin-top: 1rem; font-size: 1.1875rem; }
+  .section-head .lead { margin-top: 1rem; font-size: 1.1875rem; color: var(--text); }
+  .split .section-head { margin-bottom: 0; }
   .audience { display: grid; gap: 1rem; }
   .audience h3 { margin-bottom: 0.35rem; }
   .audience p { color: var(--muted); }
