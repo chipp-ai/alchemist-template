@@ -10,6 +10,7 @@
   import DevPanel from "./components/DevPanel.svelte";
   import ToastContainer from "./components/ToastContainer.svelte";
   import TestModeBanner from "./components/chipp-payments/TestModeBanner.svelte";
+  import AppErrorBoundary from "./components/AppErrorBoundary.svelte";
   import { initRevealOnScroll } from "./lib/reveal-dom";
   import { navigateWithTransition } from "./lib/view-transitions-dom";
 
@@ -106,13 +107,17 @@
       <!-- Chipp Payments: a banner while payments run in test mode. Renders nothing otherwise. -->
       <TestModeBanner />
       {#key routerKey}
-        <Router {routes} />
+        <AppErrorBoundary>
+          <Router {routes} />
+        </AppErrorBoundary>
       {/key}
     </main>
   </div>
 {:else if onPublicRoute || onPortalRoute || authStore.isAuthenticated}
   {#key routerKey}
-    <Router {routes} />
+    <AppErrorBoundary>
+      <Router {routes} />
+    </AppErrorBoundary>
   {/key}
 {:else}
   <!-- Signed out on a protected path: the redirect effect above is already
