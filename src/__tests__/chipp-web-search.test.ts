@@ -4,7 +4,7 @@
  */
 
 import { assert, assertEquals } from "@std/assert";
-import { postWebSearch, webAnswer, webSearch, type WebSearchResponse } from "../lib/chipp-web-search.ts";
+import { postWebSearch, webSearch, type WebSearchResponse } from "../lib/chipp-web-search.ts";
 
 const ENV: Record<string, string> = {
   CHIPP_INTEGRATION_BROKER_URL: "https://platform.example/",
@@ -29,9 +29,20 @@ Deno.test("webSearch: posts to the broker with the project credential and return
   const ok: WebSearchResponse = {
     ok: true,
     operation: "search",
+    mode: "web",
     query: "q",
-    results: [{ title: "T", url: "https://a.com", snippet: "s", date: null, lastUpdated: null, source: "a.com" }],
-    cost: { vendorMicrodollars: 5000, billedMicrodollars: 6500, billedUsd: 0.0065 },
+    results: [{
+      title: "T",
+      url: "https://a.com",
+      snippet: "s",
+      date: null,
+      lastUpdated: null,
+      source: "a.com",
+      position: 1,
+      publisher: null,
+      dateText: null,
+    }],
+    cost: { vendorMicrodollars: 1000, billedMicrodollars: 1300, billedUsd: 0.0013 },
   };
   const f = fakeFetch(200, ok);
   const res = await webSearch("q", { maxResults: 3, recency: "week" }, { fetchImpl: f.impl, env });
@@ -44,12 +55,12 @@ Deno.test("webSearch: posts to the broker with the project credential and return
   assertEquals(JSON.parse(String(f.calls[0].init.body)), { maxResults: 3, recency: "week", query: "q" });
 });
 
-Deno.test("webAnswer: posts the question to the answer route", async () => {
-  const f = fakeFetch(200, { ok: true, operation: "answer", question: "why", answer: "because", sources: [] });
-  const res = await webAnswer("why", {}, { fetchImpl: f.impl, env });
+Deno.test("webSearch: news mode goes to the same search route with mode news", async () => {
+  const f = fakeFetch(200, { ok: true, operation: "search", mode: "news", query: "fed", results: [] });
+  const res = await webSearch("fed", { mode: "news", maxResults: 5 }, { fetchImpl: f.impl, env });
   assert(res.ok);
-  assert(f.calls[0].url.endsWith("/web-search/answer"));
-  assertEquals(JSON.parse(String(f.calls[0].init.body)).question, "why");
+  assert(f.calls[0].url.endsWith("/web-search/search"));
+  assertEquals(JSON.parse(String(f.calls[0].init.body)), { mode: "news", maxResults: 5, query: "fed" });
 });
 
 Deno.test("webSearch: the query argument wins over a query smuggled in options", async () => {
@@ -96,10 +107,10 @@ Deno.test("webSearch: credits exhausted is 402 credits_exhausted", async () => {
 
 Deno.test("postWebSearch: unreadable body and network errors never throw", async () => {
   const bad = fakeFetch(502, "<html>");
-  const r1 = await postWebSearch<WebSearchResponse>("search", { query: "q" }, { fetchImpl: bad.impl, env });
+  const r1 = await postWebSearch<WebSearchResponse>({ query: "q" }, { fetchImpl: bad.impl, env });
   assertEquals(r1.ok, false);
   const thrower = (() => Promise.reject(new TypeError("boom"))) as typeof fetch;
-  const r2 = await postWebSearch("search", { query: "q" }, { fetchImpl: thrower, env });
+  const r2 = await postWebSearch({ query: "q" }, { fetchImpl: thrower, env });
   assertEquals((r2 as { diagnostic: string }).diagnostic, "upstream_error");
   assertEquals((r2 as { retryable: boolean }).retryable, true);
 });
