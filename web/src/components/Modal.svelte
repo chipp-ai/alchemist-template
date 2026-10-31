@@ -81,7 +81,7 @@
         <div class="modal-header">
           <h2 class="modal-title">{title}</h2>
           <button
-            class="modal-close"
+            class="icon-btn modal-close"
             type="button"
             onclick={onClose}
             aria-label="Close"
@@ -116,7 +116,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: var(--space-md);
+    /* Keep the dialog clear of the notch and the home indicator. */
+    padding: max(var(--space-md), env(safe-area-inset-top)) max(var(--space-md), env(safe-area-inset-right))
+      max(var(--space-md), env(safe-area-inset-bottom)) max(var(--space-md), env(safe-area-inset-left));
     /* Below the security-critical session-timeout overlay (9999) and the
        dev panel (999999); above all in-page content. */
     z-index: 1000;
@@ -128,7 +130,7 @@
     border-radius: var(--radius-lg);
     box-shadow: 0 24px 48px -20px rgba(0, 0, 0, 0.28), 0 8px 20px -12px rgba(0, 0, 0, 0.16);
     width: 100%;
-    max-height: 90vh;
+    max-height: 90dvh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -171,11 +173,18 @@
     border-radius: var(--radius-sm);
     transition: color 0.15s, background 0.15s;
   }
-  .modal-close:hover,
-  .modal-close:focus-visible {
+  .modal-close:focus-visible,
+  .modal-close:active {
     color: var(--color-text);
     background: var(--color-surface);
     outline: none;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .modal-close:hover {
+      color: var(--color-text);
+      background: var(--color-surface);
+      outline: none;
+    }
   }
 
   .modal-body {

@@ -274,7 +274,12 @@
     margin-bottom: var(--space-md);
   }
 
-  .back-link:hover {
+  @media (hover: hover) and (pointer: fine) {
+    .back-link:hover {
+      color: var(--color-text);
+    }
+  }
+  .back-link:active {
     color: var(--color-text);
   }
 
@@ -491,7 +496,12 @@
     padding: var(--space-sm) 0 0;
   }
 
-  .headers-toggle:hover {
+  @media (hover: hover) and (pointer: fine) {
+    .headers-toggle:hover {
+      color: var(--color-text);
+    }
+  }
+  .headers-toggle:active {
     color: var(--color-text);
   }
 

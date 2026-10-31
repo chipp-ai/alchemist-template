@@ -8,7 +8,7 @@
 
 <button
   type="button"
-  class="theme-toggle"
+  class="icon-btn theme-toggle"
   onclick={() => themeStore.toggle()}
   aria-pressed={themeStore.isDark}
   aria-label={themeStore.isDark ? "Switch to light theme" : "Switch to dark theme"}
@@ -50,8 +50,10 @@
     transition: color 0.15s, transform 0.1s;
   }
 
-  .theme-toggle:hover {
-    color: var(--color-text);
+  @media (hover: hover) and (pointer: fine) {
+    .theme-toggle:hover {
+      color: var(--color-text);
+    }
   }
 
   .theme-toggle:active {

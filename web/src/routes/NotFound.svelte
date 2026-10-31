@@ -28,7 +28,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 60vh;
+    min-height: 60svh;
     text-align: center;
     gap: var(--space-md);
   }

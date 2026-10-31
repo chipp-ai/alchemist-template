@@ -73,7 +73,7 @@
 
 <header class="mobile-topbar" data-testid="sidebar-topbar">
   <button
-    class="btn btn-ghost mobile-menu-btn"
+    class="btn btn-ghost icon-btn mobile-menu-btn"
     aria-label="Open menu"
     aria-expanded={menuOpen}
     aria-controls="app-sidebar"
@@ -174,8 +174,11 @@
       top: 0;
       left: 0;
       right: 0;
-      height: 56px;
-      padding: 0 var(--space-sm);
+      /* viewport-fit=cover: the bar runs under the status bar and notch,
+         its content stays below and beside them. */
+      height: calc(56px + env(safe-area-inset-top));
+      padding: env(safe-area-inset-top) calc(var(--space-sm) + env(safe-area-inset-right)) 0
+        calc(var(--space-sm) + env(safe-area-inset-left));
       background: var(--color-surface);
       border-bottom: 1px solid var(--color-border);
       z-index: 200;
@@ -201,6 +204,7 @@
       bottom: 0;
       height: 100dvh;
       max-width: 85vw;
+      padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left);
       z-index: 220;
       transform: translateX(-100%);
       visibility: hidden;
@@ -220,7 +224,7 @@
 
   .sidebar {
     width: 240px;
-    height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     background: var(--color-surface);

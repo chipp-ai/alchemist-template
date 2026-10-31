@@ -225,7 +225,7 @@
         aria-label="Search docs"
       />
       {#if query}
-        <button class="clear" onclick={clearSearch} aria-label="Clear search">×</button>
+        <button class="icon-btn clear" onclick={clearSearch} aria-label="Clear search">×</button>
       {/if}
     </div>
 
@@ -293,7 +293,7 @@
     position: sticky;
     top: 1rem;
     align-self: start;
-    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
     overflow-y: auto;
   }
   .search {
@@ -305,7 +305,10 @@
     padding: 0.55rem 2rem 0.55rem 0.75rem;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
-    font-size: 0.9rem;
+    font-size: 16px; /* under 16px, iOS zooms the page on focus */
+  }
+  @media (min-width: 769px) and (pointer: fine) {
+    .search input { font-size: 0.9rem; }
   }
   .search .clear {
     position: absolute;
@@ -339,7 +342,10 @@
     font-size: 0.9rem;
     color: var(--color-text);
   }
-  .toc-item:hover { background: var(--color-surface); }
+  @media (hover: hover) and (pointer: fine) {
+    .toc-item:hover { background: var(--color-surface); }
+  }
+  .toc-item:active { background: var(--color-surface); }
   .toc-item.active {
     background: var(--color-accent-subtle);
     color: var(--color-accent);
@@ -367,7 +373,10 @@
     background: none;
     cursor: pointer;
   }
-  .result:hover { border-color: var(--color-accent); }
+  @media (hover: hover) and (pointer: fine) {
+    .result:hover { border-color: var(--color-accent); }
+  }
+  .result:active { border-color: var(--color-accent); }
   .result-title { font-weight: 600; font-size: 0.88rem; }
   .result-heading { font-size: 0.78rem; color: var(--color-accent); }
   .result-snippet {

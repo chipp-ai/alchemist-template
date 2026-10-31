@@ -46,7 +46,7 @@
       <span class="toast-message">{toast.message}</span>
       <button
         type="button"
-        class="toast-dismiss"
+        class="icon-btn toast-dismiss"
         aria-label="Dismiss notification"
         onclick={() => toastStore.dismiss(toast.id)}
         data-testid="toast-dismiss"
@@ -60,8 +60,8 @@
 <style>
   .toast-stack {
     position: fixed;
-    bottom: var(--space-lg, 24px);
-    right: var(--space-lg, 24px);
+    bottom: calc(var(--space-lg, 24px) + env(safe-area-inset-bottom));
+    right: calc(var(--space-lg, 24px) + env(safe-area-inset-right));
     z-index: 1000;
     display: flex;
     flex-direction: column;
@@ -100,10 +100,16 @@
     border-radius: var(--radius-sm);
   }
 
-  .toast-dismiss:hover,
-  .toast-dismiss:focus-visible {
+  .toast-dismiss:focus-visible,
+  .toast-dismiss:active {
     opacity: 1;
     outline: none;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .toast-dismiss:hover {
+      opacity: 1;
+      outline: none;
+    }
   }
 
   .toast-success {
@@ -132,9 +138,9 @@
 
   @media (max-width: 480px) {
     .toast-stack {
-      left: var(--space-md, 16px);
-      right: var(--space-md, 16px);
-      bottom: var(--space-md, 16px);
+      left: calc(var(--space-md, 16px) + env(safe-area-inset-left));
+      right: calc(var(--space-md, 16px) + env(safe-area-inset-right));
+      bottom: calc(var(--space-md, 16px) + env(safe-area-inset-bottom));
       max-width: none;
     }
   }

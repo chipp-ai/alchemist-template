@@ -155,7 +155,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 100vh;
+    height: 100dvh;
   }
 
   .loading-spinner {
@@ -175,7 +175,7 @@
 
   .app-layout {
     display: flex;
-    height: 100vh;
+    height: 100dvh;
   }
 
   .app-main {
@@ -194,7 +194,10 @@
     }
     .app-main {
       overflow: visible;
-      padding: calc(56px + var(--space-md)) var(--space-md) var(--space-md);
+      /* Below the fixed top bar (56px + the status bar inset); the bottom
+         clears the home indicator. body pads the left/right insets. */
+      padding: calc(56px + env(safe-area-inset-top) + var(--space-md)) var(--space-md)
+        calc(var(--space-md) + env(safe-area-inset-bottom));
     }
   }
 </style>

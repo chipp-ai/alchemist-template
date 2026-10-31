@@ -89,7 +89,7 @@
           </span>
           <button
             type="button"
-            class="devpanel-close"
+            class="icon-btn devpanel-close"
             onclick={() => (isOpen = false)}
             data-testid="devpanel-close"
             aria-label="Close dev panel"
@@ -151,8 +151,8 @@
 <style>
   .devpanel-root {
     position: fixed;
-    bottom: 1rem;
-    right: 1rem;
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+    right: calc(1rem + env(safe-area-inset-right));
     z-index: 999999;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 12px;
@@ -169,14 +169,19 @@
     font: inherit;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
-  .devpanel-toggle:hover {
+  @media (hover: hover) and (pointer: fine) {
+    .devpanel-toggle:hover {
+      background: #1e293b;
+    }
+  }
+  .devpanel-toggle:active {
     background: #1e293b;
   }
 
   .devpanel-panel {
     width: 420px;
     max-width: calc(100vw - 2rem);
-    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
     overflow-y: auto;
     background: #0f172a;
     border: 1px solid #334155;
@@ -207,7 +212,12 @@
     cursor: pointer;
     padding: 0 0.25rem;
   }
-  .devpanel-close:hover {
+  @media (hover: hover) and (pointer: fine) {
+    .devpanel-close:hover {
+      color: #f87171;
+    }
+  }
+  .devpanel-close:active {
     color: #f87171;
   }
 

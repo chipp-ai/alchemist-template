@@ -5,7 +5,7 @@
  *
  * Scroll-lock target:
  *   The shell's real scroll container is `.app-main`
- *   (`overflow-y: auto` inside `.app-layout { height: 100vh }` per
+ *   (`overflow-y: auto` inside `.app-layout { height: 100dvh }` per
  *   App.svelte). `<body>` does NOT scroll on the shell layout. So the lock
  *   targets `.app-main` (primary) AND `<body>` (fallback for any route that
  *   does not use the shell, e.g. the un-authed Router branch). A ref-count

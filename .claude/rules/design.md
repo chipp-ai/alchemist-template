@@ -102,3 +102,7 @@ imports it too.
   `--brand-accent`, `--brand-neutral` at runtime. Derived tokens still
   reference them through `var()`, so keep that indirection when adding
   colour tokens.
+- Mobile and touch rules (hover media query plus `:active`, `.icon-btn`,
+  16px fields, `inputmode`, `dvh`/`svh`, safe-area insets) are in
+  `web/DESIGN.md` "Mobile and touch" and pinned by
+  `src/__tests__/mobile-guardrails.test.ts`. Follow them on every new page.

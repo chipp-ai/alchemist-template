@@ -186,7 +186,13 @@
     transition: background-color 0.15s, color 0.15s, border-color 0.15s;
   }
 
-  .filter-chip:hover {
+  @media (hover: hover) and (pointer: fine) {
+    .filter-chip:hover {
+      background: var(--color-bg);
+      color: var(--color-text);
+    }
+  }
+  .filter-chip:active {
     background: var(--color-bg);
     color: var(--color-text);
   }
@@ -248,7 +254,12 @@
        "Hover/interactive transitions" rule in CLAUDE.md. */
   }
 
-  .email-row:hover td {
+  @media (hover: hover) and (pointer: fine) {
+    .email-row:hover td {
+      background: var(--color-surface);
+    }
+  }
+  .email-row:active td {
     background: var(--color-surface);
   }
 

@@ -83,7 +83,7 @@ function renderLandingPage(): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Alchemist SaaS Starter -- Live Demo</title>
 <style>
   body { margin: 0; font: 16px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111827; background: #f9fafb; }
@@ -93,7 +93,9 @@ function renderLandingPage(): string {
   ul { padding-left: 1.25rem; }
   li { margin-bottom: 0.5rem; }
   .cta { display: inline-block; margin: 1.5rem 0; padding: 0.75rem 1.5rem; background: #4f46e5; color: #fff; text-decoration: none; border-radius: 0.375rem; font-weight: 600; }
-  .cta:hover { background: #4338ca; }
+  .cta { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  @media (hover: hover) and (pointer: fine) { .cta:hover { background: #4338ca; } }
+  .cta:active { background: #4338ca; }
   section { margin-top: 2.5rem; }
   h2 { font-size: 1.25rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
   footer { margin-top: 3rem; color: #6b7280; font-size: 0.9rem; }

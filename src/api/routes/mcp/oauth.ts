@@ -335,9 +335,9 @@ function tokenResponse(t: { accessToken: string; refreshToken: string; expiresIn
 // ── Server-rendered pages ─────────────────────────────────────────────────────
 
 const PAGE_STYLE = `
-  :root { color-scheme: light dark; }
+  :root { color-scheme: light dark; -webkit-tap-highlight-color: transparent; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #0b0b0f; color: #e8e8ec; margin: 0; display: grid; place-items: center; min-height: 100vh; }
+    background: #0b0b0f; color: #e8e8ec; margin: 0; display: grid; place-items: center; min-height: 100dvh; }
   .card { background: #16161c; border: 1px solid #2a2a33; border-radius: 16px; padding: 32px;
     max-width: 420px; width: calc(100% - 48px); box-shadow: 0 12px 40px rgba(0,0,0,.4); }
   h1 { font-size: 20px; margin: 0 0 4px; }
@@ -347,11 +347,12 @@ const PAGE_STYLE = `
     font-size: 13px; color: #c8c8d0; margin: 16px 0; }
   .row { display: flex; gap: 12px; margin-top: 24px; }
   button { flex: 1; padding: 12px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600;
-    cursor: pointer; }
+    cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+  button:active { opacity: 0.85; }
   .approve { background: #6d5efc; color: #fff; }
   .deny { background: transparent; color: #c8c8d0; border: 1px solid #2a2a33; }
   input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 10px; margin: 6px 0 12px;
-    border: 1px solid #2a2a33; background: #0f0f14; color: #e8e8ec; font-size: 15px; }
+    border: 1px solid #2a2a33; background: #0f0f14; color: #e8e8ec; font-size: 16px; }
   .error { color: #ff7a7a; font-size: 13px; min-height: 18px; margin: 0; }
   .hidden { display: none; }
 `;
@@ -377,7 +378,7 @@ function renderConsentPage(p: ConsentParams): string {
   const brand = escapeHtmlText(BRAND.name);
   const desc = p.clientDescription ? `<p>${p.clientDescription}</p>` : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Authorize ${p.clientName} — ${brand}</title><style>${PAGE_STYLE}</style>
 </head>
 <body><div class="card">
@@ -410,7 +411,7 @@ ${hidden("code_challenge_method", p.codeChallengeMethod)}
 function renderLoginPage(clientName: string): string {
   const brand = escapeHtmlText(BRAND.name);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sign in — ${brand}</title><style>${PAGE_STYLE}</style>
 </head>
 <body><div class="card">

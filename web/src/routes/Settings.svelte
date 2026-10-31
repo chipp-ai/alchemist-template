@@ -445,6 +445,7 @@
             type="text"
             bind:value={profileName}
             required
+            autocomplete="name"
             data-testid="settings-profile-input-name"
           />
         </div>
@@ -498,6 +499,7 @@
                 type="email"
                 bind:value={newEmail}
                 required
+                autocomplete="email"
                 placeholder="new@example.com"
                 data-testid="settings-profile-input-new-email"
               />
@@ -535,6 +537,8 @@
                 class="input"
                 type="text"
                 inputmode="numeric"
+                autocomplete="one-time-code"
+                pattern="[0-9]*"
                 maxlength="6"
                 bind:value={emailOtp}
                 required
@@ -577,6 +581,7 @@
           <input
             class="input"
             type="email"
+            autocomplete="off"
             bind:value={inviteEmail}
             placeholder="colleague@example.com"
             required
@@ -959,7 +964,9 @@
             id="np-price"
             class="input"
             bind:value={npPriceDollars}
+            type="text"
             inputmode="decimal"
+            autocomplete="off"
             placeholder="29.00"
             required
             data-testid="settings-products-input-price"

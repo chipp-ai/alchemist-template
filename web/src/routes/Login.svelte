@@ -281,7 +281,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 100vh;
+    min-height: 100dvh;
     padding: var(--space-lg);
     background: var(--color-surface);
   }
@@ -384,7 +384,12 @@
     text-decoration: underline;
   }
 
-  .link-btn:hover {
+  @media (hover: hover) and (pointer: fine) {
+    .link-btn:hover {
+      opacity: 0.8;
+    }
+  }
+  .link-btn:active {
     opacity: 0.8;
   }
 
@@ -415,7 +420,12 @@
     width: 100%;
     border-color: color-mix(in srgb, var(--provider-color) 40%, var(--color-border));
   }
-  .oauth-btn:hover {
+  @media (hover: hover) and (pointer: fine) {
+    .oauth-btn:hover {
+      border-color: var(--provider-color);
+    }
+  }
+  .oauth-btn:active {
     border-color: var(--provider-color);
   }
 

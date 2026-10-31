@@ -170,6 +170,70 @@ inventing a new one.
    applies this by default on every interactive element — don't remove it).
 4. Add a `data-testid="{area}-{component}-{element}"` per CLAUDE.md.
 
+## Mobile and touch
+
+Most people open a generated app on a phone first. These rules hold for
+every page and component. `src/__tests__/mobile-guardrails.test.ts` fails
+`deno task test` on the mechanical ones (marked "lint").
+
+**Taps**
+- **Hover only with a mouse (lint).** Write every `:hover` inside
+  `@media (hover: hover) and (pointer: fine) { ... }`. A bare `:hover`
+  sticks on a phone after a tap until the user taps somewhere else.
+- **Every tappable element has its own `:active` state (lint: each
+  `:hover` selector needs an `:active` twin).** `app.css` sets
+  `-webkit-tap-highlight-color: transparent` on `html`, so `:active` is
+  the only tap feedback. Use a background, colour or opacity change, or
+  the `.btn` press (`translateY(1px)`).
+- **`touch-action: manipulation`** is global on links, buttons, labels,
+  selects and `.btn` (no double-tap-zoom delay). A new control that is not
+  one of those (a `div` with `role="button"` is covered too) gets it.
+- **`user-select: none` on controls only** (buttons, tabs, nav links,
+  checkboxes, switches). Never on body text, cards or tables: people copy
+  from those.
+- **Icon-only buttons get `.icon-btn`.** It grows the tap area to 44x44px
+  with an invisible `::before` and does not change how the button looks:
+  `<button class="icon-btn modal-close" aria-label="Close">`. Do not use it
+  on buttons packed in a row (pagination), where the areas would overlap.
+
+**Inputs**
+- **Fields are 16px or more on touch screens (lint).** iOS zooms the page
+  when a field under 16px gets focus. `.input`, `.select` and `.textarea`
+  already do this. A route style that makes a field smaller puts that size
+  inside `@media (min-width: 769px) and (pointer: fine)`. Never fix the
+  zoom with `maximum-scale=1` or `user-scalable=no` (lint): that blocks
+  pinch zoom for everyone.
+- **Ask for the right keyboard.** Pass the attributes straight to the
+  `<input class="input">`:
+  - money and decimals: `inputmode="decimal"` (keep `type="text"`;
+    `type="number"` drops a trailing "." and scrolls on wheel)
+  - one-time codes: `inputmode="numeric" autocomplete="one-time-code"
+    pattern="[0-9]*"`
+  - whole numbers that are not quantities (PINs, ZIP codes):
+    `inputmode="numeric"`
+  - email: `type="email" autocomplete="email"`; phone: `type="tel"
+    autocomplete="tel"`; search: `type="search"`
+  - the person's own details: `autocomplete="name"`, `"email"`, `"tel"`,
+    `"street-address"`. Someone else's email (an invite): `autocomplete="off"`.
+
+**Screen**
+- **No sideways scroll.** Check every page at 320, 375 and 390px wide.
+  Fixed widths, long unbroken strings (emails, URLs, ids) and wide tables
+  are the usual cause: use `min-width: 0` on flex and grid children,
+  `overflow-wrap: anywhere` on user strings, and `.table-wrap` around
+  tables. `html, body { overflow-x: clip }` in `app.css` is a backstop, not
+  the fix.
+- **No `vh` (lint).** `100vh` is taller than the visible screen on phones,
+  so the bottom of the page hides under the browser toolbar. Use `100dvh`
+  for full-screen layouts and overlays, and `100svh` for a hero that must
+  not jump while the toolbar moves.
+- **Safe areas.** The viewport meta has `viewport-fit=cover` (lint), so the
+  page runs under the notch and the home indicator. Pad every fixed or
+  sticky bar with `env(safe-area-inset-*)`: a top bar adds
+  `env(safe-area-inset-top)` to its height and padding, a bottom bar or a
+  bottom toast adds `env(safe-area-inset-bottom)`. `body` already pads the
+  left and right insets for landscape.
+
 ## Accessibility
 
 - Every semantic color ramp is contrast-checked by the pure math in
@@ -193,6 +257,12 @@ and fails the build on:
   `var(--font-sans)`, or `var(--font-mono)` (outside the same exemptions),
 - this file (`web/DESIGN.md`) or its reference from `CLAUDE.md` going
   missing.
+
+`src/__tests__/mobile-guardrails.test.ts` fails it on the mobile rules
+above: a viewport meta without `viewport-fit=cover` or with
+`maximum-scale`/`user-scalable`, a `vh` unit, a `:hover` outside the hover
+media query, a `:hover` with no `:active` twin, and a text field under
+16px outside the desktop query.
 
 If a lint fires and the change is genuinely a sanctioned exception (a new
 third-party brand mark, a new dev-only tool), add it to the exemption sets

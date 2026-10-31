@@ -22,5 +22,5 @@ Deno.test("mobile shell: Sidebar.svelte has a top bar, a menu button and a drawe
 Deno.test("mobile shell: App.svelte gives the page the full width under 768px", async () => {
   const src = await read("web/src/App.svelte");
   assert(/@media \(max-width: 768px\)[\s\S]*\.app-layout \{\s*display: block;/.test(src));
-  assert(src.includes("padding: calc(56px + var(--space-md))"));
+  assert(src.includes("padding: calc(56px + env(safe-area-inset-top) + var(--space-md))"));
 });

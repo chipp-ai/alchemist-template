@@ -228,7 +228,7 @@ export function brandedEmailShell(opts: { previewText?: string; bodyHtml: string
     }</div>`
     : "";
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
+<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" /></head>
 <body style="margin:0;padding:0;background:${EMAIL_PAGE_BG};">
   ${preview}
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${EMAIL_PAGE_BG};padding:36px 12px;">

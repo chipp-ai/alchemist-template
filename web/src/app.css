@@ -316,7 +316,92 @@ html {
 }
 
 body {
-  min-height: 100vh;
+  /* dvh tracks the phone's moving toolbars; 100dvh is taller than the
+     visible screen on iOS and Android. */
+  min-height: 100dvh;
+  /* viewport-fit=cover lets the page run under the notch; in landscape
+     the notch is at the side, so keep content clear of it. */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* ============================================================= */
+/* Mobile and touch (rules: web/DESIGN.md "Mobile and touch";     */
+/* pinned by src/__tests__/mobile-guardrails.test.ts)             */
+/* ============================================================= */
+
+html {
+  /* No grey flash on tap. Every tappable element has its own
+     :active state instead (see "Touch :active states" at the end). */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Backstop only. Fix the element that overflows; this keeps a stray
+   one from making the whole page pan sideways. `clip` (not `hidden`)
+   does not create a scroll container, so position: sticky still works. */
+html,
+body {
+  overflow-x: clip;
+}
+
+/* No double-tap-to-zoom delay on controls. Pinch zoom still works. */
+a,
+button,
+summary,
+label,
+select,
+[role="button"],
+input[type="checkbox"],
+input[type="radio"],
+.btn {
+  touch-action: manipulation;
+}
+
+/* A long press on a control must not select its label. Body text
+   stays selectable: never put this on a text container. */
+button,
+summary,
+[role="button"],
+.btn,
+.tab,
+.nav-link,
+.page-btn,
+.dropdown-item,
+.checkbox,
+.radio,
+.switch {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* iOS zooms the page when a focused field's font is under 16px. Raw
+   fields get the 16px floor on touch screens here; :where() keeps this
+   at zero specificity so any styled field wins (and must keep >= 16px,
+   see the .input rules below). */
+@media (max-width: 768px), (pointer: coarse) {
+  :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea) {
+    font-size: 16px;
+  }
+}
+
+/*
+ * Icon-only button: grows the tap area to at least 44x44px with an
+ * invisible ::before. The visible size does not change. Put it on
+ * every button whose only content is an icon or a glyph (close, menu,
+ * dismiss, theme toggle): <button class="icon-btn modal-close">.
+ */
+.icon-btn {
+  position: relative;
+}
+
+.icon-btn::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
 }
 
 a {
@@ -324,8 +409,10 @@ a {
   text-decoration: none;
 }
 
-a:hover {
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  a:hover {
+    text-decoration: underline;
+  }
 }
 
 img, svg {
@@ -358,6 +445,12 @@ h6 { font-size: var(--text-base); }
 /* Code + tabular numerics — always --font-mono. */
 code, kbd, samp, pre {
   font-family: var(--font-mono);
+}
+
+/* A long code line scrolls inside its block, never widens the page. */
+pre {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 /*
@@ -457,9 +550,11 @@ textarea:focus-visible,
   --btn-loading-fg: var(--color-accent-text);
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-  border-color: var(--color-accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
+  }
 }
 
 .btn-primary:active:not(:disabled) {
@@ -474,9 +569,11 @@ textarea:focus-visible,
   --btn-loading-fg: var(--color-text);
 }
 
-.btn-secondary:hover:not(:disabled) {
-  background: var(--color-surface);
-  border-color: var(--color-border-strong);
+@media (hover: hover) and (pointer: fine) {
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--color-surface);
+    border-color: var(--color-border-strong);
+  }
 }
 
 .btn-ghost {
@@ -486,9 +583,11 @@ textarea:focus-visible,
   --btn-loading-fg: var(--color-text-secondary);
 }
 
-.btn-ghost:hover:not(:disabled) {
-  background: var(--color-surface);
-  color: var(--color-text);
+@media (hover: hover) and (pointer: fine) {
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
 }
 
 .btn-danger {
@@ -498,16 +597,20 @@ textarea:focus-visible,
   --btn-loading-fg: var(--color-error-contrast);
 }
 
-.btn-danger:hover:not(:disabled) {
-  background: var(--color-error-hover);
-  border-color: var(--color-error-hover);
+@media (hover: hover) and (pointer: fine) {
+  .btn-danger:hover:not(:disabled) {
+    background: var(--color-error-hover);
+    border-color: var(--color-error-hover);
+  }
 }
 
 .input {
   display: block;
   width: 100%;
   padding: var(--space-sm) var(--space-md);
-  font-size: var(--text-sm);
+  /* 16px floor: iOS zooms on focus below 16px. Desktop drops to
+     --text-sm in the (min-width: 769px) and (pointer: fine) block below. */
+  font-size: max(16px, var(--text-sm));
   line-height: 1.5;
   color: var(--color-text);
   background: var(--color-bg);
@@ -517,8 +620,10 @@ textarea:focus-visible,
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.input:hover:not(:disabled):not(:focus) {
-  border-color: var(--color-border-strong);
+@media (hover: hover) and (pointer: fine) {
+  .input:hover:not(:disabled):not(:focus) {
+    border-color: var(--color-border-strong);
+  }
 }
 
 .input:focus {
@@ -660,8 +765,10 @@ textarea:focus-visible,
   color: var(--color-text);
 }
 
-.table tbody tr:hover {
-  background: var(--color-surface);
+@media (hover: hover) and (pointer: fine) {
+  .table tbody tr:hover {
+    background: var(--color-surface);
+  }
 }
 
 /* ============================================================= */
@@ -771,8 +878,10 @@ h1, h2, h3, h4, h5, h6 {
   --btn-loading-fg: var(--color-accent);
 }
 
-.btn-link:hover:not(:disabled) {
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  .btn-link:hover:not(:disabled) {
+    text-decoration: underline;
+  }
 }
 
 /* ── Form controls beyond .input ── */
@@ -782,7 +891,7 @@ h1, h2, h3, h4, h5, h6 {
   display: block;
   width: 100%;
   padding: var(--space-sm) var(--space-md);
-  font-size: var(--text-sm);
+  font-size: max(16px, var(--text-sm)); /* 16px floor, see .input */
   line-height: 1.5;
   color: var(--color-text);
   background: var(--color-bg);
@@ -792,9 +901,20 @@ h1, h2, h3, h4, h5, h6 {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.select:hover:not(:disabled):not(:focus),
-.textarea:hover:not(:disabled):not(:focus) {
-  border-color: var(--color-border-strong);
+/* Wide screen with a mouse: fields can be compact, nothing zooms. */
+@media (min-width: 769px) and (pointer: fine) {
+  .input,
+  .select,
+  .textarea {
+    font-size: var(--text-sm);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .select:hover:not(:disabled):not(:focus),
+  .textarea:hover:not(:disabled):not(:focus) {
+    border-color: var(--color-border-strong);
+  }
 }
 
 .select:focus,
@@ -947,8 +1067,10 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--color-text-secondary);
 }
 
-.stat-hint a:hover {
-  color: var(--color-text);
+@media (hover: hover) and (pointer: fine) {
+  .stat-hint a:hover {
+    color: var(--color-text);
+  }
 }
 
 .divider {
@@ -988,8 +1110,18 @@ h1, h2, h3, h4, h5, h6 {
 .tabs {
   display: flex;
   gap: 2px;
-  border-bottom: var(--border-width) solid var(--color-border);
+  /* The baseline is an inset shadow, not a border, so the active tab's
+     underline can cover it without a negative margin. That lets the row
+     scroll sideways on a narrow phone instead of widening the page. */
+  box-shadow: inset 0 calc(var(--border-width) * -1) 0 var(--color-border);
   margin-bottom: var(--space-lg);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
@@ -1000,14 +1132,17 @@ h1, h2, h3, h4, h5, h6 {
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  margin-bottom: calc(var(--border-width) * -1);
+  flex-shrink: 0;
+  white-space: nowrap;
   cursor: pointer;
   font-family: var(--font-sans);
   transition: color 0.15s, border-color 0.15s;
 }
 
-.tab:hover {
-  color: var(--color-text-secondary);
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover {
+    color: var(--color-text-secondary);
+  }
 }
 
 .tab.active {
@@ -1142,10 +1277,12 @@ h1, h2, h3, h4, h5, h6 {
   transition: background-color 0.15s, color 0.15s;
 }
 
-.nav-link:hover {
-  background: var(--color-bg);
-  color: var(--color-text);
-  text-decoration: none;
+@media (hover: hover) and (pointer: fine) {
+  .nav-link:hover {
+    background: var(--color-bg);
+    color: var(--color-text);
+    text-decoration: none;
+  }
 }
 
 .nav-link.active {
@@ -1200,11 +1337,17 @@ h1, h2, h3, h4, h5, h6 {
   cursor: pointer;
 }
 
-.dropdown-item:hover,
 .dropdown-item:focus-visible {
   background: var(--color-accent-soft);
   color: var(--color-text);
   text-decoration: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .dropdown-item:hover {
+    background: var(--color-accent-soft);
+    color: var(--color-text);
+    text-decoration: none;
+  }
 }
 
 .dropdown-item.danger {
@@ -1247,10 +1390,15 @@ h1, h2, h3, h4, h5, h6 {
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
-[data-tooltip]:hover::after,
 [data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+@media (hover: hover) and (pointer: fine) {
+  [data-tooltip]:hover::after {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1283,9 +1431,11 @@ h1, h2, h3, h4, h5, h6 {
   transition: background-color 0.15s, color 0.15s;
 }
 
-.page-btn:hover:not(:disabled):not(.is-active) {
-  background: var(--color-surface-sunken);
-  color: var(--color-text);
+@media (hover: hover) and (pointer: fine) {
+  .page-btn:hover:not(:disabled):not(.is-active) {
+    background: var(--color-surface-sunken);
+    color: var(--color-text);
+  }
 }
 
 .page-btn.is-active {
@@ -1319,9 +1469,11 @@ h1, h2, h3, h4, h5, h6 {
   text-decoration: none;
 }
 
-.breadcrumb:hover {
-  color: var(--color-accent);
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  .breadcrumb:hover {
+    color: var(--color-accent);
+    text-decoration: underline;
+  }
 }
 
 .breadcrumb-sep {
@@ -1450,4 +1602,77 @@ h1, h2, h3, h4, h5, h6 {
   .progress-bar {
     transition: none;
   }
+}
+
+/* ============================================================= */
+/* Touch :active states                                           */
+/* ============================================================= */
+/*
+ * :hover only exists inside (hover: hover) and (pointer: fine), so a
+ * phone never shows it. Each tappable element shows this press state
+ * instead. Kept last so a press wins over a hover on desktop too.
+ * Every :hover selector needs its :active twin
+ * (src/__tests__/mobile-guardrails.test.ts).
+ */
+a:active {
+  text-decoration: underline;
+}
+
+.btn-secondary:active:not(:disabled) {
+  background: var(--color-surface-sunken);
+  border-color: var(--color-border-strong);
+}
+
+.btn-ghost:active:not(:disabled) {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}
+
+.btn-danger:active:not(:disabled) {
+  background: var(--color-error-hover);
+  border-color: var(--color-error-hover);
+}
+
+.btn-link:active:not(:disabled) {
+  text-decoration: underline;
+  opacity: 0.8;
+}
+
+.table tbody tr:active {
+  background: var(--color-surface);
+}
+
+.stat-hint a:active {
+  color: var(--color-text);
+}
+
+.tab:active {
+  color: var(--color-text);
+}
+
+.nav-link:active {
+  background: var(--color-bg);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.dropdown-item:active {
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+[data-tooltip]:active::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.page-btn:active:not(:disabled):not(.is-active) {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}
+
+.breadcrumb:active {
+  color: var(--color-accent);
+  text-decoration: underline;
 }

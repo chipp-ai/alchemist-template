@@ -591,6 +591,19 @@ before styling anything customer-facing. It is enforced by
 files, no `transition: all`, font-family only via tokens) — a violation
 fails `deno task test`.
 
+### Mobile and touch: every page works on a phone first
+
+Read "Mobile and touch" in `web/DESIGN.md` before writing a page. In short:
+`:hover` only inside `@media (hover: hover) and (pointer: fine)`, with an
+`:active` twin for every tappable element; `.icon-btn` on icon-only
+buttons (44px tap area); fields at 16px or more on touch screens, and the
+right `inputmode` / `type` / `autocomplete` on each field; `100dvh` (or
+`100svh` for a hero), never `vh`; `env(safe-area-inset-*)` on fixed and
+sticky bars; never `maximum-scale` or `user-scalable=no`. Check new pages
+at 320, 375 and 390px for sideways scroll.
+`src/__tests__/mobile-guardrails.test.ts` fails the build on the mechanical
+rules.
+
 ### Hover/interactive transitions animate ONLY compositor properties (transform, opacity)
 
 `box-shadow`, `background`/`background-color`, and `border-color` must NEVER appear in a `transition:` list on cards, list rows, table rows, or any element repeated in a scrollable list. Scrolling sweeps rows under a stationary cursor, and every hover enter/leave that INTERPOLATES a blurred shadow or a background fill repaints that element's area on every frame of the transition — with dozens of rows on screen this is visible scroll jank even though the main thread is completely idle (root-caused on a generated project's dashboards, 2026-07-28: zero long tasks while scrolling; the cost was pure paint). The fix is free visually: keep the `:hover` rules exactly as they are (the shadow/background/border SWAP still happens — instantly, one repaint per flip) and keep `transform`/`opacity` in the transition so the lift or fade the eye tracks still animates.

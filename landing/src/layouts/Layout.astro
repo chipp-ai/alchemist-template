@@ -39,7 +39,7 @@ const navPages = PAGES.filter((p) => p.path !== "/");
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{title}</title>
     <meta name="description" content={description} />
     {canonical && <link rel="canonical" href={canonical} />}
@@ -90,6 +90,10 @@ const navPages = PAGES.filter((p) => p.path !== "/");
     >
       *, *::before, *::after { box-sizing: border-box; }
       html { -webkit-text-size-adjust: 100%; }
+      /* Mobile rules: web/DESIGN.md "Mobile and touch". */
+      html { -webkit-tap-highlight-color: transparent; }
+      html, body { overflow-x: clip; }
+      a, button { touch-action: manipulation; }
       body {
         margin: 0;
         background: var(--bg);
@@ -117,7 +121,10 @@ const navPages = PAGES.filter((p) => p.path !== "/");
       a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
       img { max-width: 100%; height: auto; display: block; }
       ul { margin: 0; padding: 0; list-style: none; }
-      .wrap { width: 100%; max-width: 72rem; margin: 0 auto; padding: 0 1.25rem; }
+      .wrap {
+        width: 100%; max-width: 72rem; margin: 0 auto;
+        padding: 0 max(1.25rem, env(safe-area-inset-right)) 0 max(1.25rem, env(safe-area-inset-left));
+      }
       .narrow { max-width: 46rem; }
       .muted { color: var(--muted); }
       .skip { position: absolute; left: -999px; top: 0; }
@@ -126,6 +133,7 @@ const navPages = PAGES.filter((p) => p.path !== "/");
       /* Header */
       .site-header {
         position: sticky; top: 0; z-index: 5;
+        padding-top: env(safe-area-inset-top);
         background: color-mix(in srgb, var(--bg) 88%, transparent);
         backdrop-filter: saturate(1.4) blur(10px);
         border-bottom: 1px solid var(--line);
@@ -144,7 +152,6 @@ const navPages = PAGES.filter((p) => p.path !== "/");
       }
       .site-nav ul { display: flex; align-items: center; gap: 0.25rem 1.25rem; flex-wrap: wrap; justify-content: flex-end; }
       .site-nav a { color: var(--text); text-decoration: none; font-size: 0.95rem; }
-      .site-nav a:hover { color: var(--link); }
       .site-nav a[aria-current="page"] { color: var(--link); font-weight: 600; }
 
       /* Buttons */
@@ -155,14 +162,22 @@ const navPages = PAGES.filter((p) => p.path !== "/");
         border: var(--borderWidth) solid var(--primary);
         background: var(--primary); color: var(--primaryContrast);
         font-weight: 600; font-size: 1rem; text-decoration: none; line-height: 1.2;
+        -webkit-user-select: none; user-select: none;
         box-shadow: var(--shadowSm);
         transition: transform 120ms ease, box-shadow 120ms ease;
       }
-      .button:hover { transform: translateY(-1px); box-shadow: var(--shadowMd); }
+      .button:active { transform: translateY(0); opacity: 0.85; }
       .button.secondary { background: transparent; color: var(--text); border-color: var(--line); box-shadow: none; }
-      .button.secondary:hover { border-color: var(--text); }
+      .button.secondary:active { border-color: var(--text); }
       .site-nav .button { min-height: 2.25rem; padding: 0.45rem 0.9rem; font-size: 0.9rem; color: var(--primaryContrast); }
-      .site-nav .button:hover { color: var(--primaryContrast); }
+      .site-nav a:active { color: var(--link); }
+      .site-nav .button:active { color: var(--primaryContrast); }
+      @media (hover: hover) and (pointer: fine) {
+        .site-nav a:hover { color: var(--link); }
+        .button:hover { transform: translateY(-1px); box-shadow: var(--shadowMd); }
+        .button.secondary:hover { border-color: var(--text); }
+        .site-nav .button:hover { color: var(--primaryContrast); }
+      }
 
       /* Sections */
       main { display: block; }
