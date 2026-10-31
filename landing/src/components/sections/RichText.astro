@@ -1,0 +1,20 @@
+---
+/** Prose from the old site or the owner, or the sanitized custom-HTML fallback. */
+import type { HtmlSection, RichTextSection } from "../../lib/composed";
+import Head from "./Head.astro";
+import Prose from "./Prose.astro";
+
+interface Props {
+  section: RichTextSection | HtmlSection;
+  level: "h1" | "h2";
+  id: string;
+}
+const { section, level, id } = Astro.props;
+const heading = section.type === "richText" ? section.heading : undefined;
+---
+<section class="section" aria-labelledby={heading ? id : undefined}>
+  <div class={section.type === "richText" ? "wrap narrow" : "wrap"}>
+    <Head heading={heading} level={level} id={id} />
+    <Prose html={section.html} />
+  </div>
+</section>

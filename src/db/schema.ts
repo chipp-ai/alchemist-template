@@ -651,6 +651,26 @@ export type InboundEmailAttachment = Selectable<InboundEmailAttachmentTable>;
 export type NewInboundEmailAttachment = Insertable<InboundEmailAttachmentTable>;
 export type InboundEmailAttachmentUpdate = Updateable<InboundEmailAttachmentTable>;
 
+/**
+ * Landing site form submissions (POST /api/site-forms/:name). `data` is the
+ * submitted fields keyed by field name: strings, booleans (a single
+ * checkbox) and string lists (checkboxes).
+ */
+export interface SiteFormSubmissionsTable {
+  id: Generated<string>;
+  formName: string;
+  pagePath: string;
+  data: ColumnType<
+    Record<string, string | boolean | string[]>,
+    Record<string, string | boolean | string[]>,
+    never
+  >;
+  userAgent: string | null;
+  createdAt: CreatedAt;
+}
+
+export type SiteFormSubmission = Selectable<SiteFormSubmissionsTable>;
+
 export interface Database {
   organizations: OrganizationsTable;
   users: UsersTable;
@@ -675,4 +695,5 @@ export interface Database {
   event_subscriptions: EventSubscriptionsTable;
   event_deliveries: EventDeliveriesTable;
   event_handler_receipts: EventHandlerReceiptsTable;
+  site_form_submissions: SiteFormSubmissionsTable;
 }

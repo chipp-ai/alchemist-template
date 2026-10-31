@@ -1,0 +1,31 @@
+---
+import type { TestimonialsSection } from "../../lib/composed";
+import Head from "./Head.astro";
+
+interface Props {
+  section: TestimonialsSection;
+  level: "h1" | "h2";
+  id: string;
+}
+const { section, level, id } = Astro.props;
+---
+<section class="section" aria-labelledby={section.heading ? id : undefined}>
+  <div class="wrap">
+    <Head heading={section.heading} level={level} id={id} />
+    <ul class="grid">
+      {section.items.map((t) => (
+        <li class="card">
+          <figure class="cs-quote">
+            <blockquote><p>{t.quote}</p></blockquote>
+            <figcaption class="muted">{t.name}{t.role ? `, ${t.role}` : ""}</figcaption>
+          </figure>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .cs-quote { margin: 0; }
+  .cs-quote figcaption { margin-top: 0.75rem; font-size: 0.9375rem; }
+</style>

@@ -92,6 +92,88 @@ jobs:
       - name: Build and check AEO rules
         run: npm run build
 
+  old-urls:
+    # A migrated site keeps every old URL working. When Chipp imported an old
+    # site it wrote chipp/site-migration/old-urls.json; this job builds the
+    # landing site, starts the app, and runs `deno task check:old-urls`:
+    # every old path must answer 200, or 301/302 to a 200. A project that
+    # was not migrated has no such file and the job passes at once.
+    name: Old URLs (site migration)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
+      JWT_SECRET: test-secret-for-ci-only
+      JOBS_ENABLED: "0"
+      PORT: "8000"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is this a migrated site?
+        id: migrated
+        run: |
+          if [ -f chipp/site-migration/old-urls.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No chipp/site-migration/old-urls.json: nothing to check."
+          fi
+
+      - uses: denoland/setup-deno@v2
+        if: steps.migrated.outputs.present == 'true'
+        with:
+          deno-version-file: .dvmrc
+
+      - uses: actions/setup-node@v4
+        if: steps.migrated.outputs.present == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+
+      - name: Build the landing site
+        if: steps.migrated.outputs.present == 'true'
+        working-directory: landing
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Run migrations
+        if: steps.migrated.outputs.present == 'true'
+        run: deno run --allow-net --allow-env --allow-read --allow-write=.scratch/logs db/migrate.ts
+
+      - name: Start the app
+        if: steps.migrated.outputs.present == 'true'
+        run: |
+          mkdir -p .scratch/logs
+          deno run --allow-net --allow-env --allow-read --allow-write --allow-ffi --allow-sys main.ts > .scratch/old-urls-server.log 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:8000/live > /dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          echo "::error::the app did not start"; cat .scratch/old-urls-server.log; exit 1
+
+      - name: Check old URLs
+        if: steps.migrated.outputs.present == 'true'
+        run: deno task check:old-urls http://localhost:8000
+
+      - name: Server log
+        if: failure() && steps.migrated.outputs.present == 'true'
+        run: cat .scratch/old-urls-server.log || true
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -154,7 +236,7 @@ jobs:
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [typecheck, test, landing]
+    needs: [typecheck, test, landing, old-urls]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
     steps:
       - uses: actions/checkout@v4

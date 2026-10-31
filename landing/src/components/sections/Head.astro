@@ -1,0 +1,20 @@
+---
+/**
+ * A section heading and its intro paragraph. The page's first section with
+ * a heading gets the H1 (ComposedPage.astro); every other one an H2.
+ */
+interface Props {
+  heading?: string;
+  intro?: string;
+  level: "h1" | "h2";
+  id?: string;
+}
+const { heading, intro, level, id } = Astro.props;
+const Heading = level;
+---
+{(heading || intro) && (
+  <div class="section-head">
+    {heading && <Heading id={id}>{heading}</Heading>}
+    {intro && <p>{intro}</p>}
+  </div>
+)}

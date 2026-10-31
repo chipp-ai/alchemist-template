@@ -1,0 +1,38 @@
+---
+import type { PricingSection } from "../../lib/composed";
+import Head from "./Head.astro";
+
+interface Props {
+  section: PricingSection;
+  level: "h1" | "h2";
+  id: string;
+}
+const { section, level, id } = Astro.props;
+---
+<section class="section" aria-labelledby={section.heading ? id : undefined}>
+  <div class="wrap">
+    <Head heading={section.heading} intro={section.intro} level={level} id={id} />
+    <ul class="grid">
+      {section.plans.map((plan) => (
+        <li class="card cs-plan">
+          <h3>{plan.name}</h3>
+          <p class="cs-price"><strong>{plan.price}</strong>{plan.period && <span class="muted"> {plan.period}</span>}</p>
+          {plan.description && <p class="muted">{plan.description}</p>}
+          {plan.features && plan.features.length > 0 && (
+            <ul class="cs-plan-features">
+              {plan.features.map((f) => <li>{f}</li>)}
+            </ul>
+          )}
+          {plan.cta && <a class="button" href={plan.cta.href}>{plan.cta.label}</a>}
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .cs-plan { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+  .cs-price { font-size: 1.75rem; font-family: var(--headingFont); }
+  .cs-plan-features { list-style: disc; padding-left: 1.25rem; }
+  .cs-plan .button { margin-top: auto; align-self: flex-start; }
+</style>

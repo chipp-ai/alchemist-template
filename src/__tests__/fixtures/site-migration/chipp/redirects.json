@@ -1,0 +1,5 @@
+{
+  "redirects": [
+    { "from": "/roofing.html", "to": "/services/roofing/", "status": 301 }
+  ]
+}

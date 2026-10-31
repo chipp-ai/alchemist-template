@@ -1,0 +1,53 @@
+---
+/** One blog post at its own (original) path. The body HTML is sanitized. */
+import Layout from "../layouts/Layout.astro";
+import type { BlogPost, BlogSettings } from "../lib/composed";
+import { carriedLd, postLd } from "../lib/page-ld";
+import { formatDate } from "../lib/site";
+import Img from "./sections/Img.astro";
+import Prose from "./sections/Prose.astro";
+
+interface Props {
+  post: BlogPost;
+  blog: BlogSettings;
+}
+const { post, blog } = Astro.props;
+const published = post.date.slice(0, 10);
+const updated = (post.updatedAt ?? post.date).slice(0, 10);
+const title = post.seo?.title?.trim() || post.title;
+const description = post.seo?.description?.trim() ?? post.description ?? "";
+const seo = post.image && !post.seo?.og?.image
+  ? { ...post.seo, og: { ...(post.seo?.og ?? {}), image: post.image.src } }
+  : post.seo;
+---
+<Layout
+  title={title}
+  description={description}
+  path={post.path}
+  seo={seo}
+  ld={postLd(post)}
+  extraLd={carriedLd(post.seo?.jsonLd)}
+  ogType="article"
+  aeo="relaxed"
+>
+  <article class="page wrap narrow">
+    <header>
+      <p class="kicker"><a href={blog.path}>{blog.title}</a></p>
+      <h1>{post.title}</h1>
+      {post.description && <p class="muted cs-post-lede">{post.description}</p>}
+      <p class="page-dates">
+        Published <time datetime={published}>{formatDate(published)}</time>.
+        Updated <time datetime={updated}>{formatDate(updated)}</time>.
+        {post.author && ` By ${post.author}.`}
+      </p>
+    </header>
+    {post.image && <Img image={post.image} class="cs-post-image" eager />}
+    <div class="cs-post-body"><Prose html={post.html} /></div>
+  </article>
+</Layout>
+
+<style>
+  .cs-post-lede { margin-top: 0.75rem; font-size: 1.125rem; }
+  article :global(.cs-post-image) { width: 100%; border-radius: var(--radius); margin: 2rem 0 0; }
+  .cs-post-body { margin-top: 2rem; }
+</style>

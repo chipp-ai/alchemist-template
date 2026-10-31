@@ -1,0 +1,286 @@
+---
+// The home page. Order: a hero that says what the reader gets (H1) with the
+// plain definition right under it, a picture of the product, what it does,
+// who it is for, how it works, pricing when there are prices, then the FAQ
+// that answer engines read. Every word comes from src/content/site.json.
+import Layout from "../../layouts/Layout.astro";
+import { homeFaq, homeHero, site } from "../../lib/site";
+
+const hero = homeHero();
+const faq = homeFaq();
+const features = site.features ?? [];
+const steps = (site.steps ?? []).slice(0, 4);
+const audience = site.audience ?? [];
+const plans = site.pricing.plans ?? [];
+const shot = site.productShot?.src ? site.productShot : null;
+const title = hero.headline === site.name ? `${site.name}: ${site.definition.what}` : `${site.name}: ${hero.headline}`;
+// The product sketch (no screenshot yet) labels its rows with the features.
+// With no features yet it draws unlabeled bars, never placeholder words.
+const sketchLabels = features.map((f) => f.title).slice(0, 4);
+const sketchNav = sketchLabels.length > 0 ? sketchLabels : ['', '', '', ''];
+const sketchCols = [0, 1, 2].map((i) => sketchLabels[i] ?? '');
+---
+<Layout title={title} description={site.description} path="/" faq={faq}>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap hero-copy">
+      <p class="kicker">{hero.eyebrow}</p>
+      <h1 id="hero-title">{hero.headline}</h1>
+      <p class="subhead">{hero.subhead}</p>
+      <div class="actions">
+        <a class="button" href={site.cta.href}>{site.cta.label}</a>
+        {hero.secondaryCta
+          ? <a class="button secondary" href={hero.secondaryCta.href}>{hero.secondaryCta.label}</a>
+          : steps.length > 0
+          ? <a class="button secondary" href="#how-it-works">See how it works</a>
+          : <a class="button secondary" href="/about/">About {site.name}</a>}
+      </div>
+    </div>
+    <div class="wrap">
+      <figure class="window">
+        <div class="window-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+        {shot
+          ? (
+            <img
+              src={shot.src}
+              alt={shot.alt}
+              width={shot.width ?? 1440}
+              height={shot.height ?? 900}
+              loading="eager"
+              decoding="async"
+            />
+          )
+          : (
+            <div class="sketch" aria-hidden="true">
+              <div class="sketch-side">
+                <span class="sketch-logo">{site.name}</span>
+                {sketchNav.map((r, i) => <span class={i === 0 ? "sketch-nav on" : "sketch-nav"}>{r || <i class="bar"></i>}</span>)}
+              </div>
+              <div class="sketch-main">
+                <div class="sketch-top"><span class="sketch-search"></span><span class="sketch-btn"></span></div>
+                <div class="sketch-cols">
+                  {sketchCols.map((r) => (
+                    <div class="sketch-col">
+                      <span class="sketch-col-title">{r || <i class="bar"></i>}</span>
+                      <span class="sketch-card"><i></i><i></i></span>
+                      <span class="sketch-card"><i></i><i></i></span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+      </figure>
+    </div>
+  </section>
+
+  {features.length > 0 && (
+    <section class="section" aria-labelledby="features">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="features">What you can do with {site.name}</h2>
+          <p>{site.definition.does}</p>
+        </div>
+        <ul class="features">
+          {features.map((f) => (
+            <li>
+              <h3>{f.title}</h3>
+              <p>{f.body}</p>
+            </li>
+          ))}
+        </ul>
+        <p class="as-of">Features as of {site.asOf}.</p>
+      </div>
+    </section>
+  )}
+
+  <section class="section" aria-labelledby="audience">
+    <div class={audience.length > 0 ? "wrap split" : "wrap"}>
+      <div class="section-head">
+        <h2 id="audience">Who it is for</h2>
+        <p class="lead">{site.definition.who}</p>
+      </div>
+      {audience.length > 0 && (
+        <ul class="audience">
+          {audience.map((a) => (
+            <li class="card">
+              <h3>{a.title}</h3>
+              <p>{a.body}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  </section>
+
+  {steps.length > 0 && (
+    <section class="section" aria-labelledby="steps-title" id="how-it-works">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="steps-title">How it works</h2>
+        </div>
+        <ol class="steps">
+          {steps.map((s, i) => (
+            <li>
+              <span class="step-n" aria-hidden="true">{i + 1}</span>
+              <h3>{s.title}</h3>
+              <p>{s.body}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  )}
+
+  {site.testimonials.length > 0 && (
+    <section class="section" aria-labelledby="testimonials">
+      <div class="wrap">
+        <div class="section-head"><h2 id="testimonials">What customers say</h2></div>
+        <ul class="grid">
+          {site.testimonials.map((t) => (
+            <li class="card">
+              <figure>
+                <blockquote><p>{t.quote}</p></blockquote>
+                <figcaption class="muted">{t.name}{t.role ? `, ${t.role}` : ""}</figcaption>
+              </figure>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )}
+
+  {plans.length > 0 && (
+    <section class="section" aria-labelledby="pricing">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="pricing">{site.pricing.question}</h2>
+          <p>{site.pricing.answer}</p>
+        </div>
+        <ul class="grid">
+          {plans.slice(0, 3).map((plan) => (
+            <li class="card plan">
+              <h3>{plan.name}</h3>
+              <p class="price"><strong>{plan.price}</strong>{plan.period ? <span class="muted"> {plan.period}</span> : ""}</p>
+              <p class="muted">{plan.description}</p>
+            </li>
+          ))}
+        </ul>
+        <p class="as-of">Prices as of {site.asOf}. <a href="/pricing/">See every plan</a>.</p>
+      </div>
+    </section>
+  )}
+
+  {faq.length > 0 && (
+    <section class="section" aria-labelledby="faq">
+      <div class="wrap">
+        <div class="section-head"><h2 id="faq">Questions and answers</h2></div>
+        <div class="faq">
+          {faq.map((f) => (
+            <div class="faq-item">
+              <h3>{f.question}</h3>
+              <p>{f.answer}</p>
+            </div>
+          ))}
+        </div>
+        <p class="as-of">Answers as of {site.asOf}.</p>
+      </div>
+    </section>
+  )}
+
+  <section class="closing" aria-labelledby="closing">
+    <div class="wrap closing-inner">
+      <div>
+        <h2 id="closing">Start with {site.name}</h2>
+        <p>{site.definition.who}</p>
+      </div>
+      <a class="button inverse" href={site.cta.href}>{site.cta.label}</a>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .hero {
+    background:
+      linear-gradient(to bottom, var(--tint) 0, var(--tint) 62%, var(--bg) 62%, var(--bg) 100%);
+    padding-top: clamp(3rem, 8vw, 6rem);
+    padding-bottom: clamp(1rem, 3vw, 2rem);
+    overflow: hidden;
+  }
+  .hero-copy { max-width: 72rem; }
+  .hero-copy h1 { max-width: 18ch; }
+  .subhead { margin-top: 1.25rem; max-width: 38rem; font-size: clamp(1.0625rem, 1.6vw, 1.25rem); color: var(--muted); }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 2rem; }
+  .hero .button.secondary { background: var(--surface); }
+
+  .window {
+    margin: clamp(2.5rem, 6vw, 4rem) 0 0;
+    border-radius: calc(var(--radius) + 6px);
+    border: var(--borderWidth) solid var(--line);
+    background: var(--surface);
+    box-shadow: var(--shadowLg), 0 0 0 6px color-mix(in srgb, var(--surface) 55%, transparent);
+    overflow: hidden;
+  }
+  .window-bar { display: flex; gap: 6px; padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--line); background: var(--bg); }
+  .window-bar span { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+  .window img { width: 100%; }
+
+  .sketch { display: grid; grid-template-columns: 13rem 1fr; min-height: 22rem; font-size: 0.8125rem; }
+  .sketch-side { display: flex; flex-direction: column; gap: 0.35rem; padding: 1rem; border-right: 1px solid var(--line); background: var(--bg); }
+  .sketch-logo { font-family: var(--headingFont); font-weight: var(--headingWeight); margin-bottom: 0.75rem; }
+  .sketch-nav { padding: 0.4rem 0.6rem; border-radius: calc(var(--radius) / 1.5); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sketch-nav.on { background: var(--tint); color: var(--text); box-shadow: inset 3px 0 0 var(--primary); }
+  .sketch-main { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+  .sketch-top { display: flex; justify-content: space-between; gap: 1rem; }
+  .sketch-search { flex: 0 1 16rem; height: 2rem; border-radius: var(--radius); border: 1px solid var(--line); }
+  .sketch-btn { width: 7rem; height: 2rem; border-radius: var(--radius); background: var(--primary); }
+  .sketch-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+  .sketch-col { background: var(--bg); border-radius: var(--radius); padding: 0.65rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  .sketch-col-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sketch-card { display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.65rem; box-shadow: var(--shadowSm); }
+  .bar { display: inline-block; width: 70%; height: 8px; border-radius: 4px; background: var(--line); vertical-align: middle; }
+  .sketch-card i { display: block; height: 7px; border-radius: 4px; background: var(--line); }
+  .sketch-card i + i { width: 60%; background: color-mix(in srgb, var(--accent) 45%, var(--surface)); }
+
+  .features { display: grid; gap: 2rem 2.5rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+  .features li { padding-top: 1.25rem; border-top: 2px solid var(--text); }
+  .features li:first-child { border-top-color: var(--primary); }
+  .features h3 { margin-bottom: 0.5rem; font-size: 1.1875rem; }
+  .features p { color: var(--muted); }
+
+  .split { display: grid; gap: 2.5rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); align-items: start; }
+  .section-head .lead { margin-top: 1rem; font-size: 1.1875rem; color: var(--text); }
+  .split .section-head { margin-bottom: 0; }
+  .audience { display: grid; gap: 1rem; }
+  .audience h3 { margin-bottom: 0.35rem; }
+  .audience p { color: var(--muted); }
+
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); counter-reset: none; }
+  .steps li { position: relative; }
+  .step-n {
+    display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; margin-bottom: 1rem;
+    border-radius: 999px; background: var(--primary); color: var(--primaryContrast);
+    font-family: var(--headingFont); font-weight: var(--headingWeight);
+  }
+  .steps h3 { margin-bottom: 0.4rem; }
+  .steps p { color: var(--muted); }
+
+  .plan .price { font-size: 1.75rem; margin: 0.5rem 0; font-family: var(--headingFont); }
+
+  .faq { display: grid; gap: 0; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); column-gap: 3rem; }
+  .faq-item { padding: 1.25rem 0; border-bottom: 1px solid var(--line); }
+  .faq-item h3 { margin-bottom: 0.5rem; }
+  .faq-item p { color: var(--muted); }
+
+  .closing { background: var(--primary); color: var(--primaryContrast); padding: clamp(3rem, 7vw, 4.5rem) 0; }
+  .closing-inner { display: flex; align-items: center; justify-content: space-between; gap: 2rem; flex-wrap: wrap; }
+  .closing p { margin-top: 0.5rem; max-width: 40rem; opacity: 0.92; }
+  .button.inverse { background: var(--primaryContrast); color: var(--primary); border-color: var(--primaryContrast); }
+
+  @media (max-width: 52rem) {
+    .split { grid-template-columns: 1fr; }
+    .sketch { grid-template-columns: 1fr; min-height: 0; }
+    .sketch-side { display: none; }
+    .sketch-cols { grid-template-columns: repeat(2, 1fr); }
+    .sketch-col:nth-child(3) { display: none; }
+  }
+</style>

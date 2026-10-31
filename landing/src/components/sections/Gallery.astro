@@ -1,0 +1,35 @@
+---
+import type { GallerySection } from "../../lib/composed";
+import Head from "./Head.astro";
+import Img from "./Img.astro";
+
+interface Props {
+  section: GallerySection;
+  level: "h1" | "h2";
+  id: string;
+}
+const { section, level, id } = Astro.props;
+---
+<section class="section" aria-labelledby={section.heading ? id : undefined}>
+  <div class="wrap">
+    <Head heading={section.heading} intro={section.intro} level={level} id={id} />
+    <ul class="cs-gallery">
+      {section.images.map((image) => (
+        <li>
+          <figure>
+            <Img image={image} />
+            {image.caption && <figcaption class="muted">{image.caption}</figcaption>}
+          </figure>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .cs-gallery { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr)); }
+  .cs-gallery li { min-width: 0; }
+  .cs-gallery figure { margin: 0; }
+  .cs-gallery :global(img) { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius); }
+  .cs-gallery figcaption { margin-top: 0.4rem; font-size: 0.875rem; }
+</style>

@@ -1,0 +1,25 @@
+---
+/**
+ * One image for a section. alt="" marks it decorative (aria-hidden), which
+ * the AEO check requires for an empty alt.
+ */
+import type { SiteImage } from "../../lib/composed";
+
+interface Props {
+  image: SiteImage;
+  class?: string;
+  eager?: boolean;
+}
+const { image, class: className, eager = false } = Astro.props;
+const decorative = !image.alt.trim();
+---
+<img
+  class={className}
+  src={image.src}
+  alt={image.alt}
+  aria-hidden={decorative ? "true" : undefined}
+  width={image.width}
+  height={image.height}
+  loading={eager ? "eager" : "lazy"}
+  decoding="async"
+/>

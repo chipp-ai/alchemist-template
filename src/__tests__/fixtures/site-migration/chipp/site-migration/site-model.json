@@ -1,0 +1,136 @@
+{
+  "meta": {
+    "origin": "https://old.example.com",
+    "platform": "wordpress",
+    "importedAt": "2026-10-30T12:00:00Z"
+  },
+  "design": {
+    "colors": { "primary": "#1f4e79", "background": "#ffffff", "text": "#1a1a1a" },
+    "fonts": { "heading": "Merriweather", "body": "Source Sans 3" }
+  },
+  "pages": [
+    {
+      "path": "/",
+      "title": "Fixture Roofing | Roof repair and replacement",
+      "seo": {
+        "title": "Fixture Roofing | Roof repair and replacement",
+        "description": "Fixture Roofing repairs and replaces roofs for homes in the valley.",
+        "canonical": "https://old.example.com/",
+        "og": { "og:title": "Fixture Roofing", "og:image": "https://old.example.com/wp-content/uploads/roof.jpg", "og:site_name": "Fixture Roofing" },
+        "jsonLd": [
+          { "@context": "https://schema.org", "@type": "RoofingContractor", "name": "Fixture Roofing", "telephone": "+1-555-0100" },
+          { "@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [] }
+        ],
+        "noindex": false
+      },
+      "screenshot": { "desktop": "chipp/site-migration/screenshots/home-desktop.png", "mobile": "chipp/site-migration/screenshots/home-mobile.png" },
+      "sections": [
+        {
+          "type": "hero",
+          "eyebrow": "Serving the valley since 1998",
+          "heading": "Roofs that last through every season",
+          "subhead": "Fixture Roofing repairs and replaces roofs for homes in the valley.",
+          "image": { "src": "https://old.example.com/wp-content/uploads/roof.jpg", "alt": "A new shingle roof on a family home" },
+          "actions": [{ "label": "See our roofing work", "href": "https://old.example.com/services/roofing" }]
+        },
+        {
+          "type": "faq",
+          "heading": "Questions homeowners ask",
+          "items": [
+            { "question": "Do you give free estimates?", "answer": "Yes. We inspect the roof and send a written estimate within two days." }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/about-us",
+      "title": "About Fixture Roofing",
+      "seo": {
+        "title": "About Fixture Roofing",
+        "description": "A family roofing company with three crews.",
+        "canonical": "https://old.example.com/about-us/"
+      },
+      "screenshot": { "desktop": "chipp/site-migration/screenshots/about-desktop.png", "mobile": "chipp/site-migration/screenshots/about-mobile.png" },
+      "sections": [
+        {
+          "type": "richText",
+          "heading": "About Fixture Roofing",
+          "html": "<h1>Our story</h1><p>We are a family roofing company with three crews. Read about <a href=\"https://old.example.com/services/roofing\">our roofing work</a>.</p><img src=\"https://old.example.com/wp-content/uploads/crew.jpg\"><script>alert(1)</script>"
+        }
+      ]
+    },
+    {
+      "path": "/services/roofing",
+      "title": "Roof replacement | Fixture Roofing",
+      "seo": {
+        "title": "Roof replacement | Fixture Roofing",
+        "description": "Full roof replacement with a ten year workmanship warranty.",
+        "canonical": "https://old.example.com/services/roofing/"
+      },
+      "screenshot": { "desktop": "chipp/site-migration/screenshots/roofing-desktop.png", "mobile": "chipp/site-migration/screenshots/roofing-mobile.png" },
+      "sections": [
+        {
+          "type": "features",
+          "heading": "Roof replacement",
+          "intro": "Full roof replacement with a ten year workmanship warranty.",
+          "items": [
+            { "title": "Inspection", "body": "We check the deck, the flashing and the gutters." },
+            { "title": "Replacement", "body": "Most homes take one or two days." }
+          ]
+        },
+        { "type": "carousel", "slides": [] }
+      ]
+    },
+    {
+      "path": "/blog/",
+      "title": "Roofing tips | Fixture Roofing",
+      "seo": { "title": "Roofing tips | Fixture Roofing", "description": "Short articles about keeping a roof in good shape." }
+    }
+  ],
+  "forms": [
+    {
+      "pagePath": "/about-us",
+      "name": "Contact Us",
+      "fields": [
+        { "name": "your-name", "label": "Your name", "type": "text", "required": true },
+        { "name": "your-email", "label": "Email", "type": "email", "required": true },
+        { "name": "phone", "label": "Phone", "type": "tel", "required": false },
+        { "name": "service", "label": "Service", "type": "select", "required": true, "options": ["Repair", "Replacement", "Inspection"] },
+        { "name": "your-message", "label": "Message", "type": "textarea", "required": true }
+      ]
+    }
+  ],
+  "navigation": {
+    "header": [
+      { "label": "Roofing", "href": "https://old.example.com/services/roofing" },
+      { "label": "About", "href": "/about-us" },
+      { "label": "Tips", "href": "/blog/" }
+    ],
+    "footer": [
+      { "label": "Home", "href": "/" },
+      { "label": "About", "href": "/about-us" }
+    ]
+  },
+  "assets": [
+    { "oldUrl": "https://old.example.com/wp-content/uploads/roof.jpg", "newUrl": "https://cdn.example.com/fixture/roof.jpg" },
+    { "oldUrl": "https://old.example.com/wp-content/uploads/crew.jpg", "newUrl": "https://cdn.example.com/fixture/crew.jpg" }
+  ],
+  "redirects": [{ "from": "/roofing.html", "to": "/services/roofing/", "status": 301 }],
+  "collections": [
+    {
+      "type": "blog",
+      "path": "/blog/",
+      "items": [
+        {
+          "slug": "spring-roof-check",
+          "path": "/blog/spring-roof-check/",
+          "title": "A spring roof check in five steps",
+          "date": "2026-04-02",
+          "html": "<p>Walk around the house and look for missing shingles.</p><p>Then <a href=\"https://old.example.com/about-us/\">call us</a> if you find one.</p>",
+          "image": "https://old.example.com/wp-content/uploads/roof.jpg"
+        }
+      ]
+    }
+  ],
+  "warnings": ["One page uses a carousel the crawler could not map."]
+}

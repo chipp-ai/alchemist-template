@@ -14,13 +14,26 @@ cd landing
 npm install
 npm run dev      # http://localhost:4321
 npm run build    # astro build, then the AEO check
-npm test         # tests for the AEO check
+npm test         # AEO check, redirects, and real builds of the classic and a migrated site
+npm run import:site-model   # a migrated site: chipp/site-migration/site-model.json -> content files
 ```
 
 In the Builder it runs as a second preview app named "Landing site".
 
 - **Words:** `src/content/site.json`. Every page and the JSON-LD read it.
-- **Pages:** `src/pages/` (index, pricing, about, sitemap.xml, robots.txt).
+- **Pages:** `src/pages/index.astro` ("/") and `src/pages/[...path].astro`
+  (every other page), plus sitemap.xml and robots.txt. The classic home,
+  about and pricing pages are `src/components/legacy/`.
+- **Composed pages:** one JSON file per page in `src/content/pages/`, any
+  path (nested too), built from sections in `src/components/sections/`
+  (hero, features, gallery, testimonials, pricing, faq, cta, richText, form,
+  team, logos, html). Shapes and rules: `src/lib/composed.ts`.
+- **Blog:** one JSON file per post in `src/content/posts/` (each at its own
+  `path`) and `blog` in site.json (the list page).
+- **Custom code:** approved analytics snippets in `src/content/custom-code.json`,
+  printed in the head or before `</body>` of every landing page.
+- **Redirects:** `../chipp/redirects.json`, validated by the build and served
+  by the app (and by `npm run dev`).
 - **Layout:** `src/layouts/Layout.astro` (header, nav, main, footer, dates, JSON-LD).
 - **Look:** colors, fonts, corners and shadows are read from
   `../web/src/design/design.json` at build time, so the site matches the app.
@@ -44,10 +57,16 @@ plans, the FAQ, and a closing call to action. The reader's main question
 starter landing from the approved plan. When a person asks for any change to
 the landing copy, set it to `false` so nothing rewrites their words.
 
-To add a page: create `src/pages/<name>.astro` with `Layout`, an H1, a plain
-definition paragraph under it, and at least one question heading with a
-short answer. Add it to `PAGES` in
-`src/lib/site.ts` so it is in the nav and the sitemap.
+To add a page: add `src/content/pages/<name>.json` with its `path`, `title`,
+`seo`, an optional `navLabel` (puts it in the nav) and its `sections`. The
+first section heading is the H1; put a plain definition paragraph under it
+(a hero `subhead` or a section `intro`) and at least one question heading
+with a short answer (a `faq` section). It is in the sitemap on its own.
+
+A composed page for `/` makes the whole site composed: every page then comes
+from `src/content/pages/`, and the classic about and pricing pages are not
+built. A rebuilt (migrated) site works this way. See "Rebuilding a migrated
+site" in `../.claude/rules/landing.md`.
 
 ## The AEO rules
 
@@ -85,3 +104,10 @@ image. A page that breaks a rule fails the build.
 
 The FAQ JSON-LD is built from the same `faq` list the page shows, and the
 check fails if the two ever differ.
+
+Words carried over from an old site are not rewritten to fit rules 3 and 4:
+that would mean inventing copy. Pages with `importedFrom` and blog posts
+carry `<main data-aeo="relaxed">`, and the check prints those two rules as
+warnings for them. Every other rule still fails the build. A link to an old
+URL that `../chipp/redirects.json` redirects counts as resolved when the
+redirect's target is a built page, and approved custom code is skipped.

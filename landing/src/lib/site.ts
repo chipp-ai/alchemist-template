@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import raw from "../content/site.json";
 import { bestTextOn, contrastRatio, mix, shadowValues, tintForContrast } from "../../../web/src/design/tokens.ts";
+import type { BlogSettings } from "./composed";
 
 export interface SiteFaq {
   question: string;
@@ -86,6 +87,17 @@ export interface SiteContent {
    * approved plan. Any edit a person asks for sets it to false.
    */
   starter?: boolean;
+  /**
+   * The blog list page (composed sites). Posts live in src/content/posts/,
+   * one JSON file each (lib/composed.ts BlogPost).
+   */
+  blog?: BlogSettings;
+  /**
+   * The header and footer links. Omit to list the built pages: the classic
+   * pages, then composed pages with a navLabel, then the blog. A rebuilt
+   * site copies its old navigation here.
+   */
+  nav?: { header?: SiteLink[]; footer?: SiteLink[] };
   /** "Month Year", shown as "as of <asOf>" next to key facts. */
   asOf: string;
   /** ISO dates (YYYY-MM-DD). */

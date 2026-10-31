@@ -84,7 +84,9 @@ web/                    # Svelte 5 SPA, served at /app (hash routes: /app/#/sett
 
 landing/                # Astro static landing site, served at "/" (marketing pages)
   src/content/site.json # ALL landing copy: name, definition, main question, FAQ, dates
-  src/pages/            # index, pricing, about, sitemap.xml, robots.txt
+  src/content/pages/    # composed pages: one JSON per page, any path, built from sections
+  src/content/posts/    # blog posts: one JSON per post, at its own path
+  src/pages/            # index.astro ("/"), [...path].astro (every other page), sitemap.xml, robots.txt
   scripts/aeo-check.mjs # runs after astro build; fails the build on an AEO rule
 
 db/
@@ -172,6 +174,19 @@ folder other than `web/` and `landing/` is a separate front end
   (`steps`), pricing when there are plans, and the FAQ. `"starter": true`
   marks the platform's first draft; set it to `false` when a person asks for
   any change to the landing copy, so the build never rewrites their words.
+- **More pages, a blog, forms, redirects, a migrated site.** Any number of
+  pages at any path are JSON files in `landing/src/content/pages/` built from
+  section components (hero, features, gallery, testimonials, pricing, FAQ,
+  CTA, rich text, form, team, logos, sanitized HTML); blog posts are in
+  `landing/src/content/posts/`. A `form` section posts to
+  `POST /api/site-forms/<name>` (stored in `site_form_submissions`, owner
+  emailed through the outbox). `chipp/redirects.json` holds 301/302
+  redirects for paths nothing else serves. Approved analytics snippets go in
+  `landing/src/content/custom-code.json`. **When
+  `chipp/site-migration/site-model.json` exists, follow "Rebuilding a
+  migrated site" in `.claude/rules/landing.md`**: rebuild every old page at
+  its old path, keep its SEO, never invent content, and run
+  `deno task check:old-urls` until it is clean (CI runs it too).
 - **Brand.** The landing site reads colors, fonts, corners and shadows from
   `web/src/design/design.json` at build time, and `landing/src/styles/theme.css`
   overrides any token. Change the design there. The

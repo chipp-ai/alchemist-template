@@ -1,0 +1,29 @@
+---
+/**
+ * Imported or owner-written HTML (richText and html sections, blog post
+ * bodies). Sanitized here, at build time (lib/sanitize.ts).
+ */
+import { sanitize } from "../../lib/sanitize";
+
+interface Props {
+  html: string;
+  class?: string;
+}
+const { html, class: className } = Astro.props;
+const safe = sanitize(html);
+---
+<div class:list={["prose", className]} set:html={safe} />
+
+<style>
+  .prose { min-width: 0; overflow-wrap: anywhere; }
+  .prose :global(:is(h2, h3, h4)) { margin: 2rem 0 0.75rem; }
+  .prose :global(:is(p + p, ul, ol, blockquote, figure, table)) { margin-top: 1rem; }
+  .prose :global(ul) { list-style: disc; padding-left: 1.25rem; }
+  .prose :global(ol) { padding-left: 1.25rem; }
+  .prose :global(blockquote) { border-left: 3px solid var(--line); padding-left: 1rem; color: var(--muted); }
+  .prose :global(:is(img, video, iframe)) { max-width: 100%; border-radius: var(--radius); }
+  .prose :global(iframe) { width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; }
+  .prose :global(table) { display: block; overflow-x: auto; border-collapse: collapse; }
+  .prose :global(:is(th, td)) { border: 1px solid var(--line); padding: 0.5rem 0.75rem; text-align: left; }
+  .prose :global(pre) { overflow-x: auto; padding: 1rem; background: var(--surface); border-radius: var(--radius); }
+</style>

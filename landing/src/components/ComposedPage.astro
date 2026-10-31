@@ -1,0 +1,90 @@
+---
+/**
+ * One composed page (lib/composed.ts): the Layout plus its sections in
+ * order. The first section with a heading gets the page's H1; every other
+ * section heading is an H2.
+ */
+import Layout from "../layouts/Layout.astro";
+import type { ComposedPage, Section } from "../lib/composed";
+import { pageDates } from "../lib/content";
+import { carriedLd, composedPageLd, pageFaq } from "../lib/page-ld";
+import { formatDate, site } from "../lib/site";
+import Cta from "./sections/Cta.astro";
+import Faq from "./sections/Faq.astro";
+import Features from "./sections/Features.astro";
+import Form from "./sections/Form.astro";
+import Gallery from "./sections/Gallery.astro";
+import Hero from "./sections/Hero.astro";
+import Logos from "./sections/Logos.astro";
+import Pricing from "./sections/Pricing.astro";
+import RichText from "./sections/RichText.astro";
+import Team from "./sections/Team.astro";
+import Testimonials from "./sections/Testimonials.astro";
+
+interface Props {
+  page: ComposedPage;
+}
+const { page } = Astro.props;
+
+function headingOf(s: Section): string | undefined {
+  return s.type === "html" ? undefined : s.heading;
+}
+const h1Index = page.sections.findIndex((s) => Boolean(headingOf(s)?.trim()));
+const title = page.seo?.title?.trim() || page.title;
+const description = page.seo?.description?.trim() ?? "";
+const dates = pageDates(page);
+const ownDates = dates.published !== site.publishedAt || dates.updated !== site.updatedAt;
+const ld = composedPageLd({
+  path: page.path,
+  title,
+  description,
+  published: dates.published,
+  updated: dates.updated,
+  faq: pageFaq(page),
+});
+const COMPONENTS = {
+  hero: Hero,
+  features: Features,
+  gallery: Gallery,
+  testimonials: Testimonials,
+  pricing: Pricing,
+  faq: Faq,
+  cta: Cta,
+  richText: RichText,
+  html: RichText,
+  form: Form,
+  team: Team,
+  logos: Logos,
+} as const;
+const blocks = page.sections.map((section, i) => ({
+  Component: COMPONENTS[section.type] as any,
+  section,
+  level: i === h1Index ? "h1" : "h2",
+  id: `s${i + 1}-title`,
+}));
+---
+<Layout
+  title={title}
+  description={description}
+  path={page.path}
+  seo={page.seo}
+  ld={ld}
+  extraLd={carriedLd(page.seo?.jsonLd)}
+  aeo={page.importedFrom ? "relaxed" : undefined}
+>
+  {blocks.map(({ Component, section, level, id }) => (
+    <Component section={section} level={level} id={id} pagePath={page.path} />
+  ))}
+  {ownDates && (
+    <div class="wrap">
+      <p class="page-dates cs-page-dates">
+        Published <time datetime={dates.published}>{formatDate(dates.published)}</time>.
+        Updated <time datetime={dates.updated}>{formatDate(dates.updated)}</time>.
+      </p>
+    </div>
+  )}
+</Layout>
+
+<style>
+  .cs-page-dates { padding: 1.5rem 0; }
+</style>

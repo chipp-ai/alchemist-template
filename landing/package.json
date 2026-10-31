@@ -6,10 +6,15 @@
     "dev": "astro dev",
     "build": "astro build && node scripts/aeo-check.mjs",
     "check:aeo": "node scripts/aeo-check.mjs",
-    "test": "node --test scripts/aeo-check.test.mjs scripts/placeholder-copy.test.mjs",
+    "test": "node --test scripts/aeo-check.test.mjs scripts/placeholder-copy.test.mjs scripts/redirects.test.mjs scripts/site-migration.test.mjs",
+    "import:site-model": "node scripts/import-site-model.mjs",
     "preview": "astro preview"
   },
   "dependencies": {
-    "astro": "7.3.5"
+    "astro": "7.3.5",
+    "sanitize-html": "2.17.0"
+  },
+  "devDependencies": {
+    "@types/sanitize-html": "2.16.0"
   }
 }

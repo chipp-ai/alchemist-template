@@ -1,0 +1,167 @@
+---
+/**
+ * A form from the site model: any fields, posted to
+ * /api/site-forms/<form name> (src/api/routes/site-forms/index.ts). The
+ * server stores each submission in site_form_submissions and emails the
+ * owner. It works with scripts off: the server answers with a 303 back to
+ * this page at #form-<name>-<status>, and :target shows the message.
+ *
+ * Mobile rules (web/DESIGN.md "Mobile and touch"): fields are 16px or more,
+ * and each type asks for the right keyboard and autofill.
+ */
+import type { FormField, FormSection } from "../../lib/composed";
+import Head from "./Head.astro";
+
+interface Props {
+  section: FormSection;
+  level: "h1" | "h2";
+  id: string;
+  pagePath: string;
+}
+const { section, level, id, pagePath } = Astro.props;
+const form = section.form;
+const base = `form-${form.name}`;
+
+/** Autofill for the visitor's own details, from the field name. */
+const AUTOCOMPLETE_BY_NAME: Record<string, string> = {
+  name: "name",
+  full_name: "name",
+  fullname: "name",
+  first_name: "given-name",
+  firstname: "given-name",
+  last_name: "family-name",
+  lastname: "family-name",
+  company: "organization",
+  organization: "organization",
+  address: "street-address",
+  street: "street-address",
+  city: "address-level2",
+  state: "address-level1",
+  zip: "postal-code",
+  zipcode: "postal-code",
+  postal_code: "postal-code",
+  country: "country-name",
+};
+
+function inputAttrs(f: FormField): Record<string, string | undefined> {
+  const key = f.name.toLowerCase().replace(/-/g, "_");
+  const auto = f.autocomplete ?? AUTOCOMPLETE_BY_NAME[key];
+  switch (f.type) {
+    case "email":
+      return { type: "email", inputmode: "email", autocomplete: f.autocomplete ?? "email" };
+    case "tel":
+      return { type: "tel", inputmode: "tel", autocomplete: f.autocomplete ?? "tel" };
+    case "url":
+      return { type: "url", inputmode: "url", autocomplete: f.autocomplete ?? "url" };
+    case "number":
+      // type="text" + inputmode: type="number" drops a trailing "." and scrolls on wheel.
+      return { type: "text", inputmode: "decimal", autocomplete: f.autocomplete ?? "off" };
+    case "date":
+      return { type: "date", autocomplete: auto };
+    default:
+      return { type: "text", autocomplete: auto };
+  }
+}
+const fid = (f: FormField) => `${base}-${f.name}`;
+const tid = (f: FormField, part = "input") => `site-form-${form.name}-${part}-${f.name}`;
+---
+<section class="section" id={base} aria-labelledby={section.heading ? id : undefined}>
+  <div class="wrap narrow">
+    <Head heading={section.heading} intro={section.intro} level={level} id={id} />
+    <p id={`${base}-sent`} class="cs-form-status" role="status">{form.successMessage ?? "Thank you. Your message was sent."}</p>
+    <p id={`${base}-invalid`} class="cs-form-status cs-form-error" role="alert">Some fields need another look. Check them and send again.</p>
+    <p id={`${base}-limited`} class="cs-form-status cs-form-error" role="alert">Too many messages from here. Please try again in a few minutes.</p>
+    <form class="card cs-form" method="post" action={`/api/site-forms/${form.name}`} data-testid={`site-form-${form.name}`}>
+      <input type="hidden" name="_page" value={pagePath} />
+      {form.fields.map((f) => {
+        if (f.type === "hidden") return <input type="hidden" name={f.name} value={f.value ?? ""} />;
+        if (f.type === "textarea") {
+          return (
+            <div class="cs-field">
+              <label for={fid(f)}>{f.label}{f.required && <span class="cs-req" aria-hidden="true"> *</span>}</label>
+              <textarea id={fid(f)} name={f.name} rows="5" required={f.required} placeholder={f.placeholder} data-testid={tid(f)}></textarea>
+            </div>
+          );
+        }
+        if (f.type === "select") {
+          return (
+            <div class="cs-field">
+              <label for={fid(f)}>{f.label}{f.required && <span class="cs-req" aria-hidden="true"> *</span>}</label>
+              <select id={fid(f)} name={f.name} required={f.required} data-testid={tid(f, "select")}>
+                <option value="">{f.placeholder ?? "Choose one"}</option>
+                {(f.options ?? []).map((o) => <option value={o}>{o}</option>)}
+              </select>
+            </div>
+          );
+        }
+        if (f.type === "radio" || f.type === "checkboxes") {
+          return (
+            <fieldset class="cs-field cs-choices">
+              <legend>{f.label}{f.required && <span class="cs-req" aria-hidden="true"> *</span>}</legend>
+              {(f.options ?? []).map((o, i) => (
+                <label class="cs-choice">
+                  <input
+                    type={f.type === "radio" ? "radio" : "checkbox"}
+                    name={f.name}
+                    value={o}
+                    required={f.type === "radio" && f.required && i === 0}
+                    data-testid={`${tid(f, "choice")}-${i}`}
+                  />
+                  <span>{o}</span>
+                </label>
+              ))}
+            </fieldset>
+          );
+        }
+        if (f.type === "checkbox") {
+          return (
+            <div class="cs-field">
+              <label class="cs-choice">
+                <input type="checkbox" name={f.name} value="yes" required={f.required} data-testid={tid(f, "checkbox")} />
+                <span>{f.label}</span>
+              </label>
+            </div>
+          );
+        }
+        return (
+          <div class="cs-field">
+            <label for={fid(f)}>{f.label}{f.required && <span class="cs-req" aria-hidden="true"> *</span>}</label>
+            <input id={fid(f)} name={f.name} required={f.required} placeholder={f.placeholder} data-testid={tid(f)} {...inputAttrs(f)} />
+          </div>
+        );
+      })}
+      <div class="cs-hp" aria-hidden="true">
+        <label>Leave this field empty <input type="text" name="_website" tabindex="-1" autocomplete="off" /></label>
+      </div>
+      <button class="button" type="submit" data-testid={`site-form-${form.name}-submit`}>{form.submitLabel ?? "Send"}</button>
+    </form>
+  </div>
+</section>
+
+<style>
+  .cs-form { display: grid; gap: 1.1rem; margin-top: 1rem; }
+  .cs-field { display: grid; gap: 0.4rem; min-width: 0; border: 0; padding: 0; margin: 0; }
+  .cs-field > label, .cs-choices legend { font-weight: 600; font-size: 0.9375rem; }
+  .cs-req { color: var(--muted); }
+  .cs-form :is(input, select, textarea) {
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.6rem 0.75rem;
+    font: inherit;
+    font-size: max(16px, 1rem);
+    color: var(--text);
+    background: var(--bg);
+    border: var(--borderWidth) solid var(--line);
+    border-radius: var(--radius);
+  }
+  .cs-form textarea { resize: vertical; }
+  .cs-form :is(input, select, textarea):focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+  .cs-choices { display: grid; gap: 0.5rem; }
+  .cs-choice { display: flex; align-items: center; gap: 0.6rem; font-weight: 400; touch-action: manipulation; }
+  .cs-form .cs-choice input { width: 1.25rem; min-height: 1.25rem; height: 1.25rem; padding: 0; flex: none; }
+  .cs-form .button { justify-self: start; }
+  .cs-hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+  .cs-form-status { display: none; padding: 0.9rem 1rem; border-radius: var(--radius); background: var(--tint); margin-top: 1rem; }
+  .cs-form-status:target { display: block; }
+  .cs-form-error { border: 1px solid var(--line); }
+</style>

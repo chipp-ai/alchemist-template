@@ -1,7 +1,10 @@
 // Tests for scripts/aeo-check.mjs. Run with: npm test.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkPage, checkRobots, checkSitemap } from "./aeo-check.mjs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { checkPage, checkPageDetailed, checkRobots, checkSitemap, makeResolver, withoutCustomCode } from "./aeo-check.mjs";
 
 const LD = JSON.stringify({
   "@context": "https://schema.org",
@@ -110,4 +113,39 @@ test("robots.txt must allow meta-webindexer and the AI search crawlers", () => {
 test("sitemap entries need an absolute loc and a lastmod", () => {
   assert.deepEqual(checkSitemap("<urlset><url><loc>https://a.example/</loc><lastmod>2026-10-19</lastmod></url></urlset>"), []);
   assert.equal(checkSitemap("<urlset><url><loc>/</loc></url></urlset>").length, 2);
+});
+
+test("a relaxed page (imported words) reports content-shape rules as warnings", () => {
+  const ld = JSON.stringify({ "@graph": [{ "@type": "WebPage", datePublished: "2026-10-19", dateModified: "2026-10-20" }] });
+  const html = page({ h2: "Why Acme", ld })
+    .replace("<h3>Is it free?</h3>", "<h3>Pricing</h3>")
+    .replace("<main>", '<main data-aeo="relaxed">');
+  const result = checkPageDetailed(html, { resolves: ok });
+  assert.deepEqual(result.errors, []);
+  assert.ok(result.warnings.some((w) => w.includes("no question heading")), result.warnings.join("\n"));
+  // Structural rules still fail on a relaxed page.
+  const broken = checkPageDetailed(html.replace("</main>", '<img src="/x.png"></main>'), { resolves: ok });
+  assert.ok(broken.errors.some((e) => e.includes("without alt")));
+});
+
+test("approved custom code is skipped", () => {
+  const pixel = '<!--custom-code-->\n<noscript><img src="https://px.example.com/p.gif"></noscript>\n<!--/custom-code-->';
+  assert.deepEqual(checkPage(page({ extra: pixel }), { resolves: ok }), []);
+  assert.equal(withoutCustomCode(`a${pixel}b`), "ab");
+});
+
+test("a link to a redirected path resolves when the redirect's target does", () => {
+  const dist = mkdtempSync(join(tmpdir(), "aeo-dist-"));
+  try {
+    mkdirSync(join(dist, "new"), { recursive: true });
+    writeFileSync(join(dist, "new", "index.html"), "<html></html>");
+    const resolves = makeResolver(dist, new Map([["/old", "/new/"], ["/gone", "/missing/"], ["/shop", "https://shop.example.com/"]]));
+    assert.equal(resolves("/old/"), true);
+    assert.equal(resolves("/old"), true);
+    assert.equal(resolves("/shop"), true);
+    assert.equal(resolves("/gone"), false);
+    assert.equal(resolves("/nope"), false);
+  } finally {
+    rmSync(dist, { recursive: true, force: true });
+  }
 });

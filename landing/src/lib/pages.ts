@@ -6,9 +6,11 @@
 export interface LandingPage {
   path: string;
   label: string;
+  /** The sitemap lastmod (ISO date). Default: site.json updatedAt. */
+  lastmod?: string;
 }
 
-/** The pages in the nav and the sitemap. */
+/** The classic pages (home, pricing, about). Composed pages and the blog are added by lib/content.ts. */
 export const PAGES: LandingPage[] = [
   { path: "/", label: "Home" },
   { path: "/pricing/", label: "Pricing" },

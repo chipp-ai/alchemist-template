@@ -1,0 +1,34 @@
+---
+import type { TeamSection } from "../../lib/composed";
+import Head from "./Head.astro";
+import Img from "./Img.astro";
+
+interface Props {
+  section: TeamSection;
+  level: "h1" | "h2";
+  id: string;
+}
+const { section, level, id } = Astro.props;
+---
+<section class="section" aria-labelledby={section.heading ? id : undefined}>
+  <div class="wrap">
+    <Head heading={section.heading} intro={section.intro} level={level} id={id} />
+    <ul class="cs-team">
+      {section.members.map((m) => (
+        <li>
+          {m.image && <Img image={m.image} class="cs-team-photo" />}
+          <h3>{m.name}</h3>
+          {m.role && <p class="muted">{m.role}</p>}
+          {m.bio && <p class="cs-bio">{m.bio}</p>}
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .cs-team { display: grid; gap: 2rem; grid-template-columns: repeat(auto-fill, minmax(min(13rem, 100%), 1fr)); }
+  .cs-team li { min-width: 0; }
+  .cs-team :global(.cs-team-photo) { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius); margin-bottom: 0.75rem; }
+  .cs-bio { margin-top: 0.5rem; }
+</style>

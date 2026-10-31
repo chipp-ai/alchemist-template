@@ -1,0 +1,35 @@
+---
+/**
+ * Questions and answers. Answers are plain text: the page's FAQPage
+ * JSON-LD repeats them word for word (lib/page-ld.ts).
+ */
+import type { FaqSection } from "../../lib/composed";
+import Head from "./Head.astro";
+
+interface Props {
+  section: FaqSection;
+  level: "h1" | "h2";
+  id: string;
+}
+const { section, level, id } = Astro.props;
+---
+<section class="section" aria-labelledby={section.heading ? id : undefined}>
+  <div class="wrap">
+    <Head heading={section.heading} level={level} id={id} />
+    <div class="cs-faq">
+      {section.items.map((f) => (
+        <div class="cs-faq-item">
+          <h3>{f.question}</h3>
+          <p>{f.answer}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .cs-faq { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr)); column-gap: 3rem; }
+  .cs-faq-item { padding: 1.25rem 0; border-bottom: 1px solid var(--line); min-width: 0; }
+  .cs-faq-item h3 { margin-bottom: 0.5rem; }
+  .cs-faq-item p { color: var(--muted); }
+</style>

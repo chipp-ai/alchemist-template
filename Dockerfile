@@ -22,7 +22,9 @@ RUN npm run build
 # build` also runs scripts/aeo-check.mjs, so a page that breaks an AEO rule
 # fails the image build. The site reads brand tokens from
 # web/src/design/design.json and its contrast helpers from
-# web/src/design/tokens.ts at build time, so that folder comes along.
+# web/src/design/tokens.ts at build time, so that folder comes along. The
+# build also validates chipp/redirects.json (a link to a redirected old URL
+# resolves through it), so chipp/ comes along too.
 FROM node:22-alpine AS landing-builder
 
 WORKDIR /src/landing
@@ -30,6 +32,7 @@ COPY landing/package.json landing/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY landing/ ./
 COPY web/src/design/ /src/web/src/design/
+COPY chipp/ /src/chipp/
 RUN npm run build
 
 # ── Build stage: cache Deno dependencies ──

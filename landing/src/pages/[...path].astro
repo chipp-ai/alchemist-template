@@ -1,0 +1,45 @@
+---
+// Every landing page except "/": the classic about and pricing pages,
+// composed pages at any path (nested too: /services/roofing/), the blog list
+// and each blog post at its own path. See lib/composed.ts.
+import BlogList from "../components/BlogList.astro";
+import BlogPost from "../components/BlogPost.astro";
+import ComposedPage from "../components/ComposedPage.astro";
+import About from "../components/legacy/About.astro";
+import Pricing from "../components/legacy/Pricing.astro";
+import type { BlogPost as Post, BlogSettings, ComposedPage as Page } from "../lib/composed";
+import { pathParam } from "../lib/composed";
+import { blog, classicPages, composedPages, posts } from "../lib/content";
+
+type Entry =
+  | { kind: "classic"; name: "about" | "pricing" }
+  | { kind: "page"; page: Page }
+  | { kind: "blog"; blog: BlogSettings }
+  | { kind: "post"; post: Post; blog: BlogSettings };
+
+export function getStaticPaths() {
+  const out: { params: { path: string | undefined }; props: { entry: Entry } }[] = [];
+  for (const p of classicPages) {
+    if (p.path === "/about/") out.push({ params: { path: "about" }, props: { entry: { kind: "classic", name: "about" } } });
+    if (p.path === "/pricing/") out.push({ params: { path: "pricing" }, props: { entry: { kind: "classic", name: "pricing" } } });
+  }
+  for (const page of composedPages) {
+    if (page.path === "/") continue; // index.astro
+    out.push({ params: { path: pathParam(page.path) }, props: { entry: { kind: "page", page } } });
+  }
+  if (blog) {
+    out.push({ params: { path: pathParam(blog.path) }, props: { entry: { kind: "blog", blog } } });
+    for (const post of posts) {
+      out.push({ params: { path: pathParam(post.path) }, props: { entry: { kind: "post", post, blog } } });
+    }
+  }
+  return out;
+}
+
+const { entry } = Astro.props as { entry: Entry };
+---
+{entry.kind === "classic" && entry.name === "about" && <About />}
+{entry.kind === "classic" && entry.name === "pricing" && <Pricing />}
+{entry.kind === "page" && <ComposedPage page={entry.page} />}
+{entry.kind === "blog" && <BlogList blog={entry.blog} />}
+{entry.kind === "post" && <BlogPost post={entry.post} blog={entry.blog} />}

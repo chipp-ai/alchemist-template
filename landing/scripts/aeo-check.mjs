@@ -18,6 +18,15 @@
 //   - robots.txt lets AI search crawlers in, meta-webindexer included
 //   - sitemap entries carry a lastmod
 //
+// Pages whose words came from somewhere else carry <main data-aeo="relaxed">:
+// composed pages rebuilt from an old site (importedFrom) and blog posts.
+// Their content-shape rules (a definition under the H1, a question heading,
+// short answers) are printed as warnings instead of failing the build,
+// because meeting them would mean inventing copy. Every structural rule
+// still fails. Approved custom code (<!--custom-code--> ... <!--/custom-code-->)
+// is third-party markup and is skipped. A link to a path that
+// ../chipp/redirects.json redirects counts as resolved when the target does.
+//
 // No dependencies: it reads the HTML with small regexes. It is a guard for
 // the pages this template builds, not a general HTML validator.
 //
@@ -112,13 +121,31 @@ function isValidDate(s) {
 
 // ── Page check ──
 
+/** Drop approved custom code: third-party markup the site does not own. */
+export function withoutCustomCode(html) {
+  return html.replace(/<!--custom-code-->[\s\S]*?<!--\/custom-code-->/g, "");
+}
+
 /**
  * Check one built page. `resolves(path)` answers whether a site-absolute
  * path exists in the build. Returns a list of problems (empty = pass).
  */
-export function checkPage(html, { resolves = () => true } = {}) {
+export function checkPage(html, opts = {}) {
+  return checkPageDetailed(html, opts).errors;
+}
+
+/**
+ * Like checkPage, but splits the result: `errors` fail the build,
+ * `warnings` are printed. On a relaxed page (<main data-aeo="relaxed">)
+ * the content-shape rules are warnings.
+ */
+export function checkPageDetailed(rawHtml, { resolves = () => true } = {}) {
+  const html = withoutCustomCode(rawHtml);
   const errors = [];
+  const warnings = [];
   const body = bodyOf(html);
+  const relaxed = /<main\b[^>]*\bdata-aeo\s*=\s*"relaxed"/i.test(body);
+  const shape = relaxed ? warnings : errors;
 
   // Headings: one H1 with a plain definition right under it, H2s after it,
   // and at least one question heading (H2 or H3) with a short answer.
@@ -131,9 +158,9 @@ export function checkPage(html, { resolves = () => true } = {}) {
     const definition = /<p\b[^>]*>([\s\S]*?)<\/p>/i.exec(afterH1);
     const nextHeading = /<h[2-6]\b/i.exec(afterH1);
     if (!definition || (nextHeading && nextHeading.index < definition.index)) {
-      errors.push("no paragraph under the <h1>: say what the product is in plain words right under it");
+      shape.push("no paragraph under the <h1>: say what the product is in plain words right under it");
     } else if (wordCount(textOf(definition[1])) > MAX_DEFINITION_WORDS) {
-      errors.push(
+      shape.push(
         `the paragraph under the <h1> is ${wordCount(textOf(definition[1]))} words; keep it to ${MAX_DEFINITION_WORDS} or less`,
       );
     }
@@ -143,7 +170,7 @@ export function checkPage(html, { resolves = () => true } = {}) {
   const questions = [...body.matchAll(/<(h[23])\b[^>]*>([\s\S]*?)<\/\1>/gi)]
     .filter((m) => textOf(m[2]).endsWith("?"));
   if (questions.length === 0) {
-    errors.push("no question heading: answer the reader's main question in an H2 or H3 that ends in \"?\"");
+    shape.push("no question heading: answer the reader's main question in an H2 or H3 that ends in \"?\"");
   }
   for (const q of questions) {
     // The answer: the first paragraph after the question.
@@ -151,12 +178,12 @@ export function checkPage(html, { resolves = () => true } = {}) {
     const answer = /<p\b[^>]*>([\s\S]*?)<\/p>/i.exec(after);
     const question = textOf(q[2]);
     if (!answer) {
-      errors.push(`no answer paragraph under the question "${question}"`);
+      shape.push(`no answer paragraph under the question "${question}"`);
       continue;
     }
     const words = wordCount(textOf(answer[1]));
     if (words > MAX_ANSWER_WORDS) {
-      errors.push(`the answer to "${question}" is ${words} words; keep it to ${MAX_ANSWER_WORDS} or less`);
+      shape.push(`the answer to "${question}" is ${words} words; keep it to ${MAX_ANSWER_WORDS} or less`);
     }
   }
 
@@ -257,7 +284,7 @@ export function checkPage(html, { resolves = () => true } = {}) {
     }
   }
 
-  return errors;
+  return { errors, warnings };
 }
 
 /** robots.txt must let AI search crawlers in. */
@@ -299,26 +326,63 @@ function collectHtml(dir) {
   return out;
 }
 
-export function makeResolver(dist) {
-  return (urlPath) => {
+/**
+ * Redirect rules from chipp/redirects.json, as a map from "from" (no
+ * trailing slash) to "to". A missing or unreadable file means no rules;
+ * the Astro build validates the file itself (astro.config.mjs).
+ */
+export function readRedirects(file) {
+  const map = new Map();
+  try {
+    const data = JSON.parse(readFileSync(file, "utf8"));
+    for (const r of data?.redirects ?? []) {
+      if (typeof r?.from === "string" && typeof r?.to === "string") map.set(stripSlash(r.from), r.to);
+    }
+  } catch {
+    // no file: no redirects
+  }
+  return map;
+}
+
+function stripSlash(path) {
+  return path === "/" ? "/" : path.replace(/\/+$/, "") || "/";
+}
+
+export function makeResolver(dist, redirects = new Map()) {
+  const exists = (urlPath) => {
     const p = urlPath === "/" ? "" : urlPath.replace(/\/$/, "");
     const direct = join(dist, p);
     if (existsSync(direct) && statSync(direct).isFile()) return true;
     if (existsSync(join(dist, p, "index.html"))) return true;
     return existsSync(`${direct}.html`);
   };
+  return (urlPath) => {
+    if (exists(urlPath)) return true;
+    const to = redirects.get(stripSlash(urlPath));
+    if (to === undefined) return false;
+    if (!to.startsWith("/") || to.startsWith("//")) return true; // off-site target
+    return exists(to.split("#")[0].split("?")[0]);
+  };
 }
 
 /** Check a whole build. Returns problems as "file: message" strings. */
-export function checkDist(dist) {
+export function checkDist(dist, { redirectsFile = join(dist, "..", "..", "chipp", "redirects.json") } = {}) {
   const problems = [];
-  const resolves = makeResolver(dist);
+  const warnings = [];
+  const redirects = readRedirects(redirectsFile);
+  const resolves = makeResolver(dist, redirects);
+  const built = makeResolver(dist);
+  for (const from of redirects.keys()) {
+    if (built(from)) {
+      problems.push(`chipp/redirects.json: "${from}" is a page in this build, so its redirect never fires; remove the rule or the page`);
+    }
+  }
   const pages = collectHtml(dist);
   if (pages.length === 0) problems.push("no HTML pages in the build");
   for (const file of pages) {
-    for (const e of checkPage(readFileSync(file, "utf8"), { resolves })) {
-      problems.push(`${relative(dist, file)}: ${e}`);
-    }
+    const result = checkPageDetailed(readFileSync(file, "utf8"), { resolves });
+    for (const e of result.errors) problems.push(`${relative(dist, file)}: ${e}`);
+    for (const w of result.warnings) warnings.push(`${relative(dist, file)}: ${w}`);
   }
   const robots = join(dist, "robots.txt");
   if (!existsSync(robots)) problems.push("robots.txt is missing");
@@ -326,7 +390,7 @@ export function checkDist(dist) {
   const sitemap = join(dist, "sitemap.xml");
   if (!existsSync(sitemap)) problems.push("sitemap.xml is missing");
   else problems.push(...checkSitemap(readFileSync(sitemap, "utf8")).map((e) => `sitemap.xml: ${e}`));
-  return { pages: pages.length, problems };
+  return { pages: pages.length, problems, warnings };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -336,7 +400,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.error(`[aeo-check] ${dist} not found. Run "astro build" first.`);
     process.exit(2);
   }
-  const { pages, problems } = checkDist(dist);
+  const { pages, problems, warnings } = checkDist(dist);
+  if (warnings.length > 0) {
+    console.warn(`[aeo-check] ${warnings.length} warning(s) on pages with imported words (not a failure):`);
+    for (const w of warnings) console.warn(`  - ${w}`);
+  }
   if (problems.length > 0) {
     console.error(`[aeo-check] ${problems.length} problem(s) in ${pages} page(s):`);
     for (const p of problems) console.error(`  - ${p}`);

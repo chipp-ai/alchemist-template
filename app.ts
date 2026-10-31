@@ -56,6 +56,8 @@ import { storefrontRouter } from "@/services/storefront/router.ts";
 import { clientTicketsPortalRouter } from "@/services/client-tickets-portal/router.ts";
 import { supportRouter } from "@/services/support/router.ts";
 import { landingSiteMiddleware } from "@/lib/landing-site.ts";
+import { siteRedirectsMiddleware } from "@/lib/site-redirects.ts";
+import { siteFormsRoutes } from "@/api/routes/site-forms/index.ts";
 import { serveSpaShell } from "@/lib/spa-shell.ts";
 import { APP_BASE_PATH } from "@/config/site.ts";
 
@@ -239,6 +241,11 @@ app.route("/api/inbound-emails", inboundEmailRoutes);
 // writes are admin-gated. See src/api/routes/email/index.ts.
 app.route("/api/email", emailRoutes);
 
+// Landing site forms (form sections in landing/src/content/pages/): public
+// POST /api/site-forms/:name, stored in site_form_submissions, owner emailed
+// through the outbox. Unknown form names answer 404.
+app.route("/api/site-forms", siteFormsRoutes);
+
 // End-user portal lane. Claim is public (the emailed token IS the
 // credential); reads are self-scoped; issuing and revoking links are
 // admin-gated. Admins arrive by invite, end users NEVER do. See
@@ -355,6 +362,13 @@ if (APP_BASE_PATH) {
 const landingSite = landingSiteMiddleware();
 if (landingSite) app.use("/*", landingSite);
 
+// ── Site redirects ──
+// chipp/redirects.json (a migrated site's old URLs). After every app route
+// and the landing site, before the SPA fallback: a redirect applies only
+// when nothing else serves the path (src/lib/site-redirects.ts).
+const siteRedirects = siteRedirectsMiddleware();
+if (siteRedirects) app.use("/*", siteRedirects);
+
 // ── Static SPA ──
 // Serves the Svelte frontend built in the Dockerfile's web-builder stage
 // (output goes to web/dist/). Mounted AFTER the API routes so /api/*
@@ -373,6 +387,10 @@ app.use("/*", async (c, next) => {
   // /api/* requests must NOT receive the SPA shell — they need to
   // surface real 4xx/5xx + JSON bodies to the SPA fetch caller.
   if (c.req.path.startsWith("/api/")) return next();
+  // Marks the catch-all answer: no page exists at this path. The old-URL
+  // gate (scripts/check-old-urls.ts) counts it as a missing page. "/" is
+  // never missing: without a landing site it IS the app.
+  if (c.req.path !== "/") c.header("X-Spa-Fallback", "1");
   return serveStatic({ path: "./web/dist/index.html" })(c, next);
 });
 
