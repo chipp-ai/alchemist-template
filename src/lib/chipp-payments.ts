@@ -17,8 +17,14 @@
  * src/services/chipp-entitlements.ts). The app can also pull.
  *
  * The app sends a product KEY, an opaque buyer ref (`org:<orgId>`) and
- * RELATIVE return paths. It never sends a price, an amount, an account id
- * or a full URL: Chipp builds the return origin itself.
+ * RELATIVE return paths. It never sends a price, an account id or a full
+ * URL: Chipp builds the return origin itself. The one amount it sends is a
+ * donor's chosen gift (startChippDonation), which Chipp checks against the
+ * donation's minimum.
+ *
+ * Donations: a donation product lets a visitor give any amount at or above
+ * a minimum, once or every month or year, with no account in this app.
+ * Stripe Checkout collects the donor's email and Stripe emails the receipt.
  *
  * Path choice (never switched silently):
  *   - STRIPE_SECRET_KEY set     -> the app's own Stripe path (product.service.ts), as before.
@@ -112,11 +118,43 @@ export interface ChippProduct {
   interval: "month" | "year" | null;
 }
 
+export type DonationFrequency = "one_time" | "month" | "year";
+
+export interface ChippDonationProduct {
+  key: string;
+  name: string;
+  description: string | null;
+  kind: "donation";
+  currency: string;
+  /** The smallest gift, in the currency's minor unit (cents). */
+  minAmountCents: number;
+  /** The amount chips the form shows. */
+  suggestedAmountsCents: number[];
+  /** What the donor may choose. */
+  frequencies: DonationFrequency[];
+}
+
 export interface ChippCatalog {
   mode: ChippPaymentsMode;
   testMode: boolean;
   sandboxAccount: boolean;
   products: ChippProduct[];
+  /** Donation products. Older platforms omit it. */
+  donations?: ChippDonationProduct[];
+}
+
+export interface ChippDonationReceipt {
+  purchaseId: string;
+  productKey: string;
+  status: string;
+  amountCents: number;
+  currency: string;
+  interval: "month" | "year" | null;
+  recurring: boolean;
+  canManage: boolean;
+  donorEmail?: string | null;
+  currentPeriodEnd?: string | null;
+  seq?: number;
 }
 
 export interface ChippEntitlement {
@@ -212,4 +250,31 @@ export async function fetchChippEntitlements(customerRef: string): Promise<Chipp
     `/entitlements?customerRef=${encodeURIComponent(customerRef)}`,
   );
   return res.entitlements ?? [];
+}
+
+/** Starts a donation checkout. Anyone may give; no buyer ref is needed. */
+export async function startChippDonation(input: {
+  productKey: string;
+  amountCents: number;
+  frequency: DonationFrequency;
+  email?: string | null;
+  returnPath?: string | null;
+  cancelPath?: string | null;
+}): Promise<{ url: string; purchaseId: string; testMode: boolean }> {
+  return await call("POST", "/donation-checkout", input);
+}
+
+/** The gift a thank-you page names (purchase id plus the Checkout Session id from the return URL). */
+export async function lookupChippDonation(
+  ref: { purchaseId: string; sessionId: string },
+): Promise<ChippDonationReceipt> {
+  const res = await call<{ donation: ChippDonationReceipt }>("POST", "/donation-lookup", ref);
+  return res.donation;
+}
+
+/** The billing portal for the donor of a recurring gift (change card, cancel). */
+export async function startChippDonationPortal(
+  ref: { purchaseId: string; sessionId: string; returnPath?: string | null },
+): Promise<{ url: string }> {
+  return await call("POST", "/donation-portal", ref);
 }

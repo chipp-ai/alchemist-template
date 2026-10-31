@@ -1425,6 +1425,12 @@ unchanged. Full guide: `docs/agent-guidance/chipp-payments.md`.
   payments env after an owner goes live, and a sale counts only in the mode
   the app runs in now (`purchases.chipp_mode`), so a test-card sale never
   unlocks a live app.
+- **Donations are Chipp Payments too.** A donation product lets any
+  visitor give an amount they choose, once or monthly or yearly, with no
+  account here: `<DonateForm productKey="donate" />` (or the `DonateForm`
+  island), and donors return to `/app/#/donate/thank-you`. Gifts land in
+  `chipp_donations`. Never build donations on the app's own Stripe keys and
+  never ask for a webhook for them.
 
 ## Built-in API and MCP features: OFF until the project turns them on
 

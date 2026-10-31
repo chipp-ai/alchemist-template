@@ -39,6 +39,7 @@ import {
   listChippProducts,
   orgIdFromCustomerRef,
 } from "@/lib/chipp-payments.ts";
+import { applyChippDonation, isDonationPayload } from "@/services/chipp-donations.ts";
 
 export const ENTITLEMENT_CHANGED_TOPIC = "entitlement.changed";
 
@@ -111,8 +112,13 @@ async function productIdForKey(productKey: string): Promise<string | null> {
 
 export type ApplyOutcome = "applied" | "stale" | "other_mode" | "unknown_org" | "unknown_product";
 
-/** Applies one Chipp entitlement to the local mirror. Idempotent, ordered by seq. */
+/**
+ * Applies one Chipp entitlement to the local mirror. Idempotent, ordered by
+ * seq. A donation (kind = 'donation') goes to the donations mirror: a donor
+ * has no organization here and a gift unlocks nothing.
+ */
 export async function applyChippEntitlement(raw: unknown): Promise<ApplyOutcome> {
+  if (isDonationPayload(raw)) return await applyChippDonation(raw);
   const p = payloadSchema.parse(raw);
   // A sale in another mode (a test sale reaching a live app) grants nothing.
   if (p.mode !== chippAccessMode()) return "other_mode";

@@ -15,6 +15,7 @@
   import { onMount } from "svelte";
   import Modal from "../components/Modal.svelte";
   import UpgradeButton from "../components/chipp-payments/UpgradeButton.svelte";
+  import DonateForm from "../components/chipp-payments/DonateForm.svelte";
   import ManageBillingLink from "../components/chipp-payments/ManageBillingLink.svelte";
   import { api } from "../lib/api";
   import { toastStore } from "../stores/toast.svelte";
@@ -720,6 +721,9 @@
         <UpgradeButton productKey="pro" label="Upgrade to Pro" />
         <ManageBillingLink />
         <span class="text-muted">Sell through Chipp Payments. Access is granted by the server.</span>
+      </div>
+      <div data-testid="design-sheet-donate-form">
+        <DonateForm productKey="donate" title="Support our work" />
       </div>
     </section>
 

@@ -12,6 +12,7 @@ import InviteAccept from "./routes/InviteAccept.svelte";
 import PortalHome from "./routes/portal/PortalHome.svelte";
 import PortalClaim from "./routes/portal/PortalClaim.svelte";
 import NotFound from "./routes/NotFound.svelte";
+import DonationThankYou from "./routes/DonationThankYou.svelte";
 import { recipeRoutes } from "./recipe-routes";
 // Namespace import: a recipe pack written before `recipePublicRoutes`
 // existed replaces recipe-routes.ts without it, and a named import of a
@@ -23,6 +24,16 @@ import { cmsRoutes } from "./features/cms";
 import { supportPublicPaths, supportRoutes } from "./features/support";
 import { appConfig } from "./lib/app-config";
 import { withoutOffModules } from "./lib/app-modules";
+
+/** The donation thank-you page (web/src/routes/DonationThankYou.svelte). */
+export const DONATION_THANK_YOU_ROUTE = "/donate/thank-you";
+
+/**
+ * Chipp Payments pages a visitor reaches without a session. The page
+ * renders its own signed-out state, and every call behind it is checked
+ * by the server (the donor proves the gift with the Stripe session id).
+ */
+const CHIPP_PAYMENTS_PUBLIC_PATHS: readonly string[] = [DONATION_THANK_YOU_ROUTE];
 
 // Type widened to `unknown` because Svelte 5's component types
 // (especially for components using $props() like InviteAccept)
@@ -65,6 +76,9 @@ const allRoutes: Record<string, any> = {
   // is the landing page for an emailed link.
   "/portal": PortalHome,
   "/portal/claim/:token": PortalClaim,
+  // Chipp Payments: where a donor lands after Stripe Checkout. Public (see
+  // CHIPP_PAYMENTS_PUBLIC_PATHS): a donor has no account in this app.
+  [DONATION_THANK_YOU_ROUTE]: DonationThankYou,
   // Recipe pages (web/src/recipe-routes.ts; empty in the base template).
   // Spread last so a recipe can take over "/" with its own home page.
   ...recipeRoutes,
@@ -111,6 +125,7 @@ export function isPublicRoute(path: string): boolean {
   // base template). The page renders its own signed-out state and every
   // API call behind it is auth-gated server-side.
   if (supportPublicPaths.includes(path)) return true;
+  if (CHIPP_PAYMENTS_PUBLIC_PATHS.includes(path)) return true;
   // Recipe pages declared public in web/src/recipe-routes.ts. This is the
   // hook for app pages that need no session; the sets above stay base-owned.
   if (matchesAnyRoutePattern(path, recipePublicRoutes)) return true;
