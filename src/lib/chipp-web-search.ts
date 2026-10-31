@@ -34,6 +34,8 @@
  * `docs/web-search.md`.
  */
 
+import { getEnv } from "@/lib/env.ts";
+
 const WEB_SEARCH_BASE = "/api/internal/hosted-integration-broker/web-search";
 const SEARCH_TIMEOUT_MS = 30_000;
 
@@ -130,12 +132,13 @@ export async function postWebSearch<T>(
   body: Record<string, unknown>,
   deps: WebSearchClientDeps = {},
 ): Promise<T | WebSearchFailure> {
-  const cfg = credential(deps.env ?? ((n) => Deno.env.get(n)));
+  const cfg = credential(deps.env ?? ((n) => getEnv(n)));
   if (!cfg) {
     return {
       ok: false,
       diagnostic: "production_authentication_unavailable",
-      error: "The Chipp broker credential is not in this environment. A fresh platform deploy injects it.",
+      error:
+        "The Chipp broker credential is not in this environment. A fresh platform deploy injects it.",
       retryable: false,
     };
   }
@@ -151,7 +154,9 @@ export async function postWebSearch<T>(
     return {
       ok: false,
       diagnostic: "upstream_error",
-      error: `Could not reach Chipp web search: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Could not reach Chipp web search: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
       retryable: true,
     };
   }
@@ -169,8 +174,12 @@ export async function postWebSearch<T>(
     return {
       ok: false,
       diagnostic: typeof parsed.diagnostic === "string" ? parsed.diagnostic : "upstream_error",
-      error: typeof parsed.error === "string" ? parsed.error : `Chipp web search failed (HTTP ${res.status}).`,
-      retryable: typeof parsed.retryable === "boolean" ? parsed.retryable : res.status === 429 || res.status >= 500,
+      error: typeof parsed.error === "string"
+        ? parsed.error
+        : `Chipp web search failed (HTTP ${res.status}).`,
+      retryable: typeof parsed.retryable === "boolean"
+        ? parsed.retryable
+        : res.status === 429 || res.status >= 500,
       ...(Number.isFinite(retryAfter) && retryAfter > 0 ? { retryAfterSeconds: retryAfter } : {}),
     };
   }
