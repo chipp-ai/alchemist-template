@@ -25,6 +25,7 @@ export const BASE_ROUTE_FILES = [
   "Dashboard.svelte",
   "Design.svelte",
   "Docs.svelte",
+  "DonationThankYou.svelte",
   "Import.svelte",
   "InboundEmailDetail.svelte",
   "InboundEmails.svelte",
