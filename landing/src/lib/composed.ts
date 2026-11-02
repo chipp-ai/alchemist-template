@@ -25,7 +25,7 @@ export interface SiteLinkRef {
 }
 
 export interface SiteImage {
-  /** A rehosted asset URL (assets[].newUrl) or a path in landing/public. */
+  /** A rehosted asset URL (the site model's assets.map) or a path in landing/public. */
   src: string;
   /** Describe the picture. "" only for decoration. */
   alt: string;
@@ -252,6 +252,9 @@ export interface BlogPost {
   image?: SiteImage;
   /** The post body. Sanitized at build time. */
   html: string;
+  /** Category and tag names from the old site, as shown there. */
+  categories?: string[];
+  tags?: string[];
   seo?: PageSeo;
   importedFrom?: string;
 }
@@ -263,6 +266,70 @@ export interface BlogSettings {
   /** One plain sentence under the list's H1. */
   description: string;
   navLabel?: string;
+}
+
+// ── Product catalog (src/content/products.json) ──
+
+/**
+ * The products a migrated store sold, written by the site importer from the
+ * SiteModel's `collections.products`. Data, not pages: one product page
+ * template renders every item at its own `path`, one category template
+ * every category. Prices are decimal strings in the store currency
+ * ("3500.00"), exactly as the old store stated them.
+ */
+export interface CatalogProduct {
+  /** The old platform's id. */
+  id: string;
+  slug: string;
+  /** The product's own path, the same as on the old store. */
+  path: string;
+  title: string;
+  sku: string | null;
+  price: string | null;
+  regularPrice: string | null;
+  salePrice: string | null;
+  currency: string | null;
+  onSale: boolean;
+  /** null when the old store did not say. */
+  inStock: boolean | null;
+  /** Plain text. */
+  shortDescription: string | null;
+  /** The full description HTML. Sanitize it when rendering. */
+  html: string | null;
+  /** Rehosted image URLs, the main image first. */
+  images: string[];
+  /** Category slugs (see `categories` on the catalog). */
+  categories: string[];
+  tags: string[];
+  vendor: string | null;
+  variants: { id: string; title: string; sku: string | null; price: string | null; available: boolean | null }[];
+  attributes: { name: string; values: string[] }[];
+  seo?: PageSeo;
+  importedFrom?: string;
+}
+
+export interface CatalogCategory {
+  id: string;
+  slug: string;
+  name: string;
+  /** The category's list page on the old store, when it had one. */
+  path: string | null;
+  parentSlug: string | null;
+  description: string | null;
+  image: string | null;
+  productCount: number | null;
+  productIds?: string[];
+}
+
+export interface ProductCatalog {
+  /** The old store's origin. */
+  importedFrom?: string;
+  platform?: string;
+  /** The shop list page ("/shop/", "/collections/all/"), when known. */
+  indexPath: string | null;
+  currency: string | null;
+  categories: CatalogCategory[];
+  items: CatalogProduct[];
 }
 
 // ── Paths ──
@@ -489,8 +556,46 @@ export function postProblems(post: unknown, where = "post"): string[] {
     ...(typeof post.date === "string" && ISO_DATE_RE.test(post.date) ? [] : [`${where}.date: an ISO date (YYYY-MM-DD)`]),
     ...dateProblems(post, where, ["updatedAt"]),
     ...(post.image === undefined ? [] : imageProblems(post.image, `${where}.image`)),
+    ...(["categories", "tags"] as const).flatMap((k) =>
+      post[k] === undefined || (Array.isArray(post[k]) && (post[k] as unknown[]).every(str)) ? [] : [`${where}.${k}: a list of text`]
+    ),
     ...seoProblems(post.seo, `${where}.seo`),
   ];
+}
+
+/** Problems with a product catalog, or []. */
+export function catalogProblems(catalog: unknown, where = "src/content/products.json"): string[] {
+  if (!isObj(catalog)) return [`${where}: must be an object`];
+  const out: string[] = [];
+  const pathOk = (p: unknown, at: string) => pagePathProblems(p).map((x) => `${at}: ${x}`);
+  if (catalog.indexPath !== null && catalog.indexPath !== undefined) out.push(...pathOk(catalog.indexPath, `${where} indexPath`));
+  const seen = new Map<string, string>();
+  out.push(...listProblems(catalog.items, `${where} items`, (item, at) => {
+    const p = [...pathOk(item.path, at), ...need(item, at, "title", "slug")];
+    for (const k of ["price", "regularPrice", "salePrice"]) {
+      if (item[k] !== null && item[k] !== undefined && !(typeof item[k] === "string" && /^-?\d+(\.\d+)?$/.test(item[k] as string))) {
+        p.push(`${at}.${k}: a decimal string ("12.50") or null`);
+      }
+    }
+    if (!Array.isArray(item.images) || !item.images.every(str)) p.push(`${at}.images: a list of image URLs`);
+    for (const k of ["categories", "tags"]) {
+      if (!Array.isArray(item[k]) || !(item[k] as unknown[]).every((v) => typeof v === "string")) p.push(`${at}.${k}: a list of text`);
+    }
+    if (item.html !== null && item.html !== undefined && typeof item.html !== "string") p.push(`${at}.html: text or null`);
+    p.push(...seoProblems(item.seo, `${at}.seo`));
+    if (typeof item.path === "string") {
+      const key = normalizePagePath(item.path);
+      const prior = seen.get(key);
+      if (prior) p.push(`${at}: path ${key} is already used by ${prior}`);
+      else seen.set(key, at);
+    }
+    return p;
+  }, { min: 0 }));
+  out.push(...listProblems(catalog.categories, `${where} categories`, (c, at) => [
+    ...need(c, at, "slug", "name"),
+    ...(c.path === null || c.path === undefined ? [] : pathOk(c.path, at)),
+  ], { min: 0 }));
+  return out;
 }
 
 /** Problems with blog settings, or []. */

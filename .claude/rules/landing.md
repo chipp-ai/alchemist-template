@@ -126,14 +126,27 @@ page in the nav, or `nav` in site.json sets the header and footer links.
 ## Rebuilding a migrated site
 
 When `chipp/site-migration/site-model.json` exists, Chipp crawled the
-owner's old site (WordPress, Wix, Squarespace, Webflow, Framer) and the job
-is to rebuild it here, page for page, at the same URLs. The files:
+owner's old site (WordPress, Shopify, Squarespace, Wix, Webflow, Framer,
+Lovable), read its platform's public API where it has one, and the job is
+to rebuild it here, page for page, at the same URLs. The shape is
+`siteModelSchema` in chipp-deno `src/alchemist/lib/site-model.ts`. The files:
 
-- `chipp/site-migration/site-model.json`: `meta` (origin, platform),
-  design tokens, `pages` (path, title, `seo`, `screenshot.desktop` and
-  `.mobile`, sometimes `sections`), `forms`, `navigation`, `assets`
-  (`oldUrl` -> rehosted `newUrl`), `redirects`, `collections` (blog posts)
-  and `warnings`.
+- `chipp/site-migration/site-model.json`: `meta` (origin, `platform`,
+  `platformConfidence`, `platformSignals`, `platformImport` with what the
+  API gave and what still needs the owner's login), `pages` (the crawled
+  ones: path, title, `kind`, `seo` with `description`, `canonical`,
+  `robots`, `ogTitle`, `ogImage`, `jsonLd`, `h1`; `screenshot.desktop` and
+  `.mobile`; `source.html`), `forms` (each `name` is the site-forms slug),
+  `navigation` (`header`, `footer`, sometimes `menus`), `collections`
+  (`blog.indexPath`, `blog.posts`, `blog.categories`, `blog.tags`; `pages`,
+  every page the API listed; `products` with `items`, `categories`,
+  `indexPath` and `currency`), `inventory`, `assets` (`map`: old URL ->
+  rehosted URL; `skipped`), `redirects`, `skippedPages` and `warnings`.
+- `chipp/site-migration/content/<kind>-NNN.json`: the cleaned HTML of every
+  API page, post and product, `{ "items": { "<path>": "<html>" } }`. Each
+  item's `contentFile` names its file.
+- `chipp/site-migration/pages/NN-<slug>.html`: each crawled page's whole
+  cleaned body (header and footer included), for reference.
 - `chipp/site-migration/old-urls.json`: every URL the old site served.
 - `chipp/redirects.json`: redirects Chipp already knows about.
 
@@ -143,21 +156,37 @@ The workflow:
    The screenshots are the source of truth for layout and order.
 2. **Run `cd landing && npm run import:site-model`.** It writes one page file
    per page at the same path with the old title, description, canonical,
-   Open Graph and JSON-LD, every blog post at its old path, a form section
-   for every form, and `nav` and `blog` in site.json. It rewrites old asset
-   URLs to the rehosted ones and old-origin links to site paths. It never
-   overwrites a file that exists (`-- --force` does). Read its output:
-   skipped sections and TODO lines are the work left.
+   Open Graph and JSON-LD and the old body (from `content/`) as one
+   `richText` section; every published blog post at its old path with its
+   date, author, image, categories, tags and SEO; a form section for every
+   form (same name, posting to `/api/site-forms/<name>`);
+   `src/content/products.json` (every product and product category: price,
+   currency, stock, images, variants, attributes, path);
+   `src/content/blog-terms.json` (blog categories and tags with their
+   paths); and `nav` and `blog` in site.json. It rewrites old asset URLs to
+   the rehosted ones and old-origin links to site paths. It never overwrites
+   a file that exists (`-- --force` does). Read its summary: the counts, the
+   skipped list (each with its reason: drafts, the cart and checkout, posts
+   with no body, ...) and the TODO lines are the work left.
 3. **Rebuild every page with the section components**, in the order the
-   screenshot shows, with the old page's words. A page the importer left
-   with no sections must be rebuilt from its screenshot. Use `richText` for
-   prose, a real section wherever one fits, and `html` only as a last
-   resort.
+   screenshot shows, with the old page's words. Split the imported
+   `richText` body into real sections. A page the importer left with no
+   sections must be rebuilt from its screenshot; a page with no screenshot
+   borrows the layout of the closest one. Use `richText` for prose, a real
+   section wherever one fits, and `html` only as a last resort.
+   **Products are data, not pages:** render the shop list, one product
+   template at every product's `path` and one category template at every
+   category's `path` from `products.json` (when the app keeps products in
+   its database, `products.json` is the seed for that table). Never write
+   one page file per product, and never copy the old cart or checkout:
+   until the owner sets up payments, a buy button opens an enquiry form
+   with the product name. The build fails when a product or category path
+   is also a page or post.
 4. **Keep the SEO exactly:** never change a page's `path`, `seo.title`,
    `seo.description`, canonical or JSON-LD unless the owner asks. Set
    `site.json` `url`, `name`, `description` and `definition` from the old
    home page.
-5. **Use the rehosted asset URLs** (`assets[].newUrl`), never the old
+5. **Use the rehosted asset URLs** (`assets.map`), never the old
    site's URLs, and keep each image's alt text. Write alt text only where
    the old site had none and the picture carries meaning.
 6. **Rebuild forms with the `form` section** (the importer places them).

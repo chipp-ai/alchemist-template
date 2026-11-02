@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "meta": {
+    "origin": "https://studio-fixture.example",
+    "sourceUrl": "https://studio-fixture.example/",
+    "platform": "wix",
+    "platformSignals": [
+      "header: x-wix-request-id"
+    ],
+    "siteName": "Studio Fixture",
+    "language": "en",
+    "favicon": null,
+    "crawledAt": "2026-10-31T12:00:00.000Z",
+    "pageCap": 25,
+    "pagesFound": 3,
+    "pagesCrawled": 2
+  },
+  "design": {
+    "designJson": "web/src/design/design.json",
+    "brandSourceUrl": "https://studio-fixture.example/",
+    "logo": null
+  },
+  "pages": [
+    {
+      "path": "/",
+      "title": "Studio Fixture | Yoga in the park",
+      "kind": "page",
+      "seo": {
+        "description": "Outdoor yoga classes every weekend.",
+        "canonical": "https://studio-fixture.example/",
+        "robots": null,
+        "ogTitle": "Studio Fixture",
+        "ogDescription": null,
+        "ogImage": "https://studio-fixture.example/media/hero.jpg",
+        "ogType": "website",
+        "twitterCard": null,
+        "jsonLd": [],
+        "h1": "Yoga in the park",
+        "lang": "en"
+      },
+      "screenshot": {
+        "desktop": "https://cdn.example.com/s/home-d.png",
+        "mobile": "https://cdn.example.com/s/home-m.png"
+      },
+      "source": {
+        "url": "https://studio-fixture.example/",
+        "statusCode": 200,
+        "html": "chipp/site-migration/pages/01-home.html"
+      },
+      "formIds": [],
+      "outboundLinks": [],
+      "sections": [
+        {
+          "kind": "hero",
+          "heading": "Yoga in the park"
+        },
+        {
+          "kind": "form",
+          "heading": null
+        }
+      ]
+    },
+    {
+      "path": "/book-online",
+      "title": "Book a class",
+      "kind": "page",
+      "seo": {
+        "description": null,
+        "canonical": null,
+        "robots": "noindex",
+        "ogTitle": null,
+        "ogDescription": null,
+        "ogImage": null,
+        "ogType": null,
+        "twitterCard": null,
+        "jsonLd": [],
+        "h1": null,
+        "lang": "en"
+      },
+      "screenshot": {
+        "desktop": "https://cdn.example.com/s/book-d.png",
+        "mobile": null
+      },
+      "source": {
+        "url": "https://studio-fixture.example/book-online",
+        "statusCode": 200,
+        "html": "chipp/site-migration/pages/02-book-online.html"
+      },
+      "formIds": [
+        "form-1"
+      ],
+      "outboundLinks": []
+    }
+  ],
+  "forms": [
+    {
+      "id": "form-1",
+      "pagePath": "/book-online",
+      "name": "book-a-class",
+      "action": null,
+      "method": "post",
+      "provider": "wix",
+      "submitLabel": "Book",
+      "fields": [
+        {
+          "name": "email",
+          "label": "Email",
+          "type": "email",
+          "required": true,
+          "placeholder": null
+        },
+        {
+          "name": "pass",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "placeholder": null
+        }
+      ]
+    }
+  ],
+  "navigation": {
+    "header": [
+      {
+        "label": "Book",
+        "href": "/book-online",
+        "external": false
+      }
+    ],
+    "footer": []
+  },
+  "collections": {
+    "blog": {
+      "indexPath": null,
+      "posts": []
+    }
+  },
+  "assets": {
+    "map": {
+      "https://studio-fixture.example/media/hero.jpg": "https://cdn.example.com/m/hero.jpg"
+    },
+    "items": [],
+    "skipped": []
+  },
+  "redirects": [],
+  "skippedPages": [
+    {
+      "url": "https://studio-fixture.example/members",
+      "reason": "scrape_failed"
+    }
+  ],
+  "warnings": [
+    "The page /members could not be read."
+  ]
+}

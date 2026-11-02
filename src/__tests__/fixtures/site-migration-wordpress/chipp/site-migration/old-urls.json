@@ -1,0 +1,24 @@
+{
+  "origin": "https://www.fixture-jewelry.example",
+  "paths": [
+    "/",
+    "/about/",
+    "/contact/",
+    "/blog/",
+    "/shop/",
+    "/2026/03/caring-for-silver/",
+    "/faq/",
+    "/cart/",
+    "/2026/01/winter-collection/",
+    "/2025/12/holiday-hours/",
+    "/product/silver-band-ring/",
+    "/product/gold-chain-necklace/",
+    "/product/gift-card/",
+    "/product-category/rings/",
+    "/product-category/necklaces/",
+    "/category/care/",
+    "/category/news/",
+    "/lookbook/",
+    "/index.php/about/"
+  ]
+}

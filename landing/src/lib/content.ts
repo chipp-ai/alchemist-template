@@ -9,8 +9,10 @@
 import {
   type BlogPost,
   type BlogSettings,
+  catalogProblems,
   type ComposedPage,
   normalizePagePath,
+  type ProductCatalog,
   siteContentProblems,
 } from "./composed";
 import { type LandingPage, PAGES } from "./pages";
@@ -19,6 +21,7 @@ import { site, type SiteLink } from "./site";
 const pageFiles = import.meta.glob("../content/pages/**/*.json", { eager: true, import: "default" });
 const postFiles = import.meta.glob("../content/posts/**/*.json", { eager: true, import: "default" });
 const customCodeFiles = import.meta.glob("../content/custom-code.json", { eager: true, import: "default" });
+const catalogFiles = import.meta.glob("../content/products.json", { eager: true, import: "default" });
 
 function entries(files: Record<string, unknown>): { file: string; data: unknown }[] {
   return Object.entries(files)
@@ -33,9 +36,33 @@ const problems = siteContentProblems(rawPages, rawPosts, site.blog);
 if (rawPosts.length > 0 && !site.blog) {
   problems.push('blog posts need "blog" in site.json: { "path": "/blog/", "title": ..., "description": ... }');
 }
+const rawCatalog = catalogFiles["../content/products.json"];
+if (rawCatalog !== undefined) {
+  const bad = catalogProblems(rawCatalog);
+  problems.push(...bad);
+  if (bad.length === 0) {
+    // A product or category path must not be a page, post or the blog list.
+    const taken = new Set([
+      ...rawPages.map(({ data }) => normalizePagePath(String((data as ComposedPage).path))),
+      ...rawPosts.map(({ data }) => normalizePagePath(String((data as BlogPost).path))),
+      ...(site.blog ? [normalizePagePath(site.blog.path)] : []),
+    ]);
+    const c = rawCatalog as ProductCatalog;
+    for (const p of [...c.items.map((i) => i.path), ...c.categories.map((x) => x.path)]) {
+      if (p && taken.has(normalizePagePath(p))) problems.push(`src/content/products.json: path ${normalizePagePath(p)} is also a page or post`);
+    }
+  }
+}
 if (problems.length > 0) {
   throw new Error(`[landing content] ${problems.length} problem(s):\n  - ${problems.join("\n  - ")}`);
 }
+
+/**
+ * The product catalog of a migrated store (src/content/products.json), or
+ * null. Nothing renders it yet: a project that sells adds the shop list,
+ * product and category pages from it.
+ */
+export const catalog: ProductCatalog | null = (rawCatalog as ProductCatalog | undefined) ?? null;
 
 /** Composed pages, paths normalized ("/about" -> "/about/"). */
 export const composedPages: ComposedPage[] = rawPages

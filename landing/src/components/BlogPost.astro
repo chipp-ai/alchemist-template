@@ -40,6 +40,13 @@ const seo = post.image && !post.seo?.og?.image
         Updated <time datetime={updated}>{formatDate(updated)}</time>.
         {post.author && ` By ${post.author}.`}
       </p>
+      {(post.categories?.length || post.tags?.length) && (
+        <p class="page-dates cs-post-terms">
+          {post.categories?.length ? `Categories: ${post.categories.join(", ")}.` : ""}
+          {post.categories?.length && post.tags?.length ? " " : ""}
+          {post.tags?.length ? `Tags: ${post.tags.join(", ")}.` : ""}
+        </p>
+      )}
     </header>
     {post.image && <Img image={post.image} class="cs-post-image" eager />}
     <div class="cs-post-body"><Prose html={post.html} /></div>
@@ -50,4 +57,5 @@ const seo = post.image && !post.seo?.og?.image
   .cs-post-lede { margin-top: 0.75rem; font-size: 1.125rem; }
   article :global(.cs-post-image) { width: 100%; border-radius: var(--radius); margin: 2rem 0 0; }
   .cs-post-body { margin-top: 2rem; }
+  .cs-post-terms { margin-top: 0.25rem; }
 </style>

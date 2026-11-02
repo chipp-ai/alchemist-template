@@ -1,0 +1,793 @@
+{
+  "version": 1,
+  "meta": {
+    "origin": "https://www.fixture-jewelry.example",
+    "sourceUrl": "https://www.fixture-jewelry.example/",
+    "platform": "wordpress",
+    "platformSignals": [
+      "generator meta tag: WordPress 6.6.2",
+      "link header: https://api.w.org/",
+      "WooCommerce Store API answered"
+    ],
+    "platformConfidence": "high",
+    "platformImport": {
+      "sources": [
+        "wordpress_rest",
+        "woocommerce_store_api",
+        "sitemap"
+      ],
+      "counts": {
+        "pages": 8,
+        "posts": 3,
+        "products": 3,
+        "productCategories": 2,
+        "categories": 2,
+        "tags": 2,
+        "sitemapUrls": 19
+      },
+      "totals": {
+        "pages": 8,
+        "posts": 3,
+        "products": 3,
+        "productCategories": 2,
+        "categories": 2,
+        "tags": 2
+      },
+      "itemCap": 2000,
+      "capped": false,
+      "notes": [
+        "WordPress menus are not public: the header and footer come from the crawled home page."
+      ],
+      "needsLogin": [
+        "Draft, pending, private and scheduled pages and posts",
+        "The WordPress menus"
+      ]
+    },
+    "siteName": "Fixture Jewelry",
+    "language": "en-US",
+    "favicon": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/9999999999999999999999999999999999999999999999999999999999999999.png",
+    "crawledAt": "2026-11-02T18:00:00.000Z",
+    "pageCap": 25,
+    "pagesFound": 19,
+    "pagesCrawled": 6
+  },
+  "design": {
+    "designJson": "web/src/design/design.json",
+    "brandSourceUrl": "https://www.fixture-jewelry.example/",
+    "logo": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/8888888888888888888888888888888888888888888888888888888888888888.png"
+  },
+  "pages": [
+    {
+      "path": "/",
+      "title": "Fixture Jewelry | Handmade silver and gold jewelry",
+      "kind": "page",
+      "seo": {
+        "description": "Handmade silver and gold rings and necklaces from a two-person studio.",
+        "canonical": "https://www.fixture-jewelry.example/",
+        "robots": "index, follow",
+        "ogTitle": "Fixture Jewelry",
+        "ogDescription": "Handmade silver and gold rings and necklaces from a two-person studio.",
+        "ogImage": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/1111111111111111111111111111111111111111111111111111111111111111.jpg",
+        "ogType": "website",
+        "twitterCard": "summary_large_image",
+        "jsonLd": [
+          {
+            "@context": "https://schema.org",
+            "@type": "JewelryStore",
+            "name": "Fixture Jewelry",
+            "url": "https://www.fixture-jewelry.example/",
+            "logo": "https://www.fixture-jewelry.example/wp-content/uploads/logo.png",
+            "telephone": "+1-555-0142"
+          }
+        ],
+        "h1": "Handmade jewelry from our studio",
+        "lang": "en-US"
+      },
+      "screenshot": {
+        "desktop": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/6565656565656565656565656565656565656565656565656565656565656565.png",
+        "mobile": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/7979797979797979797979797979797979797979797979797979797979797979.png"
+      },
+      "source": {
+        "url": "https://www.fixture-jewelry.example/",
+        "statusCode": 200,
+        "html": "chipp/site-migration/pages/01-home.html"
+      },
+      "formIds": [],
+      "outboundLinks": [
+        "https://www.instagram.com/fixturejewelry/"
+      ]
+    },
+    {
+      "path": "/about/",
+      "title": "About us | Fixture Jewelry",
+      "kind": "page",
+      "seo": {
+        "description": "Two jewelers, one studio, since 2012.",
+        "canonical": "https://www.fixture-jewelry.example/about/",
+        "robots": "index, follow",
+        "ogTitle": "About us",
+        "ogDescription": "Two jewelers, one studio, since 2012.",
+        "ogImage": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/2222222222222222222222222222222222222222222222222222222222222222.jpg",
+        "ogType": "website",
+        "twitterCard": "summary_large_image",
+        "jsonLd": [],
+        "h1": "About us",
+        "lang": "en-US"
+      },
+      "screenshot": {
+        "desktop": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/6666666666666666666666666666666666666666666666666666666666666666.png",
+        "mobile": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a.png"
+      },
+      "source": {
+        "url": "https://www.fixture-jewelry.example/about/",
+        "statusCode": 200,
+        "html": "chipp/site-migration/pages/02-about.html"
+      },
+      "formIds": [],
+      "outboundLinks": [
+        "https://www.instagram.com/fixturejewelry/"
+      ]
+    },
+    {
+      "path": "/contact/",
+      "title": "Contact | Fixture Jewelry",
+      "kind": "page",
+      "seo": {
+        "description": "Write to the studio about orders, sizing or repairs.",
+        "canonical": "https://www.fixture-jewelry.example/contact/",
+        "robots": "index, follow",
+        "ogTitle": "Contact",
+        "ogDescription": "Write to the studio about orders, sizing or repairs.",
+        "ogImage": null,
+        "ogType": "website",
+        "twitterCard": "summary_large_image",
+        "jsonLd": [],
+        "h1": "Contact",
+        "lang": "en-US"
+      },
+      "screenshot": {
+        "desktop": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/6767676767676767676767676767676767676767676767676767676767676767.png",
+        "mobile": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b.png"
+      },
+      "source": {
+        "url": "https://www.fixture-jewelry.example/contact/",
+        "statusCode": 200,
+        "html": "chipp/site-migration/pages/03-contact.html"
+      },
+      "formIds": [
+        "form-1"
+      ],
+      "outboundLinks": [
+        "https://www.instagram.com/fixturejewelry/"
+      ]
+    },
+    {
+      "path": "/blog/",
+      "title": "Journal | Fixture Jewelry",
+      "kind": "blog_index",
+      "seo": {
+        "description": "Notes from the studio: care guides and new collections.",
+        "canonical": "https://www.fixture-jewelry.example/blog/",
+        "robots": "index, follow",
+        "ogTitle": "Journal",
+        "ogDescription": "Notes from the studio: care guides and new collections.",
+        "ogImage": null,
+        "ogType": "website",
+        "twitterCard": "summary_large_image",
+        "jsonLd": [],
+        "h1": "Journal",
+        "lang": "en-US"
+      },
+      "screenshot": {
+        "desktop": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/6868686868686868686868686868686868686868686868686868686868686868.png",
+        "mobile": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c.png"
+      },
+      "source": {
+        "url": "https://www.fixture-jewelry.example/blog/",
+        "statusCode": 200,
+        "html": "chipp/site-migration/pages/04-blog.html"
+      },
+      "formIds": [],
+      "outboundLinks": [
+        "https://www.instagram.com/fixturejewelry/"
+      ]
+    },
+    {
+      "path": "/shop/",
+      "title": "Shop | Fixture Jewelry",
+      "kind": "page",
+      "seo": {
+        "description": "Rings and necklaces, made to order.",
+        "canonical": "https://www.fixture-jewelry.example/shop/",
+        "robots": "index, follow",
+        "ogTitle": "Shop",
+        "ogDescription": "Rings and necklaces, made to order.",
+        "ogImage": null,
+        "ogType": "website",
+        "twitterCard": "summary_large_image",
+        "jsonLd": [],
+        "h1": "Shop",
+        "lang": "en-US"
+      },
+      "screenshot": {
+        "desktop": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/6969696969696969696969696969696969696969696969696969696969696969.png",
+        "mobile": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d.png"
+      },
+      "source": {
+        "url": "https://www.fixture-jewelry.example/shop/",
+        "statusCode": 200,
+        "html": "chipp/site-migration/pages/05-shop.html"
+      },
+      "formIds": [],
+      "outboundLinks": [
+        "https://www.instagram.com/fixturejewelry/"
+      ]
+    },
+    {
+      "path": "/2026/03/caring-for-silver/",
+      "title": "Caring for silver | Fixture Jewelry",
+      "kind": "blog_post",
+      "seo": {
+        "description": "How to keep silver bright between wears.",
+        "canonical": "https://www.fixture-jewelry.example/2026/03/caring-for-silver/",
+        "robots": "index, follow",
+        "ogTitle": "Caring for silver",
+        "ogDescription": "How to keep silver bright between wears.",
+        "ogImage": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/3333333333333333333333333333333333333333333333333333333333333333.jpg",
+        "ogType": "article",
+        "twitterCard": "summary_large_image",
+        "jsonLd": [],
+        "h1": "Caring for silver",
+        "lang": "en-US"
+      },
+      "screenshot": {
+        "desktop": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a.png",
+        "mobile": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e.png"
+      },
+      "source": {
+        "url": "https://www.fixture-jewelry.example/2026/03/caring-for-silver/",
+        "statusCode": 200,
+        "html": "chipp/site-migration/pages/06-caring-for-silver.html"
+      },
+      "formIds": [],
+      "outboundLinks": [
+        "https://www.instagram.com/fixturejewelry/"
+      ]
+    }
+  ],
+  "forms": [
+    {
+      "id": "form-1",
+      "pagePath": "/contact/",
+      "name": "contact",
+      "action": "https://www.fixture-jewelry.example/wp-json/contact-form-7/v1/contact-forms/5/feedback",
+      "method": "post",
+      "provider": "contact-form-7",
+      "submitLabel": "Send message",
+      "fields": [
+        {
+          "name": "_wpcf7",
+          "label": null,
+          "type": "hidden",
+          "required": false,
+          "placeholder": null
+        },
+        {
+          "name": "your-name",
+          "label": "Your name",
+          "type": "text",
+          "required": true,
+          "placeholder": null
+        },
+        {
+          "name": "your-email",
+          "label": "Your email",
+          "type": "email",
+          "required": true,
+          "placeholder": null
+        },
+        {
+          "name": "phone",
+          "label": null,
+          "type": "tel",
+          "required": false,
+          "placeholder": "Phone (optional)"
+        },
+        {
+          "name": "topic",
+          "label": "Topic",
+          "type": "select",
+          "required": true,
+          "placeholder": null,
+          "options": [
+            "An order",
+            "Ring sizing",
+            "A repair"
+          ]
+        },
+        {
+          "name": "photo",
+          "label": "Photo of the piece",
+          "type": "file",
+          "required": false,
+          "placeholder": null
+        },
+        {
+          "name": "your-message",
+          "label": "Message",
+          "type": "textarea",
+          "required": true,
+          "placeholder": null
+        }
+      ]
+    }
+  ],
+  "navigation": {
+    "header": [
+      {
+        "label": "Shop",
+        "href": "/shop/",
+        "external": false
+      },
+      {
+        "label": "About",
+        "href": "/about/",
+        "external": false
+      },
+      {
+        "label": "Journal",
+        "href": "/blog/",
+        "external": false
+      },
+      {
+        "label": "Contact",
+        "href": "/contact/",
+        "external": false
+      }
+    ],
+    "footer": [
+      {
+        "label": "FAQ",
+        "href": "/faq/",
+        "external": false
+      },
+      {
+        "label": "Instagram",
+        "href": "https://www.instagram.com/fixturejewelry/",
+        "external": true
+      }
+    ]
+  },
+  "collections": {
+    "blog": {
+      "indexPath": "/blog/",
+      "posts": [
+        {
+          "path": "/2026/03/caring-for-silver/",
+          "title": "Caring for silver",
+          "publishedAt": "2026-03-14T10:00:00.000Z",
+          "author": "Ada Smith",
+          "id": "101",
+          "updatedAt": "2026-03-20T09:30:00.000Z",
+          "excerpt": "How to keep silver bright between wears.",
+          "image": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/3333333333333333333333333333333333333333333333333333333333333333.jpg",
+          "categories": [
+            "care"
+          ],
+          "tags": [
+            "silver",
+            "cleaning"
+          ],
+          "seo": {
+            "title": "Caring for silver | Fixture Jewelry",
+            "description": "How to keep silver bright between wears.",
+            "canonical": "https://www.fixture-jewelry.example/2026/03/caring-for-silver/",
+            "robots": "index, follow",
+            "ogImage": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/3333333333333333333333333333333333333333333333333333333333333333.jpg",
+            "jsonLd": [
+              {
+                "@context": "https://schema.org",
+                "@type": "Article",
+                "headline": "Caring for silver",
+                "image": "https://www.fixture-jewelry.example/wp-content/uploads/silver.jpg"
+              }
+            ]
+          },
+          "contentFile": "chipp/site-migration/content/posts-001.json"
+        },
+        {
+          "path": "/2026/01/winter-collection/",
+          "title": "The winter collection",
+          "publishedAt": "2026-01-08T15:00:00.000Z",
+          "author": null,
+          "id": "102",
+          "updatedAt": null,
+          "excerpt": "Six new rings in oxidized silver.",
+          "image": null,
+          "categories": [
+            "news"
+          ],
+          "tags": [],
+          "seo": null,
+          "contentFile": "chipp/site-migration/content/posts-001.json"
+        },
+        {
+          "path": "/?p=103",
+          "title": "Spring sale (draft)",
+          "publishedAt": null,
+          "author": null,
+          "id": "103",
+          "status": "draft",
+          "categories": [],
+          "tags": [],
+          "seo": null,
+          "contentFile": null
+        },
+        {
+          "path": "/2025/12/holiday-hours/",
+          "title": "Holiday hours",
+          "publishedAt": "2025-12-01T12:00:00.000Z",
+          "author": "Ada Smith"
+        }
+      ],
+      "categories": [
+        {
+          "slug": "care",
+          "name": "Jewelry care",
+          "path": "/category/care/",
+          "count": 1
+        },
+        {
+          "slug": "news",
+          "name": "Studio news",
+          "path": "/category/news/",
+          "count": 1
+        }
+      ],
+      "tags": [
+        {
+          "slug": "silver",
+          "name": "Silver",
+          "path": "/tag/silver/",
+          "count": 1
+        },
+        {
+          "slug": "cleaning",
+          "name": "Cleaning",
+          "path": "/tag/cleaning/",
+          "count": 1
+        }
+      ]
+    },
+    "pages": [
+      {
+        "id": "2",
+        "path": "/",
+        "title": "Home",
+        "parentPath": null,
+        "menuOrder": 0,
+        "publishedAt": "2012-05-01T00:00:00.000Z",
+        "updatedAt": "2026-10-01T00:00:00.000Z",
+        "excerpt": null,
+        "image": null,
+        "seo": {
+          "title": "Fixture Jewelry | Handmade silver and gold jewelry",
+          "description": "Handmade silver and gold rings and necklaces from a two-person studio.",
+          "canonical": "https://www.fixture-jewelry.example/",
+          "robots": "index, follow",
+          "ogImage": null,
+          "jsonLd": []
+        },
+        "contentFile": "chipp/site-migration/content/pages-001.json"
+      },
+      {
+        "id": "7",
+        "path": "/about/",
+        "title": "About us",
+        "parentPath": null,
+        "menuOrder": 1,
+        "publishedAt": "2012-05-01T00:00:00.000Z",
+        "updatedAt": "2025-02-11T00:00:00.000Z",
+        "excerpt": null,
+        "image": null,
+        "seo": {
+          "title": "About us | Fixture Jewelry",
+          "description": "Two jewelers, one studio, since 2012.",
+          "canonical": "https://www.fixture-jewelry.example/about/",
+          "robots": "index, follow",
+          "ogImage": null,
+          "jsonLd": []
+        },
+        "contentFile": "chipp/site-migration/content/pages-001.json"
+      },
+      {
+        "id": "9",
+        "path": "/contact/",
+        "title": "Contact",
+        "parentPath": null,
+        "menuOrder": 3,
+        "publishedAt": "2012-05-01T00:00:00.000Z",
+        "updatedAt": null,
+        "excerpt": null,
+        "image": null,
+        "seo": null,
+        "contentFile": "chipp/site-migration/content/pages-001.json"
+      },
+      {
+        "id": "11",
+        "path": "/faq/",
+        "title": "Questions and answers",
+        "parentPath": null,
+        "menuOrder": 4,
+        "publishedAt": "2019-06-01T00:00:00.000Z",
+        "updatedAt": "2024-01-05T00:00:00.000Z",
+        "excerpt": null,
+        "image": null,
+        "seo": {
+          "title": "FAQ | Fixture Jewelry",
+          "description": "Sizing, shipping and repairs.",
+          "canonical": "https://www.fixture-jewelry.example/faq/",
+          "robots": "index, follow",
+          "ogImage": null,
+          "jsonLd": []
+        },
+        "contentFile": "chipp/site-migration/content/pages-001.json"
+      },
+      {
+        "id": "12",
+        "path": "/blog/",
+        "title": "Journal",
+        "parentPath": null,
+        "menuOrder": 2,
+        "publishedAt": null,
+        "updatedAt": null,
+        "excerpt": null,
+        "image": null,
+        "seo": null,
+        "contentFile": null
+      },
+      {
+        "id": "13",
+        "path": "/shop/",
+        "title": "Shop",
+        "parentPath": null,
+        "menuOrder": 5,
+        "publishedAt": null,
+        "updatedAt": null,
+        "excerpt": null,
+        "image": null,
+        "seo": null,
+        "contentFile": null
+      },
+      {
+        "id": "14",
+        "path": "/cart/",
+        "title": "Cart",
+        "parentPath": null,
+        "menuOrder": 6,
+        "publishedAt": null,
+        "updatedAt": null,
+        "excerpt": null,
+        "image": null,
+        "seo": null,
+        "contentFile": null
+      },
+      {
+        "id": "15",
+        "path": "/staff-notes/",
+        "title": "Staff notes",
+        "parentPath": null,
+        "menuOrder": null,
+        "publishedAt": null,
+        "updatedAt": null,
+        "excerpt": null,
+        "image": null,
+        "seo": null,
+        "contentFile": null,
+        "status": "private"
+      }
+    ],
+    "products": {
+      "indexPath": "/shop/",
+      "currency": "USD",
+      "items": [
+        {
+          "id": "301",
+          "path": "/product/silver-band-ring/",
+          "slug": "silver-band-ring",
+          "title": "Silver band ring",
+          "sku": "RING-001",
+          "price": "120.00",
+          "regularPrice": "150.00",
+          "salePrice": "120.00",
+          "currency": "USD",
+          "onSale": true,
+          "inStock": true,
+          "shortDescription": "A 4 mm band in recycled sterling silver.",
+          "images": [
+            "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/4444444444444444444444444444444444444444444444444444444444444444.jpg",
+            "https://www.fixture-jewelry.example/wp-content/uploads/ring-side.jpg"
+          ],
+          "categories": [
+            "rings"
+          ],
+          "tags": [
+            "silver"
+          ],
+          "vendor": null,
+          "variants": [
+            {
+              "id": "311",
+              "title": "6",
+              "sku": null,
+              "price": null,
+              "available": null
+            },
+            {
+              "id": "312",
+              "title": "7",
+              "sku": null,
+              "price": null,
+              "available": null
+            }
+          ],
+          "attributes": [
+            {
+              "name": "Ring size",
+              "values": [
+                "6",
+                "7"
+              ]
+            }
+          ],
+          "seo": {
+            "title": "Silver band ring",
+            "description": "A 4 mm band in recycled sterling silver.",
+            "canonical": null,
+            "robots": null,
+            "ogImage": null,
+            "jsonLd": []
+          },
+          "contentFile": "chipp/site-migration/content/products-001.json"
+        },
+        {
+          "id": "302",
+          "path": "/product/gold-chain-necklace/",
+          "slug": "gold-chain-necklace",
+          "title": "Gold chain necklace",
+          "sku": null,
+          "price": "3500.00",
+          "regularPrice": "3500.00",
+          "salePrice": null,
+          "currency": "USD",
+          "onSale": false,
+          "inStock": false,
+          "shortDescription": null,
+          "images": [
+            "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/5555555555555555555555555555555555555555555555555555555555555555.jpg"
+          ],
+          "categories": [
+            "necklaces"
+          ],
+          "tags": [],
+          "vendor": null,
+          "variants": [],
+          "attributes": [],
+          "seo": null,
+          "contentFile": "chipp/site-migration/content/products-001.json"
+        },
+        {
+          "id": "303",
+          "path": "/product/gift-card/",
+          "slug": "gift-card",
+          "title": "Gift card",
+          "sku": null,
+          "price": "50.00",
+          "regularPrice": "50.00",
+          "salePrice": null,
+          "currency": "USD",
+          "onSale": false,
+          "inStock": null,
+          "shortDescription": "Any amount, by email.",
+          "images": [],
+          "categories": [],
+          "tags": [],
+          "vendor": null,
+          "variants": [],
+          "attributes": [],
+          "seo": null,
+          "contentFile": null
+        }
+      ],
+      "categories": [
+        {
+          "id": "21",
+          "slug": "rings",
+          "name": "Rings",
+          "path": "/product-category/rings/",
+          "parentSlug": null,
+          "description": "Bands and stacking rings.",
+          "image": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/6666666666666666666666666666666666666666666666666666666666666666.jpg",
+          "productCount": 1
+        },
+        {
+          "id": "22",
+          "slug": "necklaces",
+          "name": "Necklaces",
+          "path": "/product-category/necklaces/",
+          "parentSlug": null,
+          "description": null,
+          "image": null,
+          "productCount": 1
+        }
+      ]
+    }
+  },
+  "inventory": {
+    "paths": [
+      "/",
+      "/about/",
+      "/contact/",
+      "/faq/",
+      "/blog/",
+      "/shop/",
+      "/cart/",
+      "/2026/03/caring-for-silver/",
+      "/2026/01/winter-collection/",
+      "/2025/12/holiday-hours/",
+      "/product/silver-band-ring/",
+      "/product/gold-chain-necklace/",
+      "/product/gift-card/",
+      "/product-category/rings/",
+      "/product-category/necklaces/",
+      "/category/care/",
+      "/category/news/",
+      "/tag/silver/",
+      "/lookbook/"
+    ],
+    "truncated": false
+  },
+  "assets": {
+    "map": {
+      "https://www.fixture-jewelry.example/wp-content/uploads/hero.jpg": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/1111111111111111111111111111111111111111111111111111111111111111.jpg",
+      "https://www.fixture-jewelry.example/wp-content/uploads/about.jpg": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/2222222222222222222222222222222222222222222222222222222222222222.jpg",
+      "https://www.fixture-jewelry.example/wp-content/uploads/silver.jpg": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/3333333333333333333333333333333333333333333333333333333333333333.jpg",
+      "https://www.fixture-jewelry.example/wp-content/uploads/ring.jpg": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/4444444444444444444444444444444444444444444444444444444444444444.jpg",
+      "https://www.fixture-jewelry.example/wp-content/uploads/necklace.jpg": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/5555555555555555555555555555555555555555555555555555555555555555.jpg",
+      "https://www.fixture-jewelry.example/wp-content/uploads/rings-cat.jpg": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/6666666666666666666666666666666666666666666666666666666666666666.jpg",
+      "https://www.fixture-jewelry.example/wp-content/uploads/studio.jpg": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/7777777777777777777777777777777777777777777777777777777777777777.jpg"
+    },
+    "items": [
+      {
+        "originalUrl": "https://www.fixture-jewelry.example/wp-content/uploads/hero.jpg",
+        "url": "https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/1111111111111111111111111111111111111111111111111111111111111111.jpg",
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contentType": "image/jpeg",
+        "bytes": 182044,
+        "pages": [
+          "/"
+        ]
+      }
+    ],
+    "skipped": [
+      {
+        "url": "https://www.fixture-jewelry.example/wp-content/uploads/ring-side.jpg",
+        "reason": "over the image budget"
+      }
+    ]
+  },
+  "redirects": [
+    {
+      "from": "/index.php/about/",
+      "to": "/about/",
+      "status": 301
+    }
+  ],
+  "skippedPages": [
+    {
+      "url": "https://www.fixture-jewelry.example/product-tag/silver/",
+      "reason": "over_cap"
+    }
+  ],
+  "warnings": []
+}

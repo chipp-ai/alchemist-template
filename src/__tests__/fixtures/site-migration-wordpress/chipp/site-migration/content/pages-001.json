@@ -1,0 +1,8 @@
+{
+  "items": {
+    "/": "<h2>Made by hand in small batches</h2><p>Every ring and necklace is cut, soldered and polished at our bench in Portland.</p><p><img src=\"https://build.chipp.ai/api/public/site-migration/00000000-0000-4000-8000-000000000001/7777777777777777777777777777777777777777777777777777777777777777.jpg\" alt=\"Two jewelers at a workbench\"></p><p><a href=\"https://www.fixture-jewelry.example/shop/\">See the shop</a></p>",
+    "/about/": "<p>We are two jewelers who share one studio. We started in 2012.</p><p><img src=\"https://www.fixture-jewelry.example/wp-content/uploads/about.jpg\" alt=\"The studio window\"></p><p>Questions? <a href=\"https://www.fixture-jewelry.example/contact/\">Write to us</a>.</p>",
+    "/contact/": "<p>We answer every message within two working days.</p>",
+    "/faq/": "<h2>Do you resize rings?</h2><p>Yes. Send the ring back and we resize it within a week.</p><h2>Do you ship abroad?</h2><p>We ship to the US and Canada.</p>"
+  }
+}

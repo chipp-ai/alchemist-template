@@ -70,6 +70,8 @@ export function postLd(post: BlogPost): object {
   };
   if (post.description) article.description = post.description;
   if (post.author) article.author = { "@type": "Person", name: post.author };
+  if (post.categories?.length) article.articleSection = post.categories;
+  if (post.tags?.length) article.keywords = post.tags.join(", ");
   if (post.image?.src) article.image = post.image.src.startsWith("/") ? absoluteUrl(post.image.src) : post.image.src;
   if (site.url) article.url = absoluteUrl(post.path);
   return { "@context": "https://schema.org", "@graph": [article, organization()] };

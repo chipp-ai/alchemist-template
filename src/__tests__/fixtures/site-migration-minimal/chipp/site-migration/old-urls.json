@@ -1,0 +1,8 @@
+{
+  "origin": "https://studio-fixture.example",
+  "paths": [
+    "/",
+    "/book-online",
+    "/members"
+  ]
+}

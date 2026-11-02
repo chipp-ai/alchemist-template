@@ -1,0 +1,9 @@
+{
+  "redirects": [
+    {
+      "from": "/index.php/about/",
+      "to": "/about/",
+      "status": 301
+    }
+  ]
+}
