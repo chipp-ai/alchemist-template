@@ -63,7 +63,14 @@ async function request<T = unknown>(
       // Avoid circular import: set user to null directly and navigate.
       window.location.hash = "#/login";
     }
-    throw new ApiError(401, "Unauthorized");
+    // Keep the server's own words when it sent some ("That code has
+    // expired..."). A bare "Unauthorized" tells a person nothing, and on the
+    // sign-in form it hid why a code was refused.
+    let data401: unknown = null;
+    if (response.headers.get("content-type")?.includes("application/json")) {
+      data401 = await response.json().catch(() => null);
+    }
+    throw new ApiError(401, extractErrorMessage(data401) ?? "Unauthorized", data401);
   }
 
   // Parse response body (may be empty for 204)

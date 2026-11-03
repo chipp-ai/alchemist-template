@@ -370,12 +370,12 @@ registerEmailKind<OtpEmailData>({
     [
       `Your verification code is: ${d.otpCode}`,
       "",
-      "This code expires in 10 minutes.",
+      "This code expires in 30 minutes.",
       "",
       `If you didn't request this code, you can safely ignore this email.`,
     ].join("\n"),
   body: (d) => ({
-    previewText: `${d.otpCode} -- your ${BRAND.name} verification code (expires in 10 minutes)`,
+    previewText: `${d.otpCode} -- your ${BRAND.name} verification code (expires in 30 minutes)`,
     html: `
         <h1 style="margin:0 0 10px;font-family:${EMAIL_SERIF};font-size:31px;font-weight:600;line-height:1.1;color:${EMAIL_INK};">Verification code</h1>
         <p style="margin:0 0 26px;font-family:${EMAIL_SANS};font-size:15px;line-height:1.5;color:${EMAIL_MUTED};">Enter this code to sign in to ${
@@ -388,7 +388,7 @@ registerEmailKind<OtpEmailData>({
     }</span>
           </td></tr>
         </table>
-        <p style="margin:26px 0 0;font-family:${EMAIL_SANS};font-size:13px;line-height:1.5;color:${EMAIL_FAINT};">This code expires in 10 minutes. If you didn't request it, you can safely ignore this email.</p>
+        <p style="margin:26px 0 0;font-family:${EMAIL_SANS};font-size:13px;line-height:1.5;color:${EMAIL_FAINT};">This code expires in 30 minutes. If you didn't request it, you can safely ignore this email.</p>
       `,
   }),
   sample: () => ({ otpCode: "123456" }),

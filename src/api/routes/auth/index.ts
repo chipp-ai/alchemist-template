@@ -23,7 +23,8 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { db } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
-import { BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
+import { AppError, BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
+import { rateLimit } from "@/lib/redis.ts";
 import {
   type AuthUser,
   createSessionToken,
@@ -112,6 +113,21 @@ export function setSessionCookie(
   });
 }
 
+/**
+ * How long a sign-in code works. Hospital and school mail gateways can hold a
+ * message for many minutes, so a 10 minute code could arrive already dead.
+ */
+export const OTP_TTL_MINUTES = 30;
+/** Wrong guesses a single code allows before it is spent. */
+export const OTP_MAX_ATTEMPTS = 5;
+/** Code emails per address per window. A guard against abuse, not a limit real people meet. */
+const OTP_SENDS_PER_WINDOW = 10;
+const OTP_SEND_WINDOW_SECONDS = 15 * 60;
+
+function otpExpiresAt(now = new Date()): Date {
+  return new Date(now.getTime() + OTP_TTL_MINUTES * 60 * 1000);
+}
+
 function generateOtp(): string {
   return String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
 }
@@ -123,9 +139,12 @@ const sendOtpSchema = z.object({
   name: z.string().trim().min(1).optional(),
 });
 
+// Pasted codes carry spaces ("123 456") or a stray character. Keep the digits.
+const otpCodeSchema = z.string().transform((v) => v.replace(/\D/g, "")).pipe(z.string().length(6));
+
 const verifyOtpSchema = z.object({
   email: z.string().email().trim().toLowerCase(),
-  otpCode: z.string().length(6),
+  otpCode: otpCodeSchema,
   name: z.string().trim().min(1).optional(),
 });
 
@@ -145,23 +164,43 @@ authRoutes.post("/send-otp", zValidator("json", sendOtpSchema, validationHook), 
     throw new BadRequestError("This address cannot sign in by email code");
   }
 
-  // Delete any existing OTPs for this email
-  await db
-    .deleteFrom("otps")
+  const throttle = await rateLimit(`otp-send:${email}`, {
+    limit: OTP_SENDS_PER_WINDOW,
+    windowSeconds: OTP_SEND_WINDOW_SECONDS,
+  });
+  if (!throttle.allowed) {
+    throw new AppError(
+      "We already sent several codes to this address. Use the code in any of those emails, or wait a few minutes to ask again.",
+      429,
+      "RATE_LIMITED",
+    );
+  }
+
+  // A resend sends the SAME code while one is still live. Email arrives late
+  // and out of order, and people press Resend while they wait. When every send
+  // minted a new code and killed the old one, the email a person finally
+  // opened held a dead code, and sign-in failed in a loop. With one live code
+  // per address, every email in the inbox works.
+  const now = new Date();
+  const expiresAt = otpExpiresAt(now);
+  await db.deleteFrom("otps").where("email", "=", email).where("expiresAt", "<=", now).execute();
+  const live = await db
+    .selectFrom("otps")
+    .select(["id", "otpCode"])
     .where("email", "=", email)
-    .execute();
+    .where("attempts", "<", OTP_MAX_ATTEMPTS)
+    .orderBy("createdAt", "desc")
+    .executeTakeFirst();
 
-  const otpCode = generateOtp();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-  await db
-    .insertInto("otps")
-    .values({
-      email,
-      otpCode,
-      expiresAt,
-    })
-    .execute();
+  let otpCode: string;
+  if (live) {
+    otpCode = live.otpCode;
+    await db.updateTable("otps").set({ expiresAt }).where("id", "=", live.id).execute();
+  } else {
+    otpCode = generateOtp();
+    await db.deleteFrom("otps").where("email", "=", email).execute(); // spent codes
+    await db.insertInto("otps").values({ email, otpCode, expiresAt }).execute();
+  }
 
   // Send the OTP email (falls back to console.log when SMTP not configured)
   sendOtpEmail(email, otpCode).catch((err) => {
@@ -185,43 +224,49 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
     throw new UnauthorizedError("Invalid or expired code");
   }
 
-  // Look up the OTP
-  const otp = await db
+  // The live codes for this email. A resend reuses the live code, so this is
+  // normally one row. Rows from an older deploy can leave a few: any of them works.
+  const candidates = await db
     .selectFrom("otps")
     .selectAll()
     .where("email", "=", email)
     .where("expiresAt", ">", new Date())
-    .executeTakeFirst();
+    .orderBy("createdAt", "desc")
+    .execute();
 
-  if (!otp) {
-    throw new UnauthorizedError("Invalid or expired code");
+  if (candidates.length === 0) {
+    throw new UnauthorizedError("That code has expired. Tap Resend code to get a new one.");
   }
 
-  // Check max attempts
-  if (otp.attempts >= 5) {
-    await db
-      .deleteFrom("otps")
-      .where("id", "=", otp.id)
-      .execute();
-    throw new UnauthorizedError("Too many attempts. Request a new code.");
+  // Guesses are counted per code. A code with OTP_MAX_ATTEMPTS misses is spent.
+  const unspent = candidates.filter((o) => o.attempts < OTP_MAX_ATTEMPTS);
+  if (unspent.length === 0) {
+    await db.deleteFrom("otps").where("email", "=", email).execute();
+    throw new UnauthorizedError(
+      "Too many wrong tries on that code. Tap Resend code to get a new one.",
+    );
   }
 
-  // Check code match
-  if (otp.otpCode !== otpCode) {
+  const match = unspent.find((o) => o.otpCode === otpCode);
+  if (!match) {
     // Increment attempts in a separate query so it commits even if we throw
     await db
       .updateTable("otps")
-      .set({ attempts: otp.attempts + 1 })
-      .where("id", "=", otp.id)
+      .set((eb) => ({ attempts: eb("attempts", "+", 1) }))
+      .where("id", "in", unspent.map((o) => o.id))
       .execute();
-    throw new UnauthorizedError("Invalid code");
+    const left = OTP_MAX_ATTEMPTS - 1 - Math.max(...unspent.map((o) => o.attempts));
+    throw new UnauthorizedError(
+      left > 0
+        ? `That code doesn't match. Check the code in the email. ${left} ${
+          left === 1 ? "try" : "tries"
+        } left.`
+        : "That code doesn't match, and there are no tries left. Tap Resend code to get a new one.",
+    );
   }
 
-  // Code matches -- delete the OTP
-  await db
-    .deleteFrom("otps")
-    .where("id", "=", otp.id)
-    .execute();
+  // Code matches: every code for this email is now used up
+  await db.deleteFrom("otps").where("email", "=", email).execute();
 
   // Look up or create user
   let user = await db
@@ -575,7 +620,7 @@ authRoutes.post(
     await db.deleteFrom("otps").where("email", "=", email).execute();
 
     const otpCode = generateOtp();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiresAt = otpExpiresAt(); // same window as sign-in codes
 
     await db.insertInto("otps").values({ email, otpCode, expiresAt }).execute();
 

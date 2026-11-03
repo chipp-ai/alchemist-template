@@ -66,7 +66,7 @@
     resendMessage = null;
     try {
       await authStore.sendOtp(email, name);
-      resendMessage = "Code resent!";
+      resendMessage = "Sent again. The code is the same in every email, so any of them works. Check your junk folder too.";
     } catch (err) {
       errorMessage =
         err instanceof Error ? err.message : "Failed to resend code. Please try again.";
@@ -150,9 +150,9 @@
             class="input otp-input"
             type="text"
             bind:value={otpCode}
+            oninput={() => (otpCode = otpCode.replace(/\D/g, "").slice(0, 6))}
             placeholder="000000"
             required
-            maxlength="6"
             pattern="[0-9]*"
             inputmode="numeric"
             autocomplete="one-time-code"
