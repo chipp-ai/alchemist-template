@@ -1550,6 +1550,12 @@ agent token for the signed-in user and sends it to Chipp with
 <agentToken>`. The gate re-reads the user, so the current role, the current
 org and logout-all apply.
 
+The tools work in the Builder preview too. There `APP_URL` is
+`http://localhost:8000`, so the session proxy sends that URL; Chipp maps it to
+this sandbox and calls the endpoint through the sandbox's own tunnel. Do not
+change `APP_URL` for this. To check a tool, sign in to the preview and ask the
+agent widget a question that needs the data.
+
 Invariants:
 
 - **Scope by `ctx.user`, never by an argument.** The org comes from

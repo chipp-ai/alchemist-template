@@ -11,7 +11,9 @@
  *
  * `agentToken` is a 15-minute, user-scoped token (scope "agent", aud
  * "chipp-embed"); `agentToolsUrl` is this app's MCP endpoint. The Chipp
- * runtime calls the tools with the token as a bearer credential.
+ * runtime calls the tools with the token as a bearer credential. In a Builder
+ * preview sandbox APP_URL is http://localhost:8000; Chipp maps that loopback
+ * URL to the sandbox itself, so the tools work in the preview as well.
  *
  * Never call this for an anonymous session: there is no user to act for.
  *
