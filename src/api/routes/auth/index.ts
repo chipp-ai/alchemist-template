@@ -225,38 +225,41 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
     throw new UnauthorizedError("Invalid or expired code");
   }
 
-  // The live codes for this email. A resend reuses the live code, so this is
-  // normally one row. Rows from an older deploy can leave a few: any of them works.
-  const candidates = await db
-    .selectFrom("otps")
-    .selectAll()
+  // Every guess, right or wrong, first claims one try on each live, unspent code
+  // for this email. The increment and the limit check are one statement, so
+  // parallel guesses cannot all read the same count: Postgres serializes the
+  // row updates and at most OTP_MAX_ATTEMPTS guesses ever get a row back. A
+  // resend reuses the live code, so this is normally one row; rows from an
+  // older deploy can leave a few, and any of them works.
+  const claimed = await db
+    .updateTable("otps")
+    .set((eb) => ({ attempts: eb("attempts", "+", 1) }))
     .where("email", "=", email)
     .where("expiresAt", ">", new Date())
-    .orderBy("createdAt", "desc")
+    .where("attempts", "<", OTP_MAX_ATTEMPTS)
+    .returning(["id", "otpCode", "attempts"])
     .execute();
 
-  if (candidates.length === 0) {
-    throw new UnauthorizedError("That code has expired. Tap Resend code to get a new one.");
-  }
-
-  // Guesses are counted per code. A code with OTP_MAX_ATTEMPTS misses is spent.
-  const unspent = candidates.filter((o) => o.attempts < OTP_MAX_ATTEMPTS);
-  if (unspent.length === 0) {
-    await db.deleteFrom("otps").where("email", "=", email).execute();
+  if (claimed.length === 0) {
+    // No try left to claim. Tell expired apart from spent. Never delete here:
+    // a spent row holds the count, and deleting it would reset the limit. The
+    // next send replaces it, or it expires.
+    const spent = await db
+      .selectFrom("otps")
+      .select("id")
+      .where("email", "=", email)
+      .where("expiresAt", ">", new Date())
+      .executeTakeFirst();
     throw new UnauthorizedError(
-      "Too many wrong tries on that code. Tap Resend code to get a new one.",
+      spent
+        ? "Too many wrong tries on that code. Tap Resend code to get a new one."
+        : "That code has expired. Tap Resend code to get a new one.",
     );
   }
 
-  const match = unspent.find((o) => o.otpCode === otpCode);
+  const match = claimed.find((o) => o.otpCode === otpCode);
   if (!match) {
-    // Increment attempts in a separate query so it commits even if we throw
-    await db
-      .updateTable("otps")
-      .set((eb) => ({ attempts: eb("attempts", "+", 1) }))
-      .where("id", "in", unspent.map((o) => o.id))
-      .execute();
-    const left = OTP_MAX_ATTEMPTS - 1 - Math.max(...unspent.map((o) => o.attempts));
+    const left = OTP_MAX_ATTEMPTS - Math.max(...claimed.map((o) => o.attempts));
     throw new UnauthorizedError(
       left > 0
         ? `That code doesn't match. Check the code in the email. ${left} ${
@@ -266,7 +269,17 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
     );
   }
 
-  // Code matches: every code for this email is now used up
+  // Code matches. Consume it with a delete that only one request can win, so
+  // two parallel right guesses cannot both sign in on one code.
+  const consumed = await db
+    .deleteFrom("otps")
+    .where("id", "=", match.id)
+    .returning("id")
+    .executeTakeFirst();
+  if (!consumed) {
+    throw new UnauthorizedError("That code was already used. Tap Resend code to get a new one.");
+  }
+  // Every other code for this email is now used up too.
   await db.deleteFrom("otps").where("email", "=", email).execute();
 
   // Look up or create user

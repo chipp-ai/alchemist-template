@@ -1145,6 +1145,16 @@ code is in `src/api/routes/auth/index.ts`; the email copy is the `otp` kind in
   helps.
 - **5 wrong tries spend a code** (`OTP_MAX_ATTEMPTS`). A spent code stops
   working, even if the right digits come next. The next send mints a new one.
+- **The try limit holds under parallel guesses.** Every guess first claims a
+  try with one statement, `UPDATE otps SET attempts = attempts + 1 WHERE ...
+  AND attempts < OTP_MAX_ATTEMPTS RETURNING ...`, and only a guess that got a
+  row back is compared. Never read the count and then increment it in a
+  second query: parallel guesses all read the same count and slip past the
+  limit. A right guess consumes its row with `DELETE ... WHERE id = ...
+  RETURNING`, so only one request signs in on a code.
+- **A refused guess never deletes a code.** The row holds the try count, so
+  deleting it on a spent or expired guess resets the limit. A spent row stays
+  until the next send replaces it or it expires.
 - **The client keeps the server's words.** `web/src/lib/api.ts` keeps the
   server's message on a 401 (`extractErrorMessage`) and falls back to
   "Unauthorized" only when the body has none. Do not replace it with a fixed
@@ -1160,8 +1170,10 @@ insert a new one with a 10 minute life. It breaks Resend on slow mail, and
 
 The guard is `src/__tests__/routes/auth-otp-resend.test.ts`. It covers reuse on
 resend, the first email still working after resends, the 30 minute window and
-its extension, the expired message, tries left and spent codes, and legacy rows.
-It does not cover the 429 rate limit or the "out of tries" message text. Add a
+its extension, the expired message, tries left and spent codes, legacy rows,
+parallel wrong guesses (exactly 5 are checked), a spent code keeping its count,
+and parallel right guesses signing in once.
+It does not cover the 429 rate limit. Add a
 test when you change either.
 
 The email-change route (`POST /api/auth/me/email-change`) is separate and still

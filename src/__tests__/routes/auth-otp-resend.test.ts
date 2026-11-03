@@ -174,3 +174,101 @@ dbTest("otp: a code left from an older deploy still works next to the live one",
     await cleanup(email);
   }
 });
+
+async function attemptsFor(email: string): Promise<number[]> {
+  const rows = await db.selectFrom("otps").select("attempts").where("email", "=", email)
+    .execute();
+  return rows.map((r) => r.attempts);
+}
+
+dbTest(
+  "otp: parallel wrong guesses cannot get past OTP_MAX_ATTEMPTS on one code",
+  async () => {
+    const email = freshEmail();
+    const app = buildApp();
+    try {
+      await post(app, "/api/auth/send-otp", { email });
+      const [code] = await codesFor(email);
+      const wrong = code === "000000" ? "111111" : "000000";
+
+      // Fire them all at once. Each one reads the counter before any other has
+      // written it unless the increment and the limit check are one statement.
+      const guesses = OTP_MAX_ATTEMPTS * 4;
+      const responses = await Promise.all(
+        Array.from(
+          { length: guesses },
+          () => post(app, "/api/auth/verify-otp", { email, otpCode: wrong }),
+        ),
+      );
+      const messages = await Promise.all(
+        responses.map(async (r) => {
+          assertEquals(r.status, 401);
+          return String((await r.json()).error);
+        }),
+      );
+      const evaluated = messages.filter((m) => m.startsWith("That code doesn't match"));
+      const refused = messages.filter((m) => m.startsWith("Too many wrong tries"));
+      assertEquals(
+        evaluated.length,
+        OTP_MAX_ATTEMPTS,
+        "exactly OTP_MAX_ATTEMPTS guesses are checked",
+      );
+      assertEquals(refused.length, guesses - OTP_MAX_ATTEMPTS);
+      assertEquals(await attemptsFor(email), [OTP_MAX_ATTEMPTS]);
+
+      // The right code arrives too late: the code is spent.
+      assertEquals((await post(app, "/api/auth/verify-otp", { email, otpCode: code })).status, 401);
+    } finally {
+      await cleanup(email);
+    }
+  },
+);
+
+dbTest("otp: a guess against a spent code keeps the counter", async () => {
+  const email = freshEmail();
+  const app = buildApp();
+  try {
+    await post(app, "/api/auth/send-otp", { email });
+    const [code] = await codesFor(email);
+    const wrong = code === "000000" ? "111111" : "000000";
+    for (let i = 0; i < OTP_MAX_ATTEMPTS; i++) {
+      await post(app, "/api/auth/verify-otp", { email, otpCode: wrong });
+    }
+    for (let i = 0; i < 3; i++) {
+      const res = await post(app, "/api/auth/verify-otp", { email, otpCode: wrong });
+      assertEquals(res.status, 401);
+      assert(String((await res.json()).error).startsWith("Too many wrong tries"));
+    }
+    // The spent row is still there with its count, so the limit did not reset
+    // and the right code still fails.
+    assertEquals(await codesFor(email), [code]);
+    assertEquals(await attemptsFor(email), [OTP_MAX_ATTEMPTS]);
+    assertEquals((await post(app, "/api/auth/verify-otp", { email, otpCode: code })).status, 401);
+    assertEquals(await attemptsFor(email), [OTP_MAX_ATTEMPTS]);
+
+    // A send replaces the spent code with a fresh one that works.
+    await post(app, "/api/auth/send-otp", { email });
+    const [fresh] = await codesFor(email);
+    assertEquals(await attemptsFor(email), [0]);
+    assertEquals((await post(app, "/api/auth/verify-otp", { email, otpCode: fresh })).status, 200);
+  } finally {
+    await cleanup(email);
+  }
+});
+
+dbTest("otp: parallel right guesses sign in once on one code", async () => {
+  const email = freshEmail();
+  const app = buildApp();
+  try {
+    await post(app, "/api/auth/send-otp", { email });
+    const [code] = await codesFor(email);
+    const responses = await Promise.all(
+      Array.from({ length: 3 }, () => post(app, "/api/auth/verify-otp", { email, otpCode: code })),
+    );
+    const statuses = responses.map((r) => r.status).sort();
+    await Promise.all(responses.map((r) => r.body?.cancel()));
+    assertEquals(statuses, [200, 401, 401]);
+  } finally {
+    await cleanup(email);
+  }
+});
