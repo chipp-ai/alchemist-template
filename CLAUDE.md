@@ -1115,6 +1115,58 @@ sheet in the same change).
   their reaction as a delta and change one axis at a time. Do not open a
   swatch for a bug fix or a value they already gave you.
 
+## Sign-in codes (OTP) contract
+
+Email sign-in codes follow one contract. It landed in commit 16645bb. The
+code is in `src/api/routes/auth/index.ts`; the email copy is the `otp` kind in
+`src/services/email-kinds.ts`. Read this before you touch any of it.
+
+- **One live code per address.** `POST /api/auth/send-otp` reuses the live,
+  unspent code for the address and extends its expiry. It never deletes a live
+  code and mints a new one. The reason: people press Resend while a slow mail
+  gateway still holds the first email. When every send killed the old code, the
+  email the person finally opened held a dead code, and sign-in failed in a
+  loop. With one live code, every email in the inbox works. A new code is
+  minted only when no live code is left (none, expired, or spent).
+- **Codes live 30 minutes.** `OTP_TTL_MINUTES` is 30, and the email copy says
+  "30 minutes". Change both together.
+- **Sends are limited.** At most 10 sends per address per 15 minutes, through
+  `rateLimit` in `src/lib/redis.ts`. It fails open, so a Redis outage never
+  blocks sign-in. Past the limit the route answers 429 (`RATE_LIMITED`) with a
+  plain message that tells the person to use the code in an earlier email.
+- **`POST /api/auth/verify-otp` is forgiving about input.** It strips every
+  non-digit from the pasted code ("123 456" works) and then needs exactly six
+  digits. It checks every live row for the address, so a code left over from an
+  older deploy still works.
+- **It gives three distinct messages, never a bare "Invalid code".** Expired:
+  "That code has expired...". Did not match: "That code doesn't match..." with
+  the tries left. Out of tries: "Too many wrong tries..." (or "no tries left"
+  on the last miss). Each one tells the person to tap Resend code when that
+  helps.
+- **5 wrong tries spend a code** (`OTP_MAX_ATTEMPTS`). A spent code stops
+  working, even if the right digits come next. The next send mints a new one.
+- **The client keeps the server's words.** `web/src/lib/api.ts` keeps the
+  server's message on a 401 (`extractErrorMessage`) and falls back to
+  "Unauthorized" only when the body has none. Do not replace it with a fixed
+  string: that hid why a code was refused.
+- **Login and Signup say the code is the same in every email.** The resend
+  message in `web/src/routes/Login.svelte` and `web/src/routes/Signup.svelte`
+  reads "The code is the same in every email, so any of them works." Keep that
+  line true and keep it in both forms.
+
+**Do not reintroduce the old shape:** delete every code for the address, then
+insert a new one with a 10 minute life. It breaks Resend on slow mail, and
+10 minutes is too short for gateways that hold mail.
+
+The guard is `src/__tests__/routes/auth-otp-resend.test.ts`. It covers reuse on
+resend, the first email still working after resends, the 30 minute window and
+its extension, the expired message, tries left and spent codes, and legacy rows.
+It does not cover the 429 rate limit or the "out of tries" message text. Add a
+test when you change either.
+
+The email-change route (`POST /api/auth/me/email-change`) is separate and still
+replaces any existing code with a new one. This contract does not cover it.
+
 ## HIPAA mode — env-var-gated, no schema changes
 
 The template ships every building block for HIPAA-compliant session handling. Activation is binary, sourced from a single env var the Alchemist platform sets on the customer pod when the project was opted into HIPAA during onboarding (and the BAA was signed):
