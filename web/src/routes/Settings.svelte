@@ -32,6 +32,31 @@
 
   let activeTab = $state<Tab>(initialTab());
 
+  // Billing shows only when it can do something: the app takes payments
+  // (its own Stripe key or Chipp Payments), or this org already has a
+  // billing account. In a fresh app every billing action fails, and an
+  // empty Billing tab confused people (2026-11-03). A deep link to
+  // ?tab=billing still opens it.
+  let paymentsConfigured = $state(false);
+  let hasBillingAccount = $state(false);
+  const deepLinkedBilling = initialTab() === "billing";
+  const showBilling = $derived(
+    paymentsConfigured || hasBillingAccount || deepLinkedBilling,
+  );
+
+  async function fetchBillingStatus() {
+    try {
+      const res = await api.get<{
+        data: { paymentsConfigured: boolean; stripeCustomerId: string | null };
+      }>("/billing/subscription");
+      paymentsConfigured = res.data.paymentsConfigured === true;
+      hasBillingAccount = Boolean(res.data.stripeCustomerId);
+    } catch {
+      // Unknown status (for example a user with no org): leave the tab
+      // hidden. Nothing in it can work without an org and payments.
+    }
+  }
+
   // ---------- Profile state ----------
 
   let profileName = $state(authStore.user?.name ?? "");
@@ -208,6 +233,7 @@
     orgStore.fetchMembers();
     orgStore.fetchInvites();
     fetchNotificationSettings();
+    fetchBillingStatus();
   });
 
   async function handleInvite(e: Event) {
@@ -415,14 +441,16 @@
     >
       Notifications
     </button>
-    <button
-      class="tab"
-      class:active={activeTab === "billing"}
-      onclick={() => (activeTab = "billing")}
-      data-testid="settings-tab-billing"
-    >
-      Billing
-    </button>
+    {#if showBilling}
+      <button
+        class="tab"
+        class:active={activeTab === "billing"}
+        onclick={() => (activeTab = "billing")}
+        data-testid="settings-tab-billing"
+      >
+        Billing
+      </button>
+    {/if}
   </div>
 
   <!-- Profile Tab -->
@@ -1012,6 +1040,13 @@
 
   .settings-form .btn {
     align-self: flex-start;
+  }
+
+  /* A subsection (Email, Pending invites, Members) starts a new group:
+     without this gap the Profile "Save Changes" button touched the
+     "Email" heading below it. */
+  .subsection-title {
+    margin-top: var(--space-lg);
   }
 
   /* Team */

@@ -1433,7 +1433,7 @@ products tables, or webhook handlers.**
 | Routes (`/api/billing/products`, `/purchases`, `/entitlements`, webhook) | `src/api/routes/billing/index.ts` |
 | Server-side feature gate | `requireEntitlement("key")` in `src/api/middleware/entitlement.ts` (402, code `ENTITLEMENT_REQUIRED`) |
 | Client store + checkout redirect | `web/src/stores/billing.svelte.ts` (`billingStore`) |
-| Operator UI (create/archive products, purchases list) | Settings → Billing tab (`web/src/routes/Settings.svelte`) |
+| Operator UI (create/archive products, purchases list) | Settings → Billing tab (`web/src/routes/Settings.svelte`). The tab shows once payments are set up (Stripe key or Chipp Payments; `paymentsConfigured()` in `src/lib/chipp-payments.ts`) or the org has a billing account. Settings itself is the sidebar footer link, not a main nav item. |
 | Shared Stripe client (API-version pin lives here) | `src/lib/stripe.ts` — always `getStripe()`/`requireStripe()`, never `new Stripe(...)` inline |
 
 ### Turning on selling (the whole flow)

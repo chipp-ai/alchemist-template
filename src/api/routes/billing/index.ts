@@ -9,7 +9,7 @@
  * Two layers, one Stripe account:
  *
  *   PLAN TIER (the org's own subscription to THIS app's plans)
- *     GET  /subscription  - Current plan and status
+ *     GET  /subscription  - Current plan and status, and whether payments are set up
  *     POST /portal        - Create Stripe billing portal session
  *     POST /checkout      - Checkout session for plan upgrade (env price IDs)
  *
@@ -55,6 +55,7 @@ import { can } from "@/lib/roles.ts";
 import {
   chippPaymentsActive,
   customerRefForOrg,
+  paymentsConfigured,
   startChippPortal,
   toRelativePath,
 } from "@/lib/chipp-payments.ts";
@@ -135,6 +136,9 @@ billingRoutes.get("/subscription", requireAuth, async (c) => {
 
   return c.json({
     data: {
+      // False until the app has a Stripe key or Chipp Payments. The SPA
+      // hides the Settings Billing tab then: nothing in it works yet.
+      paymentsConfigured: paymentsConfigured(),
       tier: org.subscriptionTier,
       creditsExhausted: org.creditsExhausted,
       stripeCustomerId: org.stripeCustomerId,

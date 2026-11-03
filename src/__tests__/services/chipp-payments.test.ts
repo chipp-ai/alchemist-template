@@ -9,7 +9,11 @@ import { assert, assertEquals, assertRejects } from "@std/assert";
 import { db } from "@/db/client.ts";
 import { createIsolatedUser, withTestServer } from "../helpers.ts";
 import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
-import { __setChippPaymentsFetchForTest, customerRefForOrg } from "@/lib/chipp-payments.ts";
+import {
+  __setChippPaymentsFetchForTest,
+  customerRefForOrg,
+  paymentsConfigured,
+} from "@/lib/chipp-payments.ts";
 import { createProduct, createProductCheckout } from "@/services/product.service.ts";
 import { billingRoutes } from "@/api/routes/billing/index.ts";
 import { BadRequestError } from "@/utils/errors.ts";
@@ -147,6 +151,18 @@ dbTest(
     }
   },
 );
+
+// ── paymentsConfigured (gates the Settings Billing tab) ────────────────────
+
+Deno.test("paymentsConfigured: false in a fresh app, true with a Stripe key or Chipp Payments", async () => {
+  await withEnv({}, () => assertEquals(paymentsConfigured(), false));
+  await withEnv({ STRIPE_SECRET_KEY: "sk_test_x" }, () => assertEquals(paymentsConfigured(), true));
+  await withEnv(ON, () => assertEquals(paymentsConfigured(), true));
+  await withEnv(
+    { ...ON, CHIPP_PAYMENTS_TOKEN: "" },
+    () => assertEquals(paymentsConfigured(), false),
+  );
+});
 
 // ── billing webhook answers (issue #10) ────────────────────────────────────
 

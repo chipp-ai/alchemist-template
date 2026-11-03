@@ -75,6 +75,15 @@ export function chippPaymentsActive(): boolean {
 }
 
 /**
+ * True when this app can take money at all: its own Stripe key, or Chipp
+ * Payments. The SPA hides the Settings Billing tab when this is false,
+ * because every billing action fails until payments are set up.
+ */
+export function paymentsConfigured(): boolean {
+  return usesOwnStripeKey() || chippPaymentsConfig() !== null;
+}
+
+/**
  * The mode whose Chipp sales grant access in this app right now: the
  * injected CHIPP_PAYMENTS_MODE, or 'live' when Chipp Payments is not set up
  * (a sale someone paid real money for keeps counting; a test sale never

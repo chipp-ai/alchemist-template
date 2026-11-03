@@ -27,7 +27,9 @@
     ...(moduleOn("fileReview") && can(authStore.user?.role ?? "", "files.review")
       ? [{ path: "/files/review", label: "File review", icon: "folder" }]
       : []),
-    { path: "/settings", label: "Settings", icon: "settings" },
+    // No "Settings" link here: account settings (profile, team, email
+    // preferences) live in the footer next to the user, so the main nav
+    // holds only the app's own features (2026-11-03).
     // No "Design" link: the design system sheet (/#/design) is Builder
     // tooling. The Builder opens it by URL as a new project's first step,
     // so the app's own users never need it in their sidebar (2026-10-07).
@@ -48,6 +50,10 @@
       .map((item) => ({ ...item, testId: item.icon }));
     return [...recipe, ...base];
   });
+
+  // A recipe or feature that lists its own /settings link keeps it in the
+  // main nav; the footer link then stays out to avoid a duplicate.
+  const showFooterSettings = $derived(!navItems.some((item) => item.path === "/settings"));
 
   // Phones: the sidebar is a drawer behind a top bar (see the 768px media
   // query below). Any navigation closes it.
@@ -117,6 +123,17 @@
   </div>
 
   <div class="sidebar-footer">
+    {#if showFooterSettings}
+      <a
+        href="#/settings"
+        class="nav-link sidebar-settings"
+        class:active={isActive("/settings", $location)}
+        data-testid="sidebar-nav-settings"
+      >
+        <span class="sidebar-icon">{@html getIcon("settings")}</span>
+        <span>Settings</span>
+      </a>
+    {/if}
     <div class="sidebar-user" data-testid="sidebar-user">
       <div class="sidebar-user-avatar">
         {authStore.user?.name?.charAt(0).toUpperCase() ?? "?"}
@@ -278,6 +295,10 @@
   .sidebar-footer {
     padding: var(--space-md);
     border-top: 1px solid var(--color-border);
+  }
+
+  .sidebar-settings {
+    margin-bottom: var(--space-sm);
   }
 
   .sidebar-user {
