@@ -60,6 +60,7 @@ import {
 } from "@/lib/chipp-payments.ts";
 import { syncChippCatalog, syncChippEntitlements } from "@/services/chipp-entitlements.ts";
 import { getEnv } from "@/lib/env.ts";
+import { requestWebOrigin } from "@/services/app-links.ts";
 
 const billingRoutes = new Hono();
 
@@ -183,7 +184,7 @@ billingRoutes.post(
       throw new BadRequestError("No billing account found. Please subscribe to a plan first.");
     }
 
-    const defaultReturnUrl = getEnv("WEB_APP_URL") ?? "http://localhost:5173";
+    const defaultReturnUrl = requestWebOrigin(c.req);
 
     try {
       const session = await stripe.billingPortal.sessions.create({
@@ -219,7 +220,7 @@ billingRoutes.post(
       throw new BadRequestError("Stripe not configured");
     }
 
-    const defaultWebUrl = getEnv("WEB_APP_URL") ?? "http://localhost:5173";
+    const defaultWebUrl = requestWebOrigin(c.req);
 
     try {
       const customerId = await ensureStripeCustomer(
@@ -335,6 +336,7 @@ billingRoutes.post(
       productId,
       successUrl,
       cancelUrl,
+      webOrigin: requestWebOrigin(c.req),
     });
     return c.json({ data: result });
   },

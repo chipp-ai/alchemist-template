@@ -83,6 +83,8 @@ export interface ProductCheckoutInput {
   productId: string;
   successUrl?: string;
   cancelUrl?: string;
+  /** Origin for the default return URLs: the host the buyer is on (`requestWebOrigin`). */
+  webOrigin?: string;
 }
 
 /** Purchase row joined with the product it bought. */
@@ -390,7 +392,7 @@ export async function createProductCheckout(
     stripe,
   );
 
-  const defaultWebUrl = getEnv("WEB_APP_URL") ?? "http://localhost:5173";
+  const defaultWebUrl = input.webOrigin ?? getEnv("WEB_APP_URL") ?? "http://localhost:5173";
   const metadata = {
     organizationId: input.organizationId,
     productId: product.id,

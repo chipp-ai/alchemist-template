@@ -2275,7 +2275,7 @@ OIDC endpoint recipes:
 - Okta: `https://<domain>/oauth2/default/v1/authorize`, `.../v1/token`, `.../v1/userinfo`
 - Auth0: `https://<domain>/authorize`, `https://<domain>/oauth/token`, `https://<domain>/userinfo`
 
-The redirect/callback URL the builder must register in their IdP console is `${APP_URL}/api/auth/<provider-id>/callback` (production: `https://<project>.adaas.dev/api/auth/google/callback` etc.; custom domains use that domain instead).
+The redirect/callback URL is `<origin>/api/auth/<provider-id>/callback`, where `<origin>` is the host the sign-in started on (`requestAppOrigin()` in `src/services/app-links.ts`). An app with a connected custom domain answers on both `https://<id>.on.chipp.ai` and the custom domain (the platform lists both in `ALCHEMIST_PUBLIC_HOSTS`), so the builder registers BOTH callback URLs in their IdP console. A provider that allows only one (a GitHub OAuth App) gets the canonical `${APP_URL}` one, and sign-in with it works from that host.
 
 Getting the credentials: the client id/secret belong to the BUILDER's own IdP tenancy (their Google Cloud project, Azure app registration, Salesforce Connected App, Keycloak realm client). Request them through the platform credential-request flow (`request_human_input` / credential invite) with the exact callback URL and required scopes named in the request; the values are applied to the deployment env by the platform. NEVER paste client secrets into code, tickets, commit messages, or docs, and never invent placeholder values that ship.
 

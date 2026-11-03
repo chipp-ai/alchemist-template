@@ -49,6 +49,7 @@ import {
   type OAuthProvider,
 } from "@/lib/oauth-providers.ts";
 import { getEnv } from "@/lib/env.ts";
+import { requestAppOrigin, requestWebOrigin } from "@/services/app-links.ts";
 import { oauthTokenService } from "@/services/mcp-oauth/service.ts";
 import { appPath } from "@/config/site.ts";
 import { isVerificationAccountEmail } from "@/lib/verification-accounts.ts";
@@ -935,12 +936,14 @@ authRoutes.get("/ws-token", requireAuth, async (c) => {
 // provider in src/lib/oauth-providers.ts. Adding a new provider is one
 // entry in that file plus matching env vars — no code change here.
 
-function buildAuthorizeUrl(provider: OAuthProvider, state: string): string {
+// The callback comes back to the host the flow started on: the state cookie
+// is host-only, and an app can answer on its on.chipp.ai address and a
+// custom domain (see app-links.ts). Register both callback URLs with the
+// provider.
+function buildAuthorizeUrl(provider: OAuthProvider, state: string, origin: string): string {
   const params = new URLSearchParams({
     client_id: getEnv(provider.clientIdEnv)!,
-    redirect_uri: `${
-      getEnv("APP_URL") ?? "http://localhost:8000"
-    }/api/auth/${provider.id}/callback`,
+    redirect_uri: `${origin}/api/auth/${provider.id}/callback`,
     response_type: "code",
     scope: provider.scopes,
     state,
@@ -985,7 +988,7 @@ authRoutes.get("/:provider", (c) => {
     maxAge: 600, // 10 minutes
   });
 
-  return c.redirect(buildAuthorizeUrl(provider, state));
+  return c.redirect(buildAuthorizeUrl(provider, state, requestAppOrigin(c.req)));
 });
 
 authRoutes.get("/:provider/callback", async (c) => {
@@ -1007,9 +1010,7 @@ authRoutes.get("/:provider/callback", async (c) => {
 
   const clientId = getEnv(provider.clientIdEnv)!;
   const clientSecret = getEnv(provider.clientSecretEnv)!;
-  const redirectUri = `${
-    getEnv("APP_URL") ?? "http://localhost:8000"
-  }/api/auth/${provider.id}/callback`;
+  const redirectUri = `${requestAppOrigin(c.req)}/api/auth/${provider.id}/callback`;
 
   // ── Exchange code for tokens ─────────────────────────────────────────
   // GitHub returns `application/x-www-form-urlencoded` by default; setting
@@ -1161,8 +1162,7 @@ authRoutes.get("/:provider/callback", async (c) => {
   });
 
   // Land on the SPA, not the landing site that may own "/".
-  const webUrl = (getEnv("WEB_APP_URL") ?? "http://localhost:5173").replace(/\/+$/, "");
-  return c.redirect(`${webUrl}${appPath("/#/")}`);
+  return c.redirect(`${requestWebOrigin(c.req)}${appPath("/#/")}`);
 });
 
 export { authRoutes };
