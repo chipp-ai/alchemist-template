@@ -10,6 +10,7 @@
 
 import { assertEquals } from "@std/assert";
 
+import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 import {
   publicHosts,
   requestAppOrigin,
@@ -25,16 +26,16 @@ function req(headers: Record<string, string>) {
 function withEnv(env: Record<string, string | undefined>, fn: () => void) {
   const prev: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(env)) {
-    prev[k] = Deno.env.get(k);
-    if (v === undefined) Deno.env.delete(k);
-    else Deno.env.set(k, v);
+    prev[k] = getEnv(k);
+    if (v === undefined) __deleteEnvForTest(k);
+    else __setEnvForTest(k, v);
   }
   try {
     fn();
   } finally {
     for (const [k, v] of Object.entries(prev)) {
-      if (v === undefined) Deno.env.delete(k);
-      else Deno.env.set(k, v);
+      if (v === undefined) __deleteEnvForTest(k);
+      else __setEnvForTest(k, v);
     }
   }
 }
