@@ -5,6 +5,7 @@ import type { BlogSettings } from "../lib/composed";
 import { posts } from "../lib/content";
 import { composedPageLd } from "../lib/page-ld";
 import { formatDate, site } from "../lib/site";
+import PostList from "./PostList.astro";
 
 interface Props {
   blog: BlogSettings;
@@ -25,27 +26,7 @@ const ld = composedPageLd({ path: blog.path, title: blog.title, description: blo
         Updated <time datetime={updated}>{formatDate(updated)}</time>.
       </p>
     </header>
-    <ol class="cs-posts">
-      {posts.map((post) => (
-        <li>
-          <article>
-            <h2><a href={post.path}>{post.title}</a></h2>
-            <p class="muted"><time datetime={post.date.slice(0, 10)}>{formatDate(post.date.slice(0, 10))}</time>{post.author && ` by ${post.author}`}</p>
-            {post.description && <p>{post.description}</p>}
-          </article>
-        </li>
-      ))}
-    </ol>
+    <PostList posts={posts} />
   </div>
 </Layout>
 
-<style>
-  .cs-posts { list-style: none; margin: 2rem 0 0; padding: 0; display: grid; gap: 2rem; }
-  .cs-posts h2 { font-size: 1.375rem; margin: 0 0 0.35rem; }
-  .cs-posts h2 a { color: var(--text); text-decoration: none; }
-  .cs-posts h2 a:active { color: var(--link); }
-  .cs-posts p + p { margin-top: 0.5rem; }
-  @media (hover: hover) and (pointer: fine) {
-    .cs-posts h2 a:hover { color: var(--link); text-decoration: underline; }
-  }
-</style>

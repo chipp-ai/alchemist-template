@@ -305,6 +305,14 @@ export interface CatalogProduct {
   variants: { id: string; title: string; sku: string | null; price: string | null; available: boolean | null }[];
   attributes: { name: string; values: string[] }[];
   seo?: PageSeo;
+  /**
+   * Where a visitor can buy it today: a store that still takes orders
+   * (http or https). The product page's buy button links there. Without
+   * it, the page shows the product enquiry form. Never set it to the old
+   * store's URL once the domain points at this site.
+   */
+  buyUrl?: string | null;
+  /** The old store's URL for this product (reference only, never linked). */
   importedFrom?: string;
 }
 
@@ -325,12 +333,48 @@ export interface ProductCatalog {
   /** The old store's origin. */
   importedFrom?: string;
   platform?: string;
-  /** The shop list page ("/shop/", "/collections/all/"), when known. */
+  /** The shop list page ("/shop/", "/collections/all/"), when known. Default: "/shop/". */
   indexPath: string | null;
+  /** The old shop list page's H1, intro and SEO, when the importer found the page. */
+  index?: { title?: string; description?: string; navLabel?: string; seo?: PageSeo };
   currency: string | null;
   categories: CatalogCategory[];
   items: CatalogProduct[];
 }
+
+/** One blog category or tag (src/content/blog-terms.json). */
+export interface BlogTerm {
+  slug: string;
+  name: string;
+  /** The term's archive page on the old site, when it had one. */
+  path: string | null;
+  count: number | null;
+}
+
+/** Blog categories and tags of a migrated blog, written by the site importer. */
+export interface BlogTerms {
+  importedFrom?: string;
+  categories: BlogTerm[];
+  tags: BlogTerm[];
+}
+
+/**
+ * The enquiry form on every product page while the site has no checkout.
+ * The server registers it when products.json has products
+ * (src/services/site-forms.service.ts), so a page must not define a form
+ * with this name.
+ */
+export const PRODUCT_ENQUIRY_FORM: SiteForm = {
+  name: "product-enquiry",
+  fields: [
+    { name: "product", label: "Product", type: "text", required: true },
+    { name: "name", label: "Your name", type: "text", required: true },
+    { name: "email", label: "Email", type: "email", required: true },
+    { name: "message", label: "Message", type: "textarea" },
+  ],
+  submitLabel: "Send enquiry",
+  successMessage: "Thank you. We will reply by email.",
+};
 
 // ── Paths ──
 
@@ -568,7 +612,17 @@ export function catalogProblems(catalog: unknown, where = "src/content/products.
   if (!isObj(catalog)) return [`${where}: must be an object`];
   const out: string[] = [];
   const pathOk = (p: unknown, at: string) => pagePathProblems(p).map((x) => `${at}: ${x}`);
-  if (catalog.indexPath !== null && catalog.indexPath !== undefined) out.push(...pathOk(catalog.indexPath, `${where} indexPath`));
+  if (catalog.indexPath !== null && catalog.indexPath !== undefined) {
+    out.push(...pathOk(catalog.indexPath, `${where} indexPath`));
+    if (typeof catalog.indexPath === "string" && normalizePagePath(catalog.indexPath) === "/") out.push(`${where} indexPath: the shop list cannot be "/"`);
+  }
+  if (catalog.index !== undefined) {
+    if (!isObj(catalog.index)) out.push(`${where} index: must be an object`);
+    else {
+      for (const k of ["title", "description", "navLabel"]) if (!optStr(catalog.index[k])) out.push(`${where} index.${k}: text`);
+      out.push(...seoProblems(catalog.index.seo, `${where} index.seo`));
+    }
+  }
   const seen = new Map<string, string>();
   out.push(...listProblems(catalog.items, `${where} items`, (item, at) => {
     const p = [...pathOk(item.path, at), ...need(item, at, "title", "slug")];
@@ -582,6 +636,12 @@ export function catalogProblems(catalog: unknown, where = "src/content/products.
       if (!Array.isArray(item[k]) || !(item[k] as unknown[]).every((v) => typeof v === "string")) p.push(`${at}.${k}: a list of text`);
     }
     if (item.html !== null && item.html !== undefined && typeof item.html !== "string") p.push(`${at}.html: text or null`);
+    if (item.buyUrl !== null && item.buyUrl !== undefined && !(typeof item.buyUrl === "string" && /^https?:\/\/[^\s]+$/i.test(item.buyUrl))) {
+      p.push(`${at}.buyUrl: an http or https URL, or null`);
+    }
+    for (const k of ["variants", "attributes"]) {
+      if (item[k] !== undefined && !Array.isArray(item[k])) p.push(`${at}.${k}: a list`);
+    }
     p.push(...seoProblems(item.seo, `${at}.seo`));
     if (typeof item.path === "string") {
       const key = normalizePagePath(item.path);
@@ -595,6 +655,20 @@ export function catalogProblems(catalog: unknown, where = "src/content/products.
     ...need(c, at, "slug", "name"),
     ...(c.path === null || c.path === undefined ? [] : pathOk(c.path, at)),
   ], { min: 0 }));
+  return out;
+}
+
+/** Problems with the blog terms file, or []. */
+export function blogTermsProblems(terms: unknown, where = "src/content/blog-terms.json"): string[] {
+  if (!isObj(terms)) return [`${where}: must be an object`];
+  const out: string[] = [];
+  for (const kind of ["categories", "tags"]) {
+    if (terms[kind] === undefined) continue;
+    out.push(...listProblems(terms[kind], `${where} ${kind}`, (t, at) => [
+      ...need(t, at, "slug", "name"),
+      ...(t.path === null || t.path === undefined ? [] : pagePathProblems(t.path).map((x) => `${at}: ${x}`)),
+    ], { min: 0 }));
+  }
   return out;
 }
 

@@ -1,0 +1,147 @@
+---
+/**
+ * One product at its own (original) path, from products.json: pictures,
+ * name, price (and the old price when on sale), stock, options, the
+ * description and its categories. Product JSON-LD comes from the same
+ * values (lib/shop.ts productLd).
+ *
+ * No checkout. The buy button links to the product's buyUrl (a store that
+ * still takes orders), else to the enquiry form at the end of the page,
+ * which posts to /api/site-forms/product-enquiry with the product's name.
+ */
+import Layout from "../../layouts/Layout.astro";
+import type { CatalogProduct, FormSection, ProductCatalog } from "../../lib/composed";
+import { PRODUCT_ENQUIRY_FORM } from "../../lib/composed";
+import { shopTitle } from "../../lib/content";
+import { carriedLd } from "../../lib/page-ld";
+import { buyAction, productCategories, productLd, productPrice, productSummary, shopPath, stockLabel, withoutProductLd } from "../../lib/shop";
+import { site } from "../../lib/site";
+import Form from "../sections/Form.astro";
+import Img from "../sections/Img.astro";
+import Prose from "../sections/Prose.astro";
+import "./shop.css";
+
+interface Props {
+  catalog: ProductCatalog;
+  product: CatalogProduct;
+}
+const { catalog, product } = Astro.props;
+const path = product.path;
+const title = product.seo?.title?.trim() || product.title;
+const description = productSummary(product);
+const price = productPrice(product, catalog.currency);
+const stock = stockLabel(product.inStock);
+const categories = productCategories(catalog, product).filter((c) => c.path);
+const buy = buyAction(product);
+const attributes = (product.attributes ?? []).filter((a) => a.values.length > 0);
+const currency = product.currency ?? catalog.currency;
+// A variant table only when the variants say more than the attributes do.
+const variants = (product.variants ?? []).filter((v) => v.title);
+const showVariants = variants.some((v) => v.price || v.sku || v.available !== null) || (variants.length > 0 && attributes.length === 0);
+const ld = productLd(product, catalog, { siteUrl: site.url, siteName: site.name, published: site.publishedAt, updated: site.updatedAt });
+const seo = product.images[0] && !product.seo?.og?.image
+  ? { ...product.seo, og: { ...(product.seo?.og ?? {}), image: product.images[0] } }
+  : product.seo;
+const enquiry: FormSection = { type: "form", heading: "Ask about this product", form: PRODUCT_ENQUIRY_FORM };
+---
+<Layout
+  title={title}
+  description={description}
+  path={path}
+  seo={seo}
+  ld={ld}
+  extraLd={withoutProductLd(carriedLd(product.seo?.jsonLd))}
+  ogType="product"
+  aeo="relaxed"
+>
+  <article class="page wrap cs-product" data-testid={`shop-product-${product.slug}`}>
+    <div class="cs-product-media">
+      {product.images.map((src, i) => (
+        <Img image={{ src, alt: i === 0 ? product.title : `${product.title}, picture ${i + 1}` }} class="cs-product-image" eager={i === 0} />
+      ))}
+    </div>
+    <div class="cs-product-info">
+      <p class="kicker">
+        <a href={shopPath(catalog)} data-testid="shop-product-back">{shopTitle()}</a>
+        {categories[0] && <> / <a href={categories[0].path}>{categories[0].name}</a></>}
+      </p>
+      <h1>{product.title}</h1>
+      {product.shortDescription && <p class="muted cs-product-lede">{product.shortDescription}</p>}
+      {price.current && (
+        <p class="cs-price cs-product-price" data-testid="shop-product-price">
+          <span>{price.current}</span>
+          {price.was && <s class="muted" aria-label={`Was ${price.was}`}>{price.was}</s>}
+          {product.onSale && price.was && <span class="cs-sale">On sale</span>}
+        </p>
+      )}
+      {stock && <p class={product.inStock === false ? "cs-stock cs-stock-out" : "cs-stock"} data-testid="shop-product-stock">{stock}</p>}
+      {(product.sku || product.vendor) && (
+        <p class="cs-stock">{product.sku && `SKU ${product.sku}`}{product.sku && product.vendor && ". "}{product.vendor && `By ${product.vendor}`}</p>
+      )}
+      {attributes.length > 0 && (
+        <dl class="cs-attributes">
+          {attributes.map((a) => (
+            <div>
+              <dt>{a.name}</dt>
+              <dd>{a.values.join(", ")}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {showVariants && (
+        <table class="cs-variants">
+          <caption class="kicker">Options</caption>
+          <thead><tr><th scope="col">Option</th>{variants.some((v) => v.price) && <th scope="col">Price</th>}{variants.some((v) => v.available !== null) && <th scope="col">Stock</th>}</tr></thead>
+          <tbody>
+            {variants.map((v) => (
+              <tr>
+                <th scope="row">{v.title}</th>
+                {variants.some((x) => x.price) && <td>{v.price ? productPrice({ ...product, price: v.price, onSale: false }, currency).current : ""}</td>}
+                {variants.some((x) => x.available !== null) && <td>{stockLabel(v.available) ?? ""}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p class="cs-buy">
+        {buy.kind === "store"
+          ? <a class="button" href={buy.href} rel="noopener" data-testid="shop-product-buy">{buy.label}</a>
+          : <a class="button" href={buy.href} data-testid="shop-product-enquire">{buy.label}</a>}
+      </p>
+      {categories.length > 0 && (
+        <nav aria-label="Categories" class="cs-chips">
+          {categories.map((c) => <a href={c.path}>{c.name}</a>)}
+        </nav>
+      )}
+    </div>
+    {product.html && <div class="cs-product-body"><Prose html={product.html} /></div>}
+  </article>
+  {buy.kind === "enquire" && <Form section={enquiry} level="h2" id="product-enquiry-title" pagePath={path} values={{ product: product.title }} />}
+</Layout>
+
+<style>
+  .cs-product { display: grid; gap: 2rem 3rem; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 52rem) {
+    .cs-product { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
+    .cs-product-body { grid-column: 1 / -1; }
+  }
+  .cs-product-media { display: grid; gap: 0.75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cs-product-media :global(.cs-product-image) { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: var(--radius); background: var(--tint); }
+  .cs-product-media :global(.cs-product-image:first-child) { grid-column: 1 / -1; }
+  .cs-product-info { display: grid; gap: 0.75rem; align-content: start; }
+  .cs-product-info > :is(p, nav) { margin: 0; }
+  .cs-product-info h1 { margin: 0; font-size: clamp(2rem, 4vw, 3rem); }
+  .cs-product-info .kicker { margin: 0; }
+  .cs-product-info .kicker a { color: inherit; }
+  .cs-product-lede { font-size: 1.125rem; }
+  .cs-product-price { font-size: 1.375rem; }
+  .cs-sale { font-size: 0.8125rem; font-weight: 600; padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--tint); color: var(--text); }
+  .cs-attributes { display: grid; gap: 0.5rem; }
+  .cs-attributes dt { margin: 0; font-size: 0.9375rem; }
+  .cs-variants { border-collapse: collapse; width: 100%; font-size: 0.9375rem; }
+  .cs-variants caption { text-align: left; margin-bottom: 0.25rem; }
+  .cs-variants :is(th, td) { text-align: left; padding: 0.5rem 0.75rem 0.5rem 0; border-bottom: 1px solid var(--line); }
+  .cs-buy { margin-top: 0.5rem; }
+  .cs-buy .button { width: 100%; max-width: 22rem; }
+  .cs-product-body { margin-top: 1rem; }
+</style>

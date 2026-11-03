@@ -15,7 +15,7 @@ import {
   validateSubmission,
 } from "@/services/site-forms.service.ts";
 import { __deleteEnvForTest, __setEnvForTest } from "@/lib/env.ts";
-import type { SiteForm } from "../../../landing/src/lib/composed.ts";
+import { PRODUCT_ENQUIRY_FORM, type SiteForm } from "../../../landing/src/lib/composed.ts";
 
 const db = getTestDb();
 
@@ -149,13 +149,42 @@ Deno.test("site forms: loads form sections from the landing content pages", asyn
     );
     await Deno.writeTextFile(`${dir}/broken.json`, "{");
     await Deno.writeTextFile(`${dir}/invalid.json`, JSON.stringify({ path: "/x", sections: [] }));
-    const forms = loadSiteForms(dir);
+    const forms = loadSiteForms(dir, `${dir}/no-products.json`);
     assertEquals([...forms.keys()], ["contact"]);
     assertEquals(forms.get("contact")?.pagePath, "/contact/");
-    assertEquals(loadSiteForms(`${dir}/missing`).size, 0);
+    assertEquals(loadSiteForms(`${dir}/missing`, `${dir}/no-products.json`).size, 0);
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+Deno.test("site forms: products.json with products registers the product enquiry form", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "site-forms-shop-" });
+  try {
+    const products = `${dir}/products.json`;
+    const item = { id: "1", slug: "ring", path: "/product/ring/", title: "Ring", images: [], categories: [], tags: [] };
+    await Deno.writeTextFile(products, JSON.stringify({ indexPath: "/store", currency: "USD", categories: [], items: [item] }));
+    const forms = loadSiteForms(`${dir}/pages`, products);
+    assertEquals(forms.get(PRODUCT_ENQUIRY_FORM.name), { form: PRODUCT_ENQUIRY_FORM, pagePath: "/store/" });
+
+    await Deno.writeTextFile(products, JSON.stringify({ indexPath: null, currency: null, categories: [], items: [item] }));
+    assertEquals(loadSiteForms(`${dir}/pages`, products).get(PRODUCT_ENQUIRY_FORM.name)?.pagePath, "/shop/");
+
+    for (const empty of ["", "{}", "{", JSON.stringify({ indexPath: "/shop/", categories: [], items: [] })]) {
+      await Deno.writeTextFile(products, empty);
+      assertEquals(loadSiteForms(`${dir}/pages`, products).size, 0, `no shop for ${JSON.stringify(empty)}`);
+    }
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("site forms: a product enquiry needs the product, a name and an email", () => {
+  const ok = validateSubmission(PRODUCT_ENQUIRY_FORM, { product: "Silver band ring", name: "Ada", email: "ada@example.com", message: "Size 7?" });
+  assertEquals(ok, { ok: true, values: { product: "Silver band ring", name: "Ada", email: "ada@example.com", message: "Size 7?" } });
+  const bad = validateSubmission(PRODUCT_ENQUIRY_FORM, { name: "Ada", email: "nope" });
+  assertEquals(bad.ok, false);
+  if (!bad.ok) assertEquals(Object.keys(bad.errors).sort(), ["email", "product"]);
 });
 
 Deno.test("site forms: an unknown form is a 404", async () => {

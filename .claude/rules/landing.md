@@ -174,14 +174,11 @@ The workflow:
    sections must be rebuilt from its screenshot; a page with no screenshot
    borrows the layout of the closest one. Use `richText` for prose, a real
    section wherever one fits, and `html` only as a last resort.
-   **Products are data, not pages:** render the shop list, one product
-   template at every product's `path` and one category template at every
-   category's `path` from `products.json` (when the app keeps products in
-   its database, `products.json` is the seed for that table). Never write
-   one page file per product, and never copy the old cart or checkout:
-   until the owner sets up payments, a buy button opens an enquiry form
-   with the product name. The build fails when a product or category path
-   is also a page or post.
+   **Products are data, not pages.** The template renders them from
+   `products.json` at build time, so there is nothing to write per product
+   (see "Shop pages" below). Compare each shop page with its screenshot and
+   fix the data, not the template. Never write one page file per product,
+   and never copy the old cart or checkout.
 4. **Keep the SEO exactly:** never change a page's `path`, `seo.title`,
    `seo.description`, canonical or JSON-LD unless the owner asks. Set
    `site.json` `url`, `name`, `description` and `definition` from the old
@@ -202,6 +199,55 @@ The workflow:
    FAQs or testimonials. When the old page lacks something an AEO rule
    wants, the build prints a warning for imported pages (`importedFrom`);
    leave it, or ask the owner for the words.
+
+## Shop pages (products.json) and blog archives (blog-terms.json)
+
+`landing/src/lib/shop.ts` turns two data files into pages at build time.
+Both are written by `npm run import:site-model`; a person may also edit
+them by hand. Without them, or with an empty file, `{}` or no products,
+nothing is built and the site is unchanged.
+
+- **The shop list** at `indexPath` (default `/shop/`): every product as a
+  card (first picture, name, price, old price when on sale, out of stock),
+  and links to the top-level categories. Its H1, intro and SEO come from
+  `index` (the old shop page, kept by the importer); else the H1 is "Shop".
+  The generated nav links it when site.json has no `nav`.
+- **A product page at each product's `path`** (the old URL): pictures with
+  the product name as alt text, name, short description, price and sale
+  price in the store currency, stock, SKU, vendor, attributes, a variant
+  table when variants carry their own price, SKU or stock, the description
+  HTML (sanitized) and category links. Title, description and canonical
+  come from the product's `seo`. JSON-LD: a dated `ItemPage`, a `Product`
+  with an `Offer` (`price`, `priceCurrency`, `availability`) or an
+  `AggregateOffer` when variant prices differ, and the Organization, built
+  from the same values the page shows. A `Product` node carried over from
+  the old site is dropped, so there is only one.
+- **The buy button.** No checkout. A product with `buyUrl` (an http or
+  https URL of a store that still takes orders) links there. Otherwise the
+  button opens the enquiry form at the end of the page:
+  `PRODUCT_ENQUIRY_FORM` in `lib/composed.ts` (product, name, email,
+  message), with the product name filled in, posted to
+  `POST /api/site-forms/product-enquiry` like any site form. The server
+  registers that form when `products.json` has products. A page form must
+  not use the name `product-enquiry` (the build fails). Never set `buyUrl`
+  to the old store's URL once the domain points at this site: it would link
+  to itself.
+- **A category page at each category's `path`:** name, description,
+  picture, subcategories and its products (by the product's `categories`
+  slugs or the category's `productIds`). A category with no `path` gets no
+  page.
+- **Blog archives at each blog category's and tag's `path`** from
+  `blog-terms.json`: the posts filed under it (a post names its terms; the
+  slug matches too). Post pages link their categories and tags to these.
+- **Checks.** The build fails when a shop, product, category or term path
+  is also a page, a post, the blog list, a classic page or another shop
+  path, when `indexPath` is `/`, or when `buyUrl` is not http(s). Shop
+  pages are `aeo="relaxed"`: their words come from the old store. The
+  sitemap lists them (a product with `seo.noindex` is left out).
+- **A real store.** Only when the owner asks for checkout or stock
+  management, move the products into a database table and sell through the
+  built-in products layer, with `products.json` as the seed. Until then,
+  keep `products.json` as the source.
 
 Design: start from the model's design tokens (`deno task design set ...`),
 so the rebuilt site keeps the old site's colors and fonts.

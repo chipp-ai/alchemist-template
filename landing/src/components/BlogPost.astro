@@ -3,6 +3,8 @@
 import Layout from "../layouts/Layout.astro";
 import type { BlogPost, BlogSettings } from "../lib/composed";
 import { carriedLd, postLd } from "../lib/page-ld";
+import { blogTerms } from "../lib/content";
+import { termHref } from "../lib/shop";
 import { formatDate } from "../lib/site";
 import Img from "./sections/Img.astro";
 import Prose from "./sections/Prose.astro";
@@ -16,6 +18,9 @@ const published = post.date.slice(0, 10);
 const updated = (post.updatedAt ?? post.date).slice(0, 10);
 const title = post.seo?.title?.trim() || post.title;
 const description = post.seo?.description?.trim() ?? post.description ?? "";
+const terms = ([["Categories", "category", post.categories], ["Tags", "tag", post.tags]] as const)
+  .filter(([, , names]) => names && names.length > 0)
+  .map(([label, kind, names]) => ({ label, items: (names ?? []).map((name) => ({ name, href: termHref(blogTerms, kind, name) })) }));
 const seo = post.image && !post.seo?.og?.image
   ? { ...post.seo, og: { ...(post.seo?.og ?? {}), image: post.image.src } }
   : post.seo;
@@ -40,11 +45,15 @@ const seo = post.image && !post.seo?.og?.image
         Updated <time datetime={updated}>{formatDate(updated)}</time>.
         {post.author && ` By ${post.author}.`}
       </p>
-      {(post.categories?.length || post.tags?.length) && (
+      {terms.length > 0 && (
         <p class="page-dates cs-post-terms">
-          {post.categories?.length ? `Categories: ${post.categories.join(", ")}.` : ""}
-          {post.categories?.length && post.tags?.length ? " " : ""}
-          {post.tags?.length ? `Tags: ${post.tags.join(", ")}.` : ""}
+          {terms.map((group, g) => (
+            <>
+              {g > 0 && " "}{group.label}: {group.items.map((t, i) => (
+                <>{i > 0 && ", "}{t.href ? <a href={t.href}>{t.name}</a> : t.name}</>
+              ))}.
+            </>
+          ))}
         </p>
       )}
     </header>

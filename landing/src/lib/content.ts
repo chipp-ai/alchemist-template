@@ -9,19 +9,25 @@
 import {
   type BlogPost,
   type BlogSettings,
+  type BlogTerms,
+  blogTermsProblems,
   catalogProblems,
   type ComposedPage,
   normalizePagePath,
+  PRODUCT_ENQUIRY_FORM,
   type ProductCatalog,
   siteContentProblems,
+  formsOf,
 } from "./composed";
 import { type LandingPage, PAGES } from "./pages";
+import { hasShop, shopPath, shopPathProblems, shopRoutes } from "./shop";
 import { site, type SiteLink } from "./site";
 
 const pageFiles = import.meta.glob("../content/pages/**/*.json", { eager: true, import: "default" });
 const postFiles = import.meta.glob("../content/posts/**/*.json", { eager: true, import: "default" });
 const customCodeFiles = import.meta.glob("../content/custom-code.json", { eager: true, import: "default" });
-const catalogFiles = import.meta.glob("../content/products.json", { eager: true, import: "default" });
+// Read as text, so an empty file (or "{}") means "no shop" instead of a parse error.
+const dataFiles = import.meta.glob(["../content/products.json", "../content/blog-terms.json"], { eager: true, query: "?raw", import: "default" });
 
 function entries(files: Record<string, unknown>): { file: string; data: unknown }[] {
   return Object.entries(files)
@@ -36,20 +42,36 @@ const problems = siteContentProblems(rawPages, rawPosts, site.blog);
 if (rawPosts.length > 0 && !site.blog) {
   problems.push('blog posts need "blog" in site.json: { "path": "/blog/", "title": ..., "description": ... }');
 }
-const rawCatalog = catalogFiles["../content/products.json"];
-if (rawCatalog !== undefined) {
-  const bad = catalogProblems(rawCatalog);
-  problems.push(...bad);
-  if (bad.length === 0) {
-    // A product or category path must not be a page, post or the blog list.
-    const taken = new Set([
-      ...rawPages.map(({ data }) => normalizePagePath(String((data as ComposedPage).path))),
-      ...rawPosts.map(({ data }) => normalizePagePath(String((data as BlogPost).path))),
-      ...(site.blog ? [normalizePagePath(site.blog.path)] : []),
-    ]);
-    const c = rawCatalog as ProductCatalog;
-    for (const p of [...c.items.map((i) => i.path), ...c.categories.map((x) => x.path)]) {
-      if (p && taken.has(normalizePagePath(p))) problems.push(`src/content/products.json: path ${normalizePagePath(p)} is also a page or post`);
+/** An optional data file: undefined when absent, empty or "{}". */
+function optionalJson(name: string): unknown {
+  const text = dataFiles[`../content/${name}`] as string | undefined;
+  if (text === undefined || text.trim() === "") return undefined;
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch (err) {
+    problems.push(`src/content/${name}: does not parse (${err instanceof Error ? err.message : String(err)})`);
+    return undefined;
+  }
+  return data && typeof data === "object" && !Array.isArray(data) && Object.keys(data).length === 0 ? undefined : data;
+}
+const rawCatalog = optionalJson("products.json");
+const rawTerms = optionalJson("blog-terms.json");
+const badCatalog = rawCatalog === undefined ? [] : catalogProblems(rawCatalog);
+const badTerms = rawTerms === undefined ? [] : blogTermsProblems(rawTerms);
+problems.push(...badCatalog, ...badTerms);
+if (problems.length === 0 && (rawCatalog !== undefined || rawTerms !== undefined)) {
+  // A shop, product, category or blog term path must not be a page, post or the blog list.
+  const taken = [
+    ...rawPages.map(({ data }) => String((data as ComposedPage).path)),
+    ...rawPosts.map(({ data }) => String((data as BlogPost).path)),
+    ...(site.blog ? [site.blog.path] : []),
+    ...(rawPages.some(({ data }) => normalizePagePath(String((data as ComposedPage).path)) === "/") ? [] : PAGES.map((p) => p.path)),
+  ];
+  problems.push(...shopPathProblems(rawCatalog as ProductCatalog | undefined, rawTerms as BlogTerms | undefined, taken));
+  if (hasShop(rawCatalog as ProductCatalog | undefined)) {
+    for (const { pagePath } of formsOf(rawPages.map(({ data }) => data as ComposedPage)).filter(({ form }) => form.name === PRODUCT_ENQUIRY_FORM.name)) {
+      problems.push(`form "${PRODUCT_ENQUIRY_FORM.name}" on ${pagePath}: that name belongs to the product pages' enquiry form; rename it`);
     }
   }
 }
@@ -59,10 +81,15 @@ if (problems.length > 0) {
 
 /**
  * The product catalog of a migrated store (src/content/products.json), or
- * null. Nothing renders it yet: a project that sells adds the shop list,
- * product and category pages from it.
+ * null. lib/shop.ts turns it into the shop list, product and category pages.
  */
 export const catalog: ProductCatalog | null = (rawCatalog as ProductCatalog | undefined) ?? null;
+
+/** The blog categories and tags of a migrated blog (src/content/blog-terms.json), or null. */
+export const blogTerms: BlogTerms | null = (rawTerms as BlogTerms | undefined) ?? null;
+
+/** The shop, product, category and blog term routes. Empty for a site that sells nothing. */
+export const shopPages = shopRoutes(catalog, blogTerms);
 
 /** Composed pages, paths normalized ("/about" -> "/about/"). */
 export const composedPages: ComposedPage[] = rawPages
@@ -119,7 +146,18 @@ export function sitePages(): LandingPage[] {
       list.push({ path: post.path, label: post.title, lastmod: (post.updatedAt ?? post.date).slice(0, 10) });
     }
   }
+  for (const r of shopPages) {
+    if (r.kind === "product" && r.product.seo?.noindex) continue;
+    if (r.kind === "shop" && catalog?.index?.seo?.noindex) continue;
+    const label = r.kind === "shop" ? shopTitle() : r.kind === "product" ? r.product.title : r.kind === "category" ? r.category.name : r.term.name;
+    list.push({ path: r.path, label });
+  }
   return list;
+}
+
+/** The shop list's H1: the old shop page's, else "Shop". */
+export function shopTitle(): string {
+  return catalog?.index?.title?.trim() || "Shop";
 }
 
 function generatedNav(): SiteLink[] {
@@ -129,6 +167,7 @@ function generatedNav(): SiteLink[] {
     .sort((a, b) => (a.navOrder ?? 100) - (b.navOrder ?? 100) || a.path.localeCompare(b.path));
   for (const p of composed) links.push({ label: p.navLabel as string, href: p.path });
   if (blog?.navLabel) links.push({ label: blog.navLabel, href: blog.path });
+  if (hasShop(catalog)) links.push({ label: catalog.index?.navLabel?.trim() || shopTitle(), href: shopPath(catalog) });
   return links;
 }
 

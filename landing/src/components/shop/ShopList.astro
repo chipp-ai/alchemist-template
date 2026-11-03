@@ -1,0 +1,43 @@
+---
+/**
+ * The shop list at products.json indexPath (default "/shop/"): every
+ * product, and links to the categories that have a page. The H1, intro and
+ * SEO come from the old shop page when the importer found it.
+ */
+import Layout from "../../layouts/Layout.astro";
+import type { ProductCatalog } from "../../lib/composed";
+import { shopTitle } from "../../lib/content";
+import { carriedLd, composedPageLd } from "../../lib/page-ld";
+import { shopPath } from "../../lib/shop";
+import { site } from "../../lib/site";
+import ProductCard from "./ProductCard.astro";
+import "./shop.css";
+
+interface Props {
+  catalog: ProductCatalog;
+}
+const { catalog } = Astro.props;
+const path = shopPath(catalog);
+const heading = shopTitle();
+const title = catalog.index?.seo?.title?.trim() || heading;
+const description = catalog.index?.seo?.description?.trim() ?? catalog.index?.description?.trim() ?? "";
+const intro = catalog.index?.description?.trim() || catalog.index?.seo?.description?.trim() || "";
+const categories = catalog.categories.filter((c) => c.path && !c.parentSlug);
+const ld = composedPageLd({ path, title, description, published: site.publishedAt, updated: site.updatedAt, kind: "CollectionPage" });
+---
+<Layout title={title} description={description} path={path} seo={catalog.index?.seo} ld={ld} extraLd={carriedLd(catalog.index?.seo?.jsonLd)} aeo="relaxed">
+  <div class="page wrap">
+    <header>
+      <h1>{heading}</h1>
+      {intro && <p class="muted">{intro}</p>}
+      {categories.length > 0 && (
+        <nav aria-label="Product categories" class="cs-chips">
+          {categories.map((c) => <a href={c.path} data-testid={`shop-category-link-${c.slug}`}>{c.name}</a>)}
+        </nav>
+      )}
+    </header>
+    <ul class="cs-shop-grid" data-testid="shop-list">
+      {catalog.items.map((product) => <ProductCard product={product} currency={catalog.currency} />)}
+    </ul>
+  </div>
+</Layout>

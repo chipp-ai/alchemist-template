@@ -1,0 +1,38 @@
+---
+/** One product in a shop or category grid: picture, name, price, stock. */
+import type { CatalogProduct } from "../../lib/composed";
+import { productPrice, stockLabel } from "../../lib/shop";
+import Img from "../sections/Img.astro";
+
+interface Props {
+  product: CatalogProduct;
+  currency: string | null;
+}
+const { product, currency } = Astro.props;
+const price = productPrice(product, currency);
+const stock = product.inStock === false ? stockLabel(false) : null;
+---
+<li class="card cs-product-card" data-testid={`shop-card-${product.slug}`}>
+  {product.images[0] && <Img image={{ src: product.images[0], alt: product.title }} class="cs-product-card-image" />}
+  <h2 class="cs-product-card-title"><a href={product.path} data-testid={`shop-card-link-${product.slug}`}>{product.title}</a></h2>
+  {price.current && (
+    <p class="cs-price">
+      <span>{price.current}</span>
+      {price.was && <s class="muted" aria-label={`Was ${price.was}`}>{price.was}</s>}
+    </p>
+  )}
+  {stock && <p class="cs-stock cs-stock-out">{stock}</p>}
+</li>
+
+<style>
+  .cs-product-card { display: grid; gap: 0.5rem; align-content: start; padding: 1rem; position: relative; }
+  .cs-product-card :global(.cs-product-card-image) { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: calc(var(--radius) * 0.75); background: var(--tint); }
+  .cs-product-card-title { font-size: 1.125rem; margin: 0.25rem 0 0; }
+  .cs-product-card-title a { color: var(--text); text-decoration: none; }
+  /* The whole card is the link's tap area. */
+  .cs-product-card-title a::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); }
+  .cs-product-card-title a:active { color: var(--link); }
+  @media (hover: hover) and (pointer: fine) {
+    .cs-product-card-title a:hover { color: var(--link); text-decoration: underline; }
+  }
+</style>

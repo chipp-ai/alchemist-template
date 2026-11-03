@@ -4,7 +4,9 @@
  *
  * The forms are defined in the landing content, one JSON file per page in
  * landing/src/content/pages/. The server reads those files once, so the
- * fields it accepts are exactly the fields the page shows. A submission is
+ * fields it accepts are exactly the fields the page shows. When
+ * landing/src/content/products.json has products, the product pages'
+ * enquiry form (PRODUCT_ENQUIRY_FORM) is registered too. A submission is
  * validated against its form, stored as one row in site_form_submissions
  * (the fields as a JSONB object), and an email to the site owner is queued
  * in the same transaction through the outbox (src/services/email-outbox.service.ts).
@@ -27,11 +29,41 @@ import {
   formsOf,
   normalizePagePath,
   pageProblems,
+  PRODUCT_ENQUIRY_FORM,
   type SiteForm,
 } from "../../landing/src/lib/composed.ts";
 
 /** Where the landing content pages live, relative to the repo root (the server's cwd). */
 export const LANDING_PAGES_DIR = "./landing/src/content/pages";
+
+/** The product catalog of a migrated store, relative to the repo root. */
+export const LANDING_PRODUCTS_FILE = "./landing/src/content/products.json";
+
+/**
+ * The shop list path when products.json has at least one product, else
+ * null. A missing, empty or unreadable file means no shop.
+ */
+function shopListPath(file: string): string | null {
+  let text: string;
+  try {
+    text = Deno.readTextFileSync(file);
+  } catch {
+    return null;
+  }
+  if (!text.trim()) return null;
+  try {
+    const data = JSON.parse(text) as { items?: unknown; indexPath?: unknown };
+    if (!Array.isArray(data?.items) || data.items.length === 0) return null;
+    return typeof data.indexPath === "string" && data.indexPath.trim() ? normalizePagePath(data.indexPath) : "/shop/";
+  } catch (err) {
+    log.warn("site forms: landing products.json does not parse", {
+      source: "site-forms",
+      feature: "load",
+      file,
+    }, err instanceof Error ? err : new Error(String(err)));
+    return null;
+  }
+}
 
 export interface SiteFormEntry {
   form: SiteForm;
@@ -43,7 +75,10 @@ export interface SiteFormEntry {
  * does not parse or fails validation is skipped with a warning: the landing
  * build fails on it anyway, so it is never on the live site.
  */
-export function loadSiteForms(dir: string = LANDING_PAGES_DIR): Map<string, SiteFormEntry> {
+export function loadSiteForms(
+  dir: string = LANDING_PAGES_DIR,
+  productsFile: string = LANDING_PRODUCTS_FILE,
+): Map<string, SiteFormEntry> {
   const pages: ComposedPage[] = [];
   const walk = (rel: string) => {
     let entries: Iterable<Deno.DirEntry>;
@@ -84,6 +119,9 @@ export function loadSiteForms(dir: string = LANDING_PAGES_DIR): Map<string, Site
   for (const { form, pagePath } of formsOf(pages)) {
     if (!forms.has(form.name)) forms.set(form.name, { form, pagePath: normalizePagePath(pagePath) });
   }
+  // The landing build fails when a page uses this name next to products, so the page form never wins on a live site.
+  const shop = shopListPath(productsFile);
+  if (shop && !forms.has(PRODUCT_ENQUIRY_FORM.name)) forms.set(PRODUCT_ENQUIRY_FORM.name, { form: PRODUCT_ENQUIRY_FORM, pagePath: shop });
   return forms;
 }
 

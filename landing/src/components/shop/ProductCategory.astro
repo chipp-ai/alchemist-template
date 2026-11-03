@@ -1,0 +1,56 @@
+---
+/**
+ * One product category at its own (original) path: its name, description
+ * and picture, its subcategories, and its products.
+ */
+import Layout from "../../layouts/Layout.astro";
+import type { CatalogCategory, ProductCatalog } from "../../lib/composed";
+import { shopTitle } from "../../lib/content";
+import { composedPageLd } from "../../lib/page-ld";
+import { categoryProducts, plainText, shopPath, subcategories } from "../../lib/shop";
+import { site } from "../../lib/site";
+import Img from "../sections/Img.astro";
+import Prose from "../sections/Prose.astro";
+import ProductCard from "./ProductCard.astro";
+import "./shop.css";
+
+interface Props {
+  catalog: ProductCatalog;
+  category: CatalogCategory;
+}
+const { catalog, category } = Astro.props;
+const path = category.path as string;
+const products = categoryProducts(catalog, category);
+const children = subcategories(catalog, category).filter((c) => c.path);
+const parent = category.parentSlug ? catalog.categories.find((c) => c.slug === category.parentSlug && c.path) : undefined;
+const description = plainText(category.description).slice(0, 300);
+const ld = composedPageLd({ path, title: category.name, description, published: site.publishedAt, updated: site.updatedAt, kind: "CollectionPage" });
+---
+<Layout title={category.name} description={description} path={path} ld={ld} aeo="relaxed">
+  <div class="page wrap">
+    <header>
+      <p class="kicker">
+        <a href={shopPath(catalog)} data-testid="shop-category-back">{shopTitle()}</a>
+        {parent && <> / <a href={parent.path}>{parent.name}</a></>}
+      </p>
+      <h1>{category.name}</h1>
+      {category.description && <Prose html={category.description} class="muted cs-category-intro" />}
+      {category.image && <Img image={{ src: category.image, alt: category.name }} class="cs-category-image" />}
+      {children.length > 0 && (
+        <nav aria-label={`${category.name} categories`} class="cs-chips">
+          {children.map((c) => <a href={c.path} data-testid={`shop-category-link-${c.slug}`}>{c.name}</a>)}
+        </nav>
+      )}
+    </header>
+    {products.length > 0 && (
+      <ul class="cs-shop-grid" data-testid={`shop-category-${category.slug}`}>
+        {products.map((product) => <ProductCard product={product} currency={catalog.currency} />)}
+      </ul>
+    )}
+  </div>
+</Layout>
+
+<style>
+  .page :global(.cs-category-image) { width: 100%; max-height: 22rem; object-fit: cover; border-radius: var(--radius); margin-top: 1.5rem; }
+  .kicker a { color: inherit; }
+</style>

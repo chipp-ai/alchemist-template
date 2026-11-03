@@ -1,0 +1,12 @@
+/* Shared by the shop pages (lib/shop.ts). Tokens only: the look comes from design.json. */
+.cs-shop-grid { list-style: none; margin: 2rem 0 0; padding: 0; display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); }
+.cs-price { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; font-weight: 600; }
+.cs-price s { font-weight: 400; font-size: 0.9375rem; }
+.cs-stock { font-size: 0.875rem; color: var(--muted); }
+.cs-stock-out { color: var(--text); font-weight: 600; }
+.cs-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+.cs-chips a { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0.4rem 0.9rem; border: var(--borderWidth) solid var(--line); border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.9375rem; }
+.cs-chips a:active { border-color: var(--text); }
+@media (hover: hover) and (pointer: fine) {
+  .cs-chips a:hover { border-color: var(--text); }
+}

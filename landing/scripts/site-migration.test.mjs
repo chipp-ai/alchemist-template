@@ -374,8 +374,13 @@ test("a WordPress + WooCommerce model: pages, posts, forms, products and the sum
   assert.deepEqual(blog, { path: "/blog/", title: "Journal | Fixture Jewelry", description: "Notes from the studio: care guides and new collections." });
   assert.deepEqual(blogTerms.categories.map((c) => c.path), ["/category/care/", "/category/news/"]);
 
-  // Products: a data file, not pages.
+  // Products: a data file, not pages. The shop list keeps the old shop page's H1 and SEO.
   assert.equal(catalog.indexPath, "/shop/");
+  assert.deepEqual(catalog.index, {
+    title: "Shop",
+    description: "Rings and necklaces, made to order.",
+    seo: { title: "Shop | Fixture Jewelry", description: "Rings and necklaces, made to order.", canonical: "/shop/", og: { title: "Shop", description: "Rings and necklaces, made to order.", type: "website" } },
+  });
   assert.equal(catalog.currency, "USD");
   const ring = catalog.items.find((p) => p.slug === "silver-band-ring");
   assert.deepEqual(
@@ -435,7 +440,7 @@ test("the WordPress model imports to files and the landing site builds from them
       assert.ok(existsSync(join(dist, p)), p);
     }
     const post = read(dist, "2026/03/caring-for-silver/index.html");
-    assert.match(post, /Categories: Jewelry care\. Tags: Silver, Cleaning\./);
+    assert.match(post, /Categories: <a href="\/category\/care\/"[^>]*>Jewelry care<\/a>\. Tags: <a href="\/tag\/silver\/"[^>]*>Silver<\/a>, <a href="\/tag\/cleaning\/"[^>]*>Cleaning<\/a>\./);
     assert.match(post, /"articleSection":\["Jewelry care"\]/);
     assert.match(post, /<title>Caring for silver \| Fixture Jewelry<\/title>/);
     const contact = read(dist, "contact/index.html");
@@ -445,10 +450,121 @@ test("the WordPress model imports to files and the landing site builds from them
     assert.match(home, /<link rel="canonical" href="https:\/\/jewelry.example.com\/">/);
     assert.match(home, /"@type":"JewelryStore"/);
 
-    // What is left is the shop: links to it stay broken until its pages are built from products.json.
+    // The shop, every product and category, and the blog terms, at their old paths, from products.json and blog-terms.json.
+    for (const p of ["shop/index.html", "product/silver-band-ring/index.html", "product/gold-chain-necklace/index.html", "product/gift-card/index.html", "product-category/rings/index.html", "product-category/necklaces/index.html", "category/care/index.html", "category/news/index.html", "tag/silver/index.html", "tag/cleaning/index.html"]) {
+      assert.ok(existsSync(join(dist, p)), p);
+    }
+    const shop = read(dist, "shop/index.html");
+    assert.match(shop, /<title>Shop \| Fixture Jewelry<\/title>/, "the old shop page's title");
+    assert.match(shop, /<meta name="description" content="Rings and necklaces, made to order\.">/);
+    assert.match(shop, /<h1[^>]*>Shop<\/h1>/);
+    for (const href of ["/product/silver-band-ring/", "/product/gold-chain-necklace/", "/product/gift-card/", "/product-category/rings/", "/product-category/necklaces/"]) {
+      assert.ok(shop.includes(`href="${href}"`), href);
+    }
+    assert.match(shop, /\$120\.00/);
+
+    const ring = read(dist, "product/silver-band-ring/index.html");
+    assert.match(ring, /<title>Silver band ring<\/title>/);
+    assert.match(ring, /<link rel="canonical" href="https:\/\/jewelry.example.com\/product\/silver-band-ring\/">/);
+    assert.match(ring, /<h1[^>]*>Silver band ring<\/h1>/);
+    assert.match(ring, /\$120\.00<\/span><s [^>]*>\$150\.00<\/s>/, "the sale price and the old price");
+    assert.match(ring, /In stock/);
+    assert.match(ring, /<dt[^>]*>Ring size<\/dt>\s*<dd[^>]*>6, 7<\/dd>/);
+    assert.match(ring, /recycled sterling silver, brushed by hand/, "the description HTML");
+    assert.match(ring, /<img [^>]*src="https:\/\/build\.chipp\.ai\/api\/public\/site-migration\/[^"]+\/4{64}\.jpg"[^>]*alt="Silver band ring"/, "the rehosted picture");
+    assert.match(ring, /<a href="\/product-category\/rings\/"[^>]*>Rings<\/a>/);
+    assert.match(ring, /href="#form-product-enquiry"/, "no checkout: the buy button opens the enquiry form");
+    assert.match(ring, /<form [^>]*action="\/api\/site-forms\/product-enquiry"/);
+    assert.match(ring, /name="product"[^>]*value="Silver band ring"/);
+    assert.match(ring, /<input type="hidden" name="_page" value="\/product\/silver-band-ring\/"/);
+    const ld = [...ring.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) => JSON.parse(m[1]));
+    const graph = ld[0]["@graph"];
+    assert.equal(graph[0]["@type"], "ItemPage");
+    const item = graph.find((n) => n["@type"] === "Product");
+    assert.deepEqual(item.offers, {
+      "@type": "Offer",
+      price: "120.00",
+      priceCurrency: "USD",
+      seller: { "@id": "#organization" },
+      availability: "https://schema.org/InStock",
+      url: "https://jewelry.example.com/product/silver-band-ring/",
+    });
+    assert.equal(item.sku, "RING-001");
+    assert.equal(ld.flatMap((x) => x["@graph"] ?? [x]).filter((n) => n["@type"] === "Product").length, 1, "one Product node");
+
+    const necklace = read(dist, "product/gold-chain-necklace/index.html");
+    assert.match(necklace, /Out of stock/);
+    assert.match(necklace, /"availability":"https:\/\/schema.org\/OutOfStock"/);
+    const rings = read(dist, "product-category/rings/index.html");
+    assert.match(rings, /<h1[^>]*>Rings<\/h1>/);
+    assert.ok(rings.includes('href="/product/silver-band-ring/"'));
+    assert.ok(!rings.includes('href="/product/gold-chain-necklace/"'), "only the category's own products");
+    const care = read(dist, "category/care/index.html");
+    assert.match(care, /<h1[^>]*>Jewelry care<\/h1>/);
+    assert.ok(care.includes('href="/2026/03/caring-for-silver/"'));
+    assert.ok(!care.includes('href="/2026/01/winter-collection/"'));
+
+    const sitemap = read(dist, "sitemap.xml");
+    for (const p of ["/shop/", "/product/gift-card/", "/product-category/rings/", "/tag/silver/"]) {
+      assert.ok(sitemap.includes(`<loc>https://jewelry.example.com${p}</loc>`), p);
+    }
+
+    // Every link resolves now, the shop's included.
     const { problems } = checkDist(dist);
-    assert.ok(problems.length > 0);
-    for (const p of problems) assert.match(p, /broken internal link: \/shop\//, p);
+    assert.deepEqual(problems, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("no products.json, an empty one, \"{}\" or one with no products: no shop routes, and the build passes", () => {
+  const root = tempRepo();
+  try {
+    const content = join(root, "landing", "src", "content");
+    const file = join(content, "products.json");
+    const baseline = build(root);
+    const pages = checkDist(baseline).pages;
+    for (const body of ["", "{}", JSON.stringify({ indexPath: "/shop/", currency: "USD", categories: [], items: [] })]) {
+      writeFileSync(file, body);
+      writeFileSync(join(content, "blog-terms.json"), body === "" ? "" : JSON.stringify({ categories: [], tags: [] }));
+      const dist = build(root);
+      assert.ok(!existsSync(join(dist, "shop")), `no /shop/ for ${JSON.stringify(body)}`);
+      const result = checkDist(dist);
+      assert.equal(result.pages, pages, `the same pages for ${JSON.stringify(body)}`);
+      assert.deepEqual(result.problems, []);
+      assert.ok(!read(dist, "index.html").includes('href="/shop/"'), "no shop link in the nav");
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a hand-written catalog: a buyUrl links to that store, the nav gets the shop, and a page form cannot take the enquiry form's name", () => {
+  const root = tempRepo();
+  try {
+    const content = join(root, "landing", "src", "content");
+    const item = (over) => ({ id: "1", slug: "mug", path: "/store/mug/", title: "Mug", sku: null, price: "18", regularPrice: "18", salePrice: null, currency: "EUR", onSale: false, inStock: true, shortDescription: "A stoneware mug.", html: null, images: [], categories: [], tags: [], vendor: null, variants: [], attributes: [], ...over });
+    writeFileSync(join(content, "products.json"), JSON.stringify({
+      indexPath: "/store/", currency: "EUR", categories: [],
+      items: [item({ buyUrl: "https://shop.example.org/mug" }), item({ id: "2", slug: "bowl", path: "/store/bowl", title: "Bowl", price: null, regularPrice: null })],
+    }));
+    const dist = build(root);
+    const mug = read(dist, "store/mug/index.html");
+    assert.match(mug, /<a class="button" href="https:\/\/shop\.example\.org\/mug" rel="noopener"[^>]*>Buy on shop\.example\.org<\/a>/);
+    assert.ok(!mug.includes("/api/site-forms/product-enquiry"), "no enquiry form when the store link is there");
+    assert.match(mug, /€18\.00/);
+    const bowl = read(dist, "store/bowl/index.html");
+    assert.match(bowl, /action="\/api\/site-forms\/product-enquiry"/);
+    assert.ok(!bowl.includes('"offers"'), "no Offer without a price");
+    assert.match(read(dist, "index.html"), /<a href="\/store\/"[^>]*>Shop<\/a>/, "the generated nav links the shop");
+    assert.deepEqual(checkDist(dist).problems, []);
+
+    mkdirSync(join(content, "pages"), { recursive: true });
+    writeFileSync(join(content, "pages", "ask.json"), JSON.stringify({
+      path: "/ask/", title: "Ask",
+      sections: [{ type: "form", heading: "Ask", form: { name: "product-enquiry", fields: [{ name: "email", label: "Email", type: "email" }] } }],
+    }));
+    assert.throws(() => build(root), (err) => /form "product-enquiry" on \/ask\/: that name belongs to the product pages/.test(String(err.stderr) + String(err.stdout)));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -1,21 +1,29 @@
 ---
 // Every landing page except "/": the classic about and pricing pages,
 // composed pages at any path (nested too: /services/roofing/), the blog list
-// and each blog post at its own path. See lib/composed.ts.
+// and each blog post at its own path (lib/composed.ts), and for a migrated
+// store the shop list, each product and category, and the blog category and
+// tag archives (lib/shop.ts). No products.json, no shop routes.
 import BlogList from "../components/BlogList.astro";
 import BlogPost from "../components/BlogPost.astro";
+import BlogTermPage from "../components/BlogTermPage.astro";
+import ProductCategory from "../components/shop/ProductCategory.astro";
+import ProductPage from "../components/shop/ProductPage.astro";
+import ShopList from "../components/shop/ShopList.astro";
 import ComposedPage from "../components/ComposedPage.astro";
 import About from "../components/legacy/About.astro";
 import Pricing from "../components/legacy/Pricing.astro";
 import type { BlogPost as Post, BlogSettings, ComposedPage as Page } from "../lib/composed";
 import { pathParam } from "../lib/composed";
-import { blog, classicPages, composedPages, posts } from "../lib/content";
+import { blog, catalog, classicPages, composedPages, posts, shopPages } from "../lib/content";
+import type { ShopRoute } from "../lib/shop";
 
 type Entry =
   | { kind: "classic"; name: "about" | "pricing" }
   | { kind: "page"; page: Page }
   | { kind: "blog"; blog: BlogSettings }
-  | { kind: "post"; post: Post; blog: BlogSettings };
+  | { kind: "post"; post: Post; blog: BlogSettings }
+  | { kind: "shop"; route: ShopRoute };
 
 export function getStaticPaths() {
   const out: { params: { path: string | undefined }; props: { entry: Entry } }[] = [];
@@ -33,6 +41,9 @@ export function getStaticPaths() {
       out.push({ params: { path: pathParam(post.path) }, props: { entry: { kind: "post", post, blog } } });
     }
   }
+  for (const route of shopPages) {
+    out.push({ params: { path: pathParam(route.path) }, props: { entry: { kind: "shop", route } } });
+  }
   return out;
 }
 
@@ -43,3 +54,7 @@ const { entry } = Astro.props as { entry: Entry };
 {entry.kind === "page" && <ComposedPage page={entry.page} />}
 {entry.kind === "blog" && <BlogList blog={entry.blog} />}
 {entry.kind === "post" && <BlogPost post={entry.post} blog={entry.blog} />}
+{entry.kind === "shop" && catalog && entry.route.kind === "shop" && <ShopList catalog={catalog} />}
+{entry.kind === "shop" && catalog && entry.route.kind === "product" && <ProductPage catalog={catalog} product={entry.route.product} />}
+{entry.kind === "shop" && catalog && entry.route.kind === "category" && <ProductCategory catalog={catalog} category={entry.route.category} />}
+{entry.kind === "shop" && entry.route.kind === "term" && <BlogTermPage term={entry.route.term} termKind={entry.route.termKind} />}

@@ -1,0 +1,37 @@
+---
+/**
+ * A blog category or tag archive at its own (original) path, from
+ * src/content/blog-terms.json: every post filed under it, newest first.
+ */
+import Layout from "../layouts/Layout.astro";
+import type { BlogTerm } from "../lib/composed";
+import { blog, posts } from "../lib/content";
+import { composedPageLd } from "../lib/page-ld";
+import { termPosts } from "../lib/shop";
+import { site } from "../lib/site";
+import PostList from "./PostList.astro";
+
+interface Props {
+  term: BlogTerm;
+  termKind: "category" | "tag";
+}
+const { term, termKind } = Astro.props;
+const path = term.path as string;
+const list = termPosts(posts, term, termKind);
+const description = blog ? `${blog.title}: posts filed under ${term.name}.` : `Posts filed under ${term.name}.`;
+const ld = composedPageLd({ path, title: term.name, description, published: site.publishedAt, updated: site.updatedAt, kind: "CollectionPage" });
+---
+<Layout title={blog ? `${term.name} | ${blog.title}` : term.name} description={description} path={path} ld={ld} aeo="relaxed">
+  <div class="page wrap narrow" data-testid={`blog-term-${termKind}-${term.slug}`}>
+    <header>
+      {blog && <p class="kicker"><a href={blog.path}>{blog.title}</a></p>}
+      <h1>{term.name}</h1>
+      <p class="muted">{termKind === "category" ? "Category" : "Tag"}: {list.length} post{list.length === 1 ? "" : "s"}.</p>
+    </header>
+    <PostList posts={list} />
+  </div>
+</Layout>
+
+<style>
+  .kicker a { color: inherit; }
+</style>

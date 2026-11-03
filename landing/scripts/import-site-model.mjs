@@ -230,6 +230,13 @@ function readSeo(seo) {
   };
 }
 
+/** A page's SEO (the crawled head first, the API's SEO as the fallback) and its title. */
+function pageSeo(crawled, api) {
+  const crawledSeo = readSeo(crawled?.seo);
+  const seo = mergeSeo({ ...crawledSeo, title: crawledSeo.title ?? text(crawled?.title) }, readSeo(api?.seo));
+  return { seo, title: text(api?.title) ?? seo.h1 ?? text(crawled?.title) ?? seo.title };
+}
+
 /** Merge SEO records, first one wins per field. JSON-LD comes from the first record that has any. */
 function mergeSeo(...records) {
   const out = { og: {}, jsonLd: [], noindex: false };
@@ -500,11 +507,11 @@ export function planImport(model, site = {}, opts = {}) {
       continue;
     }
     if (hasShop && path === shopPath) {
-      skip(`page ${path}`, "the shop list: render it from products.json");
+      skip(`page ${path}`, "the shop list: the shop pages render it from products.json");
       continue;
     }
     if (productPaths.has(path)) {
-      skip(`page ${path}`, "a product or product category path: render it from products.json");
+      skip(`page ${path}`, "a product or product category path: the shop pages render it from products.json");
       continue;
     }
     if (hasShop && COMMERCE_PATH_RE.test(path)) {
@@ -517,9 +524,8 @@ export function planImport(model, site = {}, opts = {}) {
       continue;
     }
 
-    const crawledSeo = readSeo(crawled?.seo);
-    const seo = mergeSeo({ ...crawledSeo, title: crawledSeo.title ?? text(crawled?.title) }, readSeo(api?.seo));
-    const title = text(api?.title) ?? seo.h1 ?? text(crawled?.title) ?? seo.title ?? path;
+    const { seo, title: heading } = pageSeo(crawled, api);
+    const title = heading ?? path;
     const sections = [];
     for (const [i, s] of arr(crawled?.sections).entries()) {
       if (isObj(s) && s.kind && !s.type) {
@@ -687,7 +693,7 @@ export function planImport(model, site = {}, opts = {}) {
   report.counts.blogTags = blogIn.tags.length;
   const catPaths = blogIn.categories.map((t) => t?.path).filter(text);
   if (catPaths.length > 0) {
-    report.todo.push(`${catPaths.length} blog category page(s) (in blog-terms.json): build a list page for each or add a 301 to the blog: ${sample(catPaths)}`);
+    report.notes.push(`${catPaths.length} blog category page(s) from blog-terms.json are rendered at their old paths: ${sample(catPaths)}`);
   }
 
   // Products.
@@ -776,13 +782,27 @@ export function planImport(model, site = {}, opts = {}) {
         ...(Array.isArray(c.productIds) ? { productIds: c.productIds.map(String) } : {}),
       });
     }
-    catalog = { importedFrom: origin, platform, indexPath: shopPath, currency, categories, items };
+    // The old shop list page: its H1, intro and SEO, so the shop list keeps them.
+    let index;
+    const shopCrawled = shopPath ? crawledByPath.get(shopPath) : undefined;
+    const shopApi = shopPath ? apiPages.find((p) => text(p?.path) && normalizePagePath(p.path) === shopPath) : undefined;
+    if (shopCrawled || shopApi) {
+      const { seo: s, title } = pageSeo(shopCrawled, shopApi);
+      const seo = templateSeo(s, rw, siteUrl);
+      const description = text(shopApi?.excerpt) ? stripTags(shopApi.excerpt) : s.description;
+      index = {
+        ...(title ? { title } : {}),
+        ...(description ? { description } : {}),
+        ...(Object.keys(seo).length > 0 ? { seo } : {}),
+      };
+    }
+    catalog = { importedFrom: origin, platform, indexPath: shopPath, ...(index ? { index } : {}), currency, categories, items };
     report.counts.products = items.length;
     report.counts.productCategories = categories.length;
     if (withoutBody > 0) report.notes.push(`${withoutBody} product(s) have no description HTML in the model; their shortDescription is all there is`);
     if (!currency && !items.some((i) => i.currency)) report.todo.push("products.json has no currency: ask the owner which currency the prices are in");
     report.todo.push(
-      `products.json holds ${items.length} product(s) and ${categories.length} categor${categories.length === 1 ? "y" : "ies"}: render the shop list${shopPath ? ` at ${shopPath}` : ""}, a product page at each product's path and a category page at each category's path from it; a buy button opens an enquiry form until the owner sets up payments`,
+      `products.json holds ${items.length} product(s) and ${categories.length} categor${categories.length === 1 ? "y" : "ies"}: the template renders the shop list at ${shopPath ?? "/shop/"}, each product and each category at its old path from it. Compare them with the old screenshots. Buy buttons open the product enquiry form; set a product's "buyUrl" only for a store that still takes orders. A real checkout needs the owner's go-ahead: then move the products into a database table with products.json as the seed`,
     );
   }
 
@@ -803,7 +823,8 @@ export function planImport(model, site = {}, opts = {}) {
     const redirected = new Set(
       [...arr(model?.redirects), ...arr(opts.redirects?.redirects)].map((r) => (text(r?.from) ? normalizePagePath(r.from) : null)).filter(Boolean),
     );
-    const bare = oldPaths.filter((p) => !known.has(normalizePagePath(p)) && !redirected.has(normalizePagePath(p)) && !catPaths.includes(p));
+    for (const t of [...(blogTerms?.categories ?? []), ...(blogTerms?.tags ?? [])]) if (t.path) known.add(t.path);
+    const bare = oldPaths.filter((p) => !known.has(normalizePagePath(p)) && !redirected.has(normalizePagePath(p)));
     if (bare.length > 0) {
       report.todo.push(`${bare.length} old URL(s) in old-urls.json have no page, post or product yet: build each or add a 301 to the closest page: ${sample(bare, 5)}`);
     }

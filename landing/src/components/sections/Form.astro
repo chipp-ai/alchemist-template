@@ -17,8 +17,10 @@ interface Props {
   level: "h1" | "h2";
   id: string;
   pagePath: string;
+  /** Starting values for text-like fields, by field name (a product page fills in the product). */
+  values?: Record<string, string>;
 }
-const { section, level, id, pagePath } = Astro.props;
+const { section, level, id, pagePath, values = {} } = Astro.props;
 const form = section.form;
 const base = `form-${form.name}`;
 
@@ -126,7 +128,7 @@ const tid = (f: FormField, part = "input") => `site-form-${form.name}-${part}-${
         return (
           <div class="cs-field">
             <label for={fid(f)}>{f.label}{f.required && <span class="cs-req" aria-hidden="true"> *</span>}</label>
-            <input id={fid(f)} name={f.name} required={f.required} placeholder={f.placeholder} data-testid={tid(f)} {...inputAttrs(f)} />
+            <input id={fid(f)} name={f.name} required={f.required} placeholder={f.placeholder} value={values[f.name]} data-testid={tid(f)} {...inputAttrs(f)} />
           </div>
         );
       })}
