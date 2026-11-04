@@ -132,7 +132,8 @@ export const billingStore = {
   /**
    * Kick off Stripe Checkout for a product. Navigates the browser to
    * Stripe; on success the user lands back on successUrl (default
-   * /settings/billing) and the webhook records the purchase.
+   * /app/#/settings?tab=billing, the Billing tab) and the webhook records
+   * the purchase.
    */
   async startCheckout(productId: string, opts?: { successUrl?: string; cancelUrl?: string }): Promise<void> {
     const res = await api.post<{ data: { url: string } }>(

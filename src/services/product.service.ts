@@ -41,6 +41,7 @@ import {
 } from "@/utils/errors.ts";
 import { getEnv } from "@/lib/env.ts";
 import {
+  billingReturnPath,
   chippAccessMode,
   chippPaymentsActive,
   customerRefForOrg,
@@ -366,13 +367,13 @@ export async function createProductCheckout(
   if (chippPaymentsActive()) {
     // Chipp makes the sale on the org's Stripe account. Send the key and
     // relative paths only; Chipp builds the origin and owns the price.
-    const returnPath = toRelativePath(input.successUrl, "/app/#/settings/billing?purchase=success");
+    const returnPath = toRelativePath(input.successUrl, billingReturnPath({ purchase: "success" }));
     const res = await startChippCheckout({
       productKey: product.productKey,
       customerRef: customerRefForOrg(input.organizationId),
       email: input.userEmail,
       returnPath,
-      cancelPath: toRelativePath(input.cancelUrl, "/app/#/settings/billing"),
+      cancelPath: toRelativePath(input.cancelUrl, billingReturnPath()),
     });
     return { url: res.url, sessionId: res.purchaseId };
   }
@@ -406,8 +407,8 @@ export async function createProductCheckout(
       mode: product.type === "subscription" ? "subscription" : "payment",
       line_items: [{ price: product.stripePriceId, quantity: 1 }],
       success_url: input.successUrl ??
-        `${defaultWebUrl}/settings/billing?purchase=success`,
-      cancel_url: input.cancelUrl ?? `${defaultWebUrl}/settings/billing`,
+        `${defaultWebUrl}${billingReturnPath({ purchase: "success" })}`,
+      cancel_url: input.cancelUrl ?? `${defaultWebUrl}${billingReturnPath()}`,
       metadata,
       ...(product.type === "subscription"
         ? { subscription_data: { metadata } }

@@ -75,6 +75,24 @@ export function chippPaymentsActive(): boolean {
 }
 
 /**
+ * Where checkout and the billing portal send the buyer back: the Settings
+ * Billing tab (web/src/routes/Settings.svelte reads `?tab=billing`). The
+ * SPA has no `/settings/billing` route, so the old default landed on Not
+ * Found (2026-11-03).
+ *
+ * A literal, not `appPath()`: this file also ships in the Chipp Payments
+ * pack for existing apps, which may predate src/config/site.ts. A test
+ * keeps it equal to `appPath("/#/settings?tab=billing")`.
+ */
+export const BILLING_RETURN_PATH = "/app/#/settings?tab=billing";
+
+/** BILLING_RETURN_PATH with extra query parameters, e.g. `{ purchase: "success" }`. */
+export function billingReturnPath(params: Record<string, string> = {}): string {
+  const extra = new URLSearchParams(params).toString();
+  return extra ? `${BILLING_RETURN_PATH}&${extra}` : BILLING_RETURN_PATH;
+}
+
+/**
  * True when this app can take money at all: its own Stripe key, or Chipp
  * Payments. The SPA hides the Settings Billing tab when this is false,
  * because every billing action fails until payments are set up.

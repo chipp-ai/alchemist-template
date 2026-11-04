@@ -32,6 +32,7 @@ import { validationHook } from "@/utils/zod-validation-hook.ts";
 import { BadRequestError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
 import {
+  billingReturnPath,
   chippPaymentsActive,
   chippPaymentsConfig,
   customerRefForOrg,
@@ -102,7 +103,7 @@ chippPaymentsRoutes.post(
     }
     const user = getUser(c);
     const body = c.req.valid("json");
-    const returnPath = toRelativePath(body.returnPath, "/app/#/settings/billing");
+    const returnPath = toRelativePath(body.returnPath, billingReturnPath());
     const result = await startChippCheckout({
       productKey: body.productKey,
       customerRef: customerRefForOrg(user.organizationId),
@@ -125,7 +126,7 @@ chippPaymentsRoutes.post(
     const user = getUser(c);
     const result = await startChippPortal({
       customerRef: customerRefForOrg(user.organizationId),
-      returnPath: toRelativePath(c.req.valid("json").returnPath, "/app/#/settings/billing"),
+      returnPath: toRelativePath(c.req.valid("json").returnPath, billingReturnPath()),
     });
     return c.json({ data: { url: result.url } });
   },

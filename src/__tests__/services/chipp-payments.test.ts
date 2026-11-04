@@ -11,9 +11,12 @@ import { createIsolatedUser, withTestServer } from "../helpers.ts";
 import { __deleteEnvForTest, __setEnvForTest, getEnv } from "@/lib/env.ts";
 import {
   __setChippPaymentsFetchForTest,
+  BILLING_RETURN_PATH,
+  billingReturnPath,
   customerRefForOrg,
   paymentsConfigured,
 } from "@/lib/chipp-payments.ts";
+import { appPath } from "@/config/site.ts";
 import { createProduct, createProductCheckout } from "@/services/product.service.ts";
 import { billingRoutes } from "@/api/routes/billing/index.ts";
 import { BadRequestError } from "@/utils/errors.ts";
@@ -131,6 +134,8 @@ dbTest(
         assertEquals(body.productKey, key);
         assertEquals(body.customerRef, customerRefForOrg(ctx.org.id));
         assertEquals(body.returnPath, "/app/#/settings/billing?purchase=success");
+        // No cancelUrl given: the default lands on the Settings Billing tab.
+        assertEquals(body.cancelPath, "/app/#/settings?tab=billing");
         assert(!("amountCents" in body) && !("priceId" in body));
         await assertRejects(
           () =>
@@ -151,6 +156,20 @@ dbTest(
     }
   },
 );
+
+// ── billing return path (checkout and portal land on the Billing tab) ─────
+
+Deno.test("billingReturnPath: the Settings Billing tab, a route the SPA has", () => {
+  // The SPA routes "/settings" and reads ?tab=; "/settings/billing" was Not Found.
+  assertEquals(BILLING_RETURN_PATH, appPath("/#/settings?tab=billing"));
+  assertEquals(billingReturnPath(), "/app/#/settings?tab=billing");
+  assertEquals(
+    billingReturnPath({ purchase: "success" }),
+    "/app/#/settings?tab=billing&purchase=success",
+  );
+  const query = billingReturnPath({ purchase: "success" }).split("?")[1];
+  assertEquals(new URLSearchParams(query).get("tab"), "billing");
+});
 
 // ── paymentsConfigured (gates the Settings Billing tab) ────────────────────
 

@@ -53,6 +53,7 @@ import {
 } from "@/services/product.service.ts";
 import { can } from "@/lib/roles.ts";
 import {
+  billingReturnPath,
   chippPaymentsActive,
   customerRefForOrg,
   paymentsConfigured,
@@ -168,7 +169,7 @@ billingRoutes.post(
     if (chippPaymentsActive()) {
       const portal = await startChippPortal({
         customerRef: customerRefForOrg(user.organizationId),
-        returnPath: toRelativePath(returnUrl, "/app/#/settings/billing"),
+        returnPath: toRelativePath(returnUrl, billingReturnPath()),
       });
       return c.json({ url: portal.url });
     }
@@ -193,7 +194,7 @@ billingRoutes.post(
     try {
       const session = await stripe.billingPortal.sessions.create({
         customer: org.stripeCustomerId,
-        return_url: returnUrl ?? `${defaultReturnUrl}/settings/billing`,
+        return_url: returnUrl ?? `${defaultReturnUrl}${billingReturnPath()}`,
       });
 
       return c.json({ url: session.url });
@@ -238,8 +239,8 @@ billingRoutes.post(
         customer: customerId,
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
-        success_url: successUrl ?? `${defaultWebUrl}/settings/billing?success=true`,
-        cancel_url: cancelUrl ?? `${defaultWebUrl}/settings/billing`,
+        success_url: successUrl ?? `${defaultWebUrl}${billingReturnPath({ success: "true" })}`,
+        cancel_url: cancelUrl ?? `${defaultWebUrl}${billingReturnPath()}`,
         subscription_data: {
           metadata: {
             organizationId: user.organizationId,
