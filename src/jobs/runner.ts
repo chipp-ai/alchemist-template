@@ -22,6 +22,7 @@ import { isTransientDbError } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
 import { deliverDueEmails, type DeliverDueResult } from "@/services/email-outbox.service.ts";
 import { type RunDueResult, runDueScheduledJobs } from "@/services/scheduled-jobs.service.ts";
+import { advanceCampaigns, type AdvanceResult } from "@/services/mailing/campaign.service.ts";
 import { getEnv } from "@/lib/env.ts";
 
 export const DEFAULT_TICK_MS = 30_000;
@@ -34,6 +35,7 @@ export interface TickOptions {
 export interface TickResult {
   now: string;
   jobs: RunDueResult;
+  campaigns: AdvanceResult;
   emails: DeliverDueResult;
   durationMs: number;
 }
@@ -48,15 +50,21 @@ export function tickIntervalMs(): number {
   return Number.isFinite(v) && v >= 1000 ? v : DEFAULT_TICK_MS;
 }
 
-/** One pass: scheduled jobs, then outbox delivery. */
+/**
+ * One pass: scheduled jobs, then campaign releases (warm-up batches
+ * included, src/services/mailing/campaign.service.ts), then outbox
+ * delivery, so whatever the first two queue leaves in the same tick.
+ */
 export async function runJobsTick(opts: TickOptions = {}): Promise<TickResult> {
   const now = opts.now ?? new Date();
   const startedAt = performance.now();
   const jobs = await runDueScheduledJobs({ now });
+  const campaigns = await advanceCampaigns({ now });
   const emails = await deliverDueEmails({ now });
   return {
     now: now.toISOString(),
     jobs,
+    campaigns,
     emails,
     durationMs: Math.round(performance.now() - startedAt),
   };
@@ -69,7 +77,7 @@ let ticking: Promise<void> | null = null;
 async function tickOnce(): Promise<void> {
   try {
     const r = await runJobsTick();
-    if (r.jobs.claimed > 0 || r.emails.claimed > 0) {
+    if (r.jobs.claimed > 0 || r.emails.claimed > 0 || r.campaigns.campaigns > 0) {
       log.info("Job runner tick", { source: "jobs", ...flatten(r) });
     }
   } catch (err) {
@@ -83,6 +91,9 @@ function flatten(r: TickResult): Record<string, unknown> {
     jobsClaimed: r.jobs.claimed,
     jobsOk: r.jobs.ok,
     jobsFailed: r.jobs.failed,
+    campaignsAdvanced: r.campaigns.campaigns,
+    campaignEmailsQueued: r.campaigns.queued,
+    campaignsPaused: r.campaigns.paused,
     emailsClaimed: r.emails.claimed,
     emailsSent: r.emails.sent,
     emailsRetried: r.emails.retried,

@@ -70,6 +70,8 @@ export const CAPABILITIES = [
   "billing.manage", // manage the product catalog, open the billing portal config
   // Uploaded files
   "files.review", // see the review queue, approve or reject someone else's upload
+  // Mailing lists
+  "email.broadcast", // import mailing-list contacts, send and manage campaigns
   // App-data writes (template's domain-specific actions go through this)
   "app.write",
   // Read-only org info — every role above 'viewer' has this implicitly.
@@ -95,6 +97,9 @@ const CAPABILITY_MIN_ROLE: Record<Capability, Role> = {
   // same class of call as adding a member, so it sits with the admin
   // capabilities rather than with app.write.
   "files.review": "admin",
+  // Mailing a list puts the whole app's sender reputation on the line,
+  // and the importer attests to consent. Same class as inviting people.
+  "email.broadcast": "admin",
   "app.write": "editor",
   "app.read": "viewer",
 };

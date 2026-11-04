@@ -60,10 +60,11 @@ Don't `c.json({ error })` by hand for these — let the handler format them.
 ## Background jobs (`src/jobs/`)
 
 One in-process runner per replica (`runner.ts`) ticks every `JOBS_TICK_MS`
-and does two things in order: run due `scheduled_jobs` rows, then deliver
-due `email_outbox` rows. Both claims use `FOR UPDATE SKIP LOCKED`, so every
-replica runs the loop and none double-processes. There is no leader and no
-Redis.
+and does three things in order: run due `scheduled_jobs` rows, release due
+campaign batches (`advanceCampaigns`, src/services/mailing/campaign.service.ts,
+warm-up included), then deliver due `email_outbox` rows. All three claims
+use `FOR UPDATE SKIP LOCKED`, so every replica runs the loop and none
+double-processes. There is no leader and no Redis.
 
 - **Handlers** live in `src/jobs/handlers/<kind>.ts`, register with
   `defineJob(kind, handler, { description })`, and are imported from

@@ -115,6 +115,15 @@ deno("capabilities: reviewing uploaded files is an admin call", () => {
   assertEquals(can("viewer", "files.review"), false);
 });
 
+deno("capabilities: mailing a list (import, campaigns) is an admin call", () => {
+  // The importer attests to consent and a campaign spends the whole app's
+  // sender reputation, so it sits with inviting people, not with app.write.
+  assertEquals(can("admin", "email.broadcast"), true);
+  assertEquals(can("owner", "email.broadcast"), true);
+  assertEquals(can("editor", "email.broadcast"), false);
+  assertEquals(can("viewer", "email.broadcast"), false);
+});
+
 deno("capabilities: admin has team + org but is gated from owner-only ops", () => {
   const OWNER_ONLY: Capability[] = ["org.transfer_ownership"];
   for (const cap of CAPABILITIES) {

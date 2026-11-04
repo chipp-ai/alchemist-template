@@ -40,8 +40,10 @@ import { getUploadedFile, storeUploadedFile } from "@/services/uploaded-file.ser
 import {
   definitionUploadTypes,
   getImportDefinition,
+  type ImportAttestation,
   type ImportDefinition,
   type ImportRowValues,
+  validateImportAttestation,
 } from "./definitions.ts";
 import { type ParsedSpreadsheet, parseSpreadsheet } from "./parse.ts";
 import { assertAllowedUpload } from "@/utils/upload-types.ts";
@@ -88,6 +90,8 @@ export interface ImportSession {
   mapping: ColumnMappingEntry[];
   rowCount: number;
   result: ImportResult | null;
+  /** The importer's statement, for a definition that requires one. */
+  attestation: ImportAttestation | null;
   committedAt: Date | null;
   createdAt: Date;
 }
@@ -174,6 +178,25 @@ export async function prepareImport(opts: {
     const { cells, extras } = rowCells(row, resolved.byColumn);
     return { rowNumber: index + 1, ...normalizeRow(definition, { cells, extras }) };
   });
+
+  // Row-level screening (a typo domain, an address already suppressed).
+  // Shared by preview and commit like everything else here, so a row the
+  // preview skips is a row the commit skips.
+  if (definition.screenRows) {
+    const candidates = normalized.filter((r) => r.errors.length === 0);
+    if (candidates.length > 0) {
+      const problems = await definition.screenRows({
+        organizationId: opts.organizationId,
+        rows: candidates.map((r) => r.allValues),
+      });
+      candidates.forEach((row, i) => {
+        const problem = problems[i];
+        if (!problem) return;
+        const label = definition.fields.find((f) => f.key === problem.field)?.label ?? "Row";
+        row.errors.push({ field: problem.field, label, message: problem.message });
+      });
+    }
+  }
 
   // Only valid rows are offered to the app's lookup: an unparseable
   // email is not an identity, and handing it over would invite a WHERE
@@ -537,13 +560,32 @@ export async function commitImportSession(opts: {
   id: string;
   organizationId: string;
   userId: string | null;
+  /** Required when the definition sets `attestation`; ignored otherwise. */
+  attestation?: unknown;
 }): Promise<{ session: ImportSession; result: ImportResult }> {
-  const session = await getImportSession(opts);
+  let session = await getImportSession(opts);
   // Committing twice would double the creates, and identity matching
   // cannot save a row that has no identity tuple filled. A committed
   // session is finished; a re-run starts a new one.
   if (session.status === "committed") {
     throw new ConflictError("This import has already been committed.");
+  }
+
+  // The statement is checked and stored BEFORE anything is written, so a
+  // commit that fails halfway still records who vouched for the file.
+  const definition = getImportDefinition(session.definitionName);
+  let attestation: ImportAttestation | null = null;
+  if (definition.attestation) {
+    attestation = validateImportAttestation(definition, opts.attestation, { userId: opts.userId });
+    const row = await db
+      .updateTable("import_sessions")
+      // Object, not a string: a pre-stringified jsonb value double-encodes.
+      .set({ attestation: attestation as unknown as Record<string, unknown> })
+      .where("id", "=", session.id)
+      .where("organizationId", "=", session.organizationId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    session = toImportSession(row);
   }
 
   const prepared = await prepareForSession(session);
@@ -578,6 +620,8 @@ export async function commitImportSession(opts: {
             extras: row.extras,
             existingId: row.existingId,
             rowNumber: row.rowNumber,
+            attestation,
+            importSessionId: session.id,
           });
           written.push({ row, recordId: id });
         } catch (err) {
@@ -788,6 +832,9 @@ function toImportSession(row: ImportSessionRow): ImportSession {
     result: row.result === null || row.result === undefined
       ? null
       : parseJsonColumn<ImportResult | null>(row.result, null),
+    attestation: row.attestation === null || row.attestation === undefined
+      ? null
+      : parseJsonColumn<ImportAttestation | null>(row.attestation, null),
     committedAt: row.committedAt ?? null,
     createdAt: row.createdAt,
   };

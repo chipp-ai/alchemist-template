@@ -40,6 +40,9 @@ import { docsRoutes } from "@/api/routes/docs/index.ts";
 import { ingestEmailRoutes } from "@/api/routes/ingest-email/index.ts";
 import { inboundEmailRoutes } from "@/api/routes/inbound-emails/index.ts";
 import { emailRoutes } from "@/api/routes/email/index.ts";
+import { mailingRoutes } from "@/api/routes/mailing/index.ts";
+import { unsubscribeRoutes } from "@/api/routes/unsubscribe/index.ts";
+import { emailFeedbackRoutes } from "@/api/routes/email-feedback/index.ts";
 import { portalRoutes } from "@/api/routes/portal/index.ts";
 import { agentMcpRoutes } from "@/api/routes/agent-mcp/index.ts";
 import { storageLocalRoutes } from "@/api/routes/storage-local/index.ts";
@@ -240,6 +243,21 @@ app.route("/api/inbound-emails", inboundEmailRoutes);
 // send, and the org/personal communications toggles. Auth-required;
 // writes are admin-gated. See src/api/routes/email/index.ts.
 app.route("/api/email", emailRoutes);
+
+// Mailing lists: contacts, campaigns (newsletters), readiness. Admin-gated
+// (email.broadcast). A campaign never sends from the shared platform
+// sender. See src/services/mailing/index.ts.
+app.route("/api/mailing", mailingRoutes);
+
+// One-click unsubscribe (RFC 8058). PUBLIC: the signed token is the
+// credential. GET shows a button, only POST unsubscribes. See
+// src/api/routes/unsubscribe/index.ts.
+app.route("/api/unsubscribe", unsubscribeRoutes);
+
+// Provider bounce/complaint feedback. Bearer EMAIL_FEEDBACK_TOKEN, fail
+// closed; dormant until the platform forwards provider events. See
+// src/api/routes/email-feedback/index.ts.
+app.route("/api/email-feedback", emailFeedbackRoutes);
 
 // Landing site forms (form sections in landing/src/content/pages/): public
 // POST /api/site-forms/:name, stored in site_form_submissions, owner emailed

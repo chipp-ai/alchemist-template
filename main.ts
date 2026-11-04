@@ -19,6 +19,7 @@ import { assertNoLiveStripeKeyInDemoMode } from "@/lib/stripe.ts";
 import { isDemoMode } from "@/config/demo-mode.ts";
 import { getWorkerRole, roleRunsBackgroundWork } from "@/lib/worker-role.ts";
 import { registerPeopleImport } from "@/services/import/examples/people.ts";
+import { registerContactsImport } from "@/services/mailing/contacts.service.ts";
 import { getEnv } from "@/lib/env.ts";
 
 const port = parseInt(getEnv("PORT") ?? "8000");
@@ -52,6 +53,10 @@ if (isDemoMode()) {
 // EXAMPLE (src/services/import/examples/people.ts) -- copy that file for
 // your own import, then delete it and this call.
 registerPeopleImport();
+// The mailing-list contacts import (attestation + list hygiene built in).
+// Keep it: it is how a newsletter list gets in safely. See
+// src/services/mailing/contacts.service.ts.
+registerContactsImport();
 
 // ── Event handlers ──
 // Every "when X happens, do Y" handler registers here, before the

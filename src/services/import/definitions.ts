@@ -57,7 +57,7 @@ import type { UploadTypeId } from "@/utils/upload-types.ts";
 import type { Kysely } from "kysely";
 import type { Database } from "@/db/schema.ts";
 import { log } from "@/lib/logger.ts";
-import { NotFoundError } from "@/utils/errors.ts";
+import { BadRequestError, NotFoundError } from "@/utils/errors.ts";
 
 const LOG_SOURCE = "imports";
 
@@ -213,6 +213,102 @@ export interface UpsertRowOptions {
   existingId: string | null;
   /** 1-based row number in the file, for your own logging. */
   rowNumber: number;
+  /**
+   * The importer's statement about the file, for a definition that sets
+   * `attestation`. NULL for every other definition. Store it with the
+   * records it vouches for.
+   */
+  attestation: ImportAttestation | null;
+  /** The import session this write belongs to, for provenance columns. */
+  importSessionId: string;
+}
+
+// ── Attestation (who vouches for this file) ────────────────────────────────
+
+/** One answer to "where did this list come from?". */
+export interface ImportAttestationSource {
+  value: string;
+  label: string;
+  /** True when the people on the list gave their details to THIS app. */
+  collectedInApp: boolean;
+}
+
+/**
+ * A definition that sets this cannot be committed until the person running
+ * the import says where the file came from and agrees to `statement`. The
+ * contacts import (src/services/mailing/contacts.service.ts) is the reason
+ * it exists: a mailing list nobody vouches for is how a sender gets
+ * blocked.
+ */
+export interface ImportAttestationSpec {
+  /** The question above the source picker. */
+  question: string;
+  sources: readonly ImportAttestationSource[];
+  /** The checkbox the person must tick. */
+  statement: string;
+  /** Shown, as a warning, when the chosen source was not collected in this app. */
+  externalWarning: string;
+}
+
+/** What is stored on the session and handed to `upsertRow`. */
+export interface ImportAttestation {
+  listSource: string;
+  listSourceDetail: string | null;
+  collectedInApp: boolean;
+  optedIn: true;
+  attestedBy: string | null;
+  attestedAt: string;
+}
+
+/** A row-level problem `screenRows` found. Shown and stored like a cell error. */
+export interface ImportRowProblem {
+  /** The field it is about, so the preview can highlight the cell. */
+  field: string;
+  message: string;
+}
+
+/**
+ * Check a submitted attestation against the definition. Returns the value
+ * to store, or throws a 400 that says exactly what is missing.
+ */
+export function validateImportAttestation(
+  def: ImportDefinition,
+  input: unknown,
+  ctx: { userId: string | null; now?: Date },
+): ImportAttestation {
+  const spec = def.attestation;
+  if (!spec) throw new Error(`Import definition "${def.name}" takes no attestation.`);
+  const raw = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+
+  const source = spec.sources.find((s) => s.value === raw.listSource);
+  if (!source) {
+    throw new BadRequestError(
+      `Before importing ${def.label}, say where this list came from: ${
+        spec.sources.map((s) => s.label).join(", ")
+      }.`,
+    );
+  }
+  const detail = typeof raw.listSourceDetail === "string" ? raw.listSourceDetail.trim() : "";
+  if (detail.length > 500) {
+    throw new BadRequestError("The list source description must be 500 characters or fewer.");
+  }
+  if (!source.collectedInApp && detail.length < 2) {
+    throw new BadRequestError(
+      "Name where this list was collected (for example the platform it was exported from, " +
+        "or the event where people signed up).",
+    );
+  }
+  if (raw.optedIn !== true) {
+    throw new BadRequestError(`Before importing ${def.label}, confirm: ${spec.statement}`);
+  }
+  return {
+    listSource: source.value,
+    listSourceDetail: detail || null,
+    collectedInApp: source.collectedInApp,
+    optedIn: true,
+    attestedBy: ctx.userId,
+    attestedAt: (ctx.now ?? new Date()).toISOString(),
+  };
 }
 
 // ── The definition ─────────────────────────────────────────────────────────
@@ -241,6 +337,23 @@ export interface ImportDefinition {
   capability?: Capability;
   /** File types accepted. Defaults to CSV and XLSX. Narrows only. */
   allow?: readonly UploadTypeId[];
+  /**
+   * Require the importer to vouch for the file before it commits. See
+   * `ImportAttestationSpec`.
+   */
+  attestation?: ImportAttestationSpec;
+  /**
+   * Row-level checks that need more than one cell or a database read
+   * (a typo domain, an address already suppressed). Handed every row that
+   * passed cell validation, in order; return one entry per row, `null` for
+   * a row that is fine. A problem row is SKIPPED with the message as its
+   * reason, in the preview and in the result, never dropped in silence.
+   * Must be org-scoped like `loadExisting`.
+   */
+  screenRows?(opts: {
+    organizationId: string;
+    rows: readonly ImportRowValues[];
+  }): Promise<ReadonlyArray<ImportRowProblem | null>>;
   loadExisting(opts: LoadExistingOptions): Promise<ExistingRecord[]>;
   upsertRow(opts: UpsertRowOptions): Promise<{ id: string }>;
   /** A downloadable starter file. Shown in the wizard's first step. */
@@ -389,6 +502,14 @@ export function describeImportDefinition(def: ImportDefinition) {
     acceptTypes: definitionUploadTypes(def),
     matchBy: def.matchBy.map((tuple) => [...tuple]),
     hasSample: typeof def.sampleCsv === "function",
+    attestation: def.attestation
+      ? {
+        question: def.attestation.question,
+        statement: def.attestation.statement,
+        externalWarning: def.attestation.externalWarning,
+        sources: def.attestation.sources.map((s) => ({ ...s })),
+      }
+      : null,
     fields: def.fields.map((f) => ({
       key: f.key,
       label: f.label,

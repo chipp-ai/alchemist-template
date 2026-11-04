@@ -37,6 +37,7 @@ export const CAPABILITIES = [
   "org.transfer_ownership",
   "billing.manage",
   "files.review",
+  "email.broadcast",
   "app.write",
   "app.read",
 ] as const;
@@ -50,6 +51,7 @@ const CAPABILITY_MIN_ROLE: Record<Capability, Role> = {
   "org.transfer_ownership": "owner",
   "billing.manage": "admin",
   "files.review": "admin",
+  "email.broadcast": "admin",
   "app.write": "editor",
   "app.read": "viewer",
 };

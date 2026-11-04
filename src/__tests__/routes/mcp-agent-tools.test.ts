@@ -116,12 +116,17 @@ async function oauthToken(userId: string, scopes = ["tools:write"]): Promise<str
   return (await oauthTokenService.issueTokens({ userId, clientId, scopes })).accessToken;
 }
 
+// The owner also sees the read-only mailing-list tools (email.broadcast).
 const STARTER_ALL = [
+  "get_campaign_report",
   "get_current_user",
   "get_file",
+  "list_campaigns",
   "list_files",
   "list_my_portal_records",
   "list_team_members",
+  "mailing_list_summary",
+  "mailing_readiness",
   "update_my_profile",
 ];
 

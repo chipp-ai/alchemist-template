@@ -10,7 +10,7 @@
  *   GET    /api/imports/sessions/:id           one session's state
  *   PATCH  /api/imports/sessions/:id/mapping   confirm the mapping
  *   GET    /api/imports/sessions/:id/preview   normalized rows + counts
- *   POST   /api/imports/sessions/:id/commit    run it
+ *   POST   /api/imports/sessions/:id/commit    run it ({ attestation } when the definition asks)
  *
  * AUTHORIZATION IS PER DEFINITION, not per router. Each definition
  * declares the capability its import needs (`app.write` by default), and
@@ -94,6 +94,7 @@ function serializeSession(session: ImportSession) {
     mapping: session.mapping,
     rowCount: session.rowCount,
     result: session.result,
+    attestation: session.attestation,
     createdBy: session.createdBy,
     committedAt: session.committedAt,
     createdAt: session.createdAt,
@@ -334,10 +335,25 @@ importRoutes.post("/sessions/:id/commit", async (c) => {
   const existing = await getImportSession({ id, organizationId: user.organizationId });
   assertMayRun(getImportDefinition(existing.definitionName), user.role);
 
+  // Optional JSON body: { attestation } for a definition that requires one
+  // (the contacts import). No body is still a valid commit for the rest.
+  let attestation: unknown = undefined;
+  if ((c.req.header("content-type") ?? "").includes("application/json")) {
+    try {
+      const body = await c.req.json();
+      attestation = body && typeof body === "object"
+        ? (body as Record<string, unknown>).attestation
+        : undefined;
+    } catch {
+      throw new BadRequestError("The commit body is not valid JSON.");
+    }
+  }
+
   const { session, result } = await commitImportSession({
     id,
     organizationId: user.organizationId,
     userId: user.id,
+    attestation,
   });
 
   return c.json({ data: { session: serializeSession(session), result } });

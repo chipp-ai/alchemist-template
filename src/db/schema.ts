@@ -262,6 +262,11 @@ export interface ImportSessionsTable {
   rowCount: Generated<number>;
   /** JSONB -- the commit outcome: counts plus every row that did not land. */
   result: unknown | null;
+  /**
+   * JSONB -- the importer's statement about the list (source, opt-in),
+   * for a definition that requires one. NULL otherwise.
+   */
+  attestation: ColumnType<unknown | null, unknown | null | undefined, unknown | null | undefined>;
   committedAt: ColumnType<Date | null, Date | null | undefined, Date | null | undefined>;
   createdAt: CreatedAt;
   updatedAt: UpdatedAt;
@@ -671,6 +676,109 @@ export interface SiteFormSubmissionsTable {
 
 export type SiteFormSubmission = Selectable<SiteFormSubmissionsTable>;
 
+// ── mailing lists (contacts, campaigns, suppressions) ──
+// db/migrations/20261104160000_mailing_lists.sql, src/services/mailing/.
+
+export type EmailSuppressionReason = "hard_bounce" | "complaint" | "unsubscribed" | "manual";
+
+export interface EmailSuppressionsTable {
+  id: Generated<string>;
+  email: string;
+  /** NULL = app-wide (bounces, complaints). Set = this workspace only. */
+  organizationId: string | null;
+  reason: EmailSuppressionReason;
+  source: string | null;
+  detail: string | null;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type EmailSuppressionRow = Selectable<EmailSuppressionsTable>;
+
+export type EmailContactStatus = "subscribed" | "unsubscribed" | "suppressed";
+export type EmailContactOrigin = "signup" | "import" | "manual";
+
+export interface EmailContactsTable {
+  id: Generated<string>;
+  organizationId: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  status: ColumnType<EmailContactStatus, EmailContactStatus | undefined, EmailContactStatus>;
+  origin: EmailContactOrigin;
+  consentSource: string | null;
+  consentSourceDetail: string | null;
+  consentCollectedInApp: Generated<boolean>;
+  consentAttestedAt: Date | null;
+  consentAttestedBy: string | null;
+  importSessionId: string | null;
+  firstSentAt: Date | null;
+  unsubscribedAt: Date | null;
+  suppressedAt: Date | null;
+  suppressedReason: "hard_bounce" | "complaint" | "manual" | null;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type EmailContactRow = Selectable<EmailContactsTable>;
+
+export type EmailCampaignStatus =
+  | "draft"
+  | "scheduled"
+  | "sending"
+  | "paused"
+  | "sent"
+  | "cancelled";
+
+export interface EmailCampaignsTable {
+  id: Generated<string>;
+  organizationId: string;
+  createdBy: string | null;
+  name: string;
+  subject: string;
+  textBody: string;
+  htmlBody: string | null;
+  status: ColumnType<EmailCampaignStatus, EmailCampaignStatus | undefined, EmailCampaignStatus>;
+  scheduledAt: Date | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  pausedReason: string | null;
+  warmupStep: Generated<number>;
+  nextColdBatchAt: Date | null;
+  healthWindowStart: Date | null;
+  createdAt: CreatedAt;
+  updatedAt: UpdatedAt;
+}
+
+export type EmailCampaignRow = Selectable<EmailCampaignsTable>;
+
+export type EmailCampaignRecipientStatus =
+  | "pending"
+  | "queued"
+  | "skipped"
+  | "bounced"
+  | "complained";
+
+export interface EmailCampaignRecipientsTable {
+  id: Generated<string>;
+  campaignId: string;
+  contactId: string;
+  email: string;
+  cold: Generated<boolean>;
+  status: ColumnType<
+    EmailCampaignRecipientStatus,
+    EmailCampaignRecipientStatus | undefined,
+    EmailCampaignRecipientStatus
+  >;
+  skipReason: string | null;
+  batch: number | null;
+  outboxId: string | null;
+  queuedAt: Date | null;
+  createdAt: CreatedAt;
+}
+
+export type EmailCampaignRecipientRow = Selectable<EmailCampaignRecipientsTable>;
+
 export interface Database {
   organizations: OrganizationsTable;
   users: UsersTable;
@@ -696,4 +804,8 @@ export interface Database {
   event_deliveries: EventDeliveriesTable;
   event_handler_receipts: EventHandlerReceiptsTable;
   site_form_submissions: SiteFormSubmissionsTable;
+  email_suppressions: EmailSuppressionsTable;
+  email_contacts: EmailContactsTable;
+  email_campaigns: EmailCampaignsTable;
+  email_campaign_recipients: EmailCampaignRecipientsTable;
 }

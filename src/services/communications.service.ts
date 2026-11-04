@@ -12,6 +12,10 @@
  *                  that already exists (db/migrations/005_user_preferences.sql)
  *                  and is already writable via PATCH /api/auth/me/preferences.
  *                  No new per-user table, no new route.
+ *   SUPPRESSION    `email_suppressions` (src/services/mailing/). An address
+ *                  that hard-bounced or complained (app-wide), or that
+ *                  unsubscribed from this workspace (one-click). Mailing it
+ *                  again is what gets a sender blocked.
  *
  * Two things are DELIBERATELY outside the gate, and this ordering is the
  * whole point of the module:
@@ -39,7 +43,7 @@ const LOG_SOURCE = "communications";
 /** The users.preferences key holding the per-user master switch. */
 export const USER_COMMUNICATIONS_PREF_KEY = "communicationsEnabled";
 
-export type SuppressionReason = "org_disabled" | "user_opted_out";
+export type SuppressionReason = "org_disabled" | "user_opted_out" | "address_suppressed";
 
 export interface SuppressionResult {
   suppressed: boolean;
@@ -79,6 +83,21 @@ export async function checkCommunicationsSuppression(opts: {
     // A recipient with no account and no caller-supplied org has no org
     // gate to apply -- that is a deliberate address, not a member.
     const orgId = opts.organizationId ?? recipient?.organizationId ?? null;
+
+    // App-wide rows (bounce, complaint) always apply; a workspace-scoped
+    // row (an unsubscribe) applies to that workspace's mail only.
+    const suppressed = await db
+      .selectFrom("email_suppressions")
+      .select(["id"])
+      .where("email", "=", email)
+      .where((eb) =>
+        orgId
+          ? eb.or([eb("organizationId", "is", null), eb("organizationId", "=", orgId)])
+          : eb("organizationId", "is", null)
+      )
+      .executeTakeFirst();
+    if (suppressed) return { suppressed: true, reason: "address_suppressed" };
+
     if (!orgId) return ALLOWED;
 
     const org = await db

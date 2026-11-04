@@ -5,7 +5,9 @@
  * fixed order:
  *
  *   1. DEMO_MODE            public demo pods never send, at all.
- *   2. Communications gate  org master toggle + per-user preference.
+ *   2. Communications gate  org master toggle + per-user preference +
+ *                           the suppression list (bounces, complaints,
+ *                           unsubscribes).
  *                           SKIPPED for auth-critical mail and for the
  *                           admin test send (see communications.service.ts
  *                           for why that ordering is load-bearing).
@@ -28,6 +30,7 @@ import { checkCommunicationsSuppression } from "@/services/communications.servic
 import { appOrigin } from "@/services/app-links.ts";
 import { getEnv } from "@/lib/env.ts";
 import { appPath } from "@/config/site.ts";
+import { oneClickUnsubscribeHeaders } from "@/services/mailing/unsubscribe-token.ts";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -131,20 +134,43 @@ export function isUnverifiedSenderRejection(err: unknown): boolean {
 }
 
 /**
- * The final header set for one send. Ordinary (non-auth-critical) mail
- * carries a List-Unsubscribe pointer at the app's notification settings --
- * the one page where a recipient can turn these messages off, and the page
- * the digest footer names. Auth-critical mail never advertises an
- * unsubscribe: nobody opts out of their sign-in code. A caller-supplied
- * header of the same name wins, so a kind with a real one-click endpoint
- * can override without touching this module.
+ * The final header set for one send.
+ *
+ * Ordinary (non-auth-critical) mail carries a real RFC 8058 one-click
+ * unsubscribe: `List-Unsubscribe` with the signed https endpoint (plus a
+ * mailto when `EMAIL_UNSUBSCRIBE_MAILTO` names a processed inbox) and
+ * `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. Gmail and Yahoo
+ * require both for bulk senders, and a mailbox provider that cannot offer
+ * the person an unsubscribe button offers them "Report spam" instead. The
+ * POST turns off this workspace's ordinary mail to that address
+ * (src/services/mailing/suppression.service.ts).
+ *
+ * Auth-critical mail never advertises an unsubscribe: nobody opts out of
+ * their sign-in code. A caller-supplied `List-Unsubscribe` wins (and then
+ * the caller owns `List-Unsubscribe-Post` too), so a kind with its own
+ * endpoint can override without touching this module.
  */
 export function effectiveSendHeaders(
-  opts: Pick<SendEmailOptions, "authCritical" | "headers">,
+  opts:
+    & Pick<SendEmailOptions, "authCritical" | "headers">
+    & Partial<Pick<SendEmailOptions, "to" | "organizationId">>,
 ): Record<string, string> | undefined {
   const merged: Record<string, string> = { ...(opts.headers ?? {}) };
   if (!opts.authCritical && !merged["List-Unsubscribe"]) {
-    merged["List-Unsubscribe"] = `<${appUrl()}${appPath("/#/settings?tab=notifications")}>`;
+    if (opts.to) {
+      Object.assign(
+        merged,
+        oneClickUnsubscribeHeaders({
+          email: opts.to,
+          organizationId: opts.organizationId ?? null,
+        }),
+      );
+    } else {
+      // No recipient to sign a link for (a caller asking for the shape
+      // only). Point at the settings page, the one place a person can
+      // turn ordinary mail off by hand.
+      merged["List-Unsubscribe"] = `<${appUrl()}${appPath("/#/settings?tab=notifications")}>`;
+    }
   }
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
@@ -231,9 +257,9 @@ export interface SendEmailOptions {
   /** Reply-To header, e.g. a support inbox that differs from the sender. */
   replyTo?: string;
   /**
-   * Extra MIME headers, e.g. `List-Unsubscribe`. Ordinary (non-auth-critical)
-   * mail already gets a List-Unsubscribe pointer at the app's notification
-   * settings; a caller-supplied header of the same name wins.
+   * Extra MIME headers. Ordinary (non-auth-critical) mail already gets a
+   * one-click List-Unsubscribe + List-Unsubscribe-Post pair signed for `to`;
+   * a caller-supplied List-Unsubscribe wins.
    */
   headers?: Record<string, string>;
   /**

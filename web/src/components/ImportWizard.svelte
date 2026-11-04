@@ -63,6 +63,11 @@
   let preview = $state<ImportPreview | null>(null);
   let result = $state<ImportResult | null>(null);
   let busy = $state(false);
+  // The importer's statement, for a definition that asks for one (the
+  // mailing-list contacts import). The server checks it again.
+  let listSource = $state("");
+  let listSourceDetail = $state("");
+  let optedIn = $state(false);
 
   const fields = $derived(spec?.fields ?? []);
   const acceptTypes = $derived((spec?.acceptTypes ?? ["csv", "xlsx"]) as UploadTypeId[]);
@@ -80,8 +85,17 @@
     return parts.length > 0 ? parts.join(", ") : "nothing to import";
   });
 
+  const attestation = $derived(spec?.attestation ?? null);
+  const chosenSource = $derived(attestation?.sources.find((s) => s.value === listSource) ?? null);
+  const attestationComplete = $derived(
+    !attestation ||
+      (chosenSource !== null && optedIn &&
+        (chosenSource.collectedInApp || listSourceDetail.trim().length >= 2)),
+  );
+
   const canCommit = $derived(
-    preview !== null && preview.counts.create + preview.counts.update > 0 && !busy,
+    preview !== null && preview.counts.create + preview.counts.update > 0 && !busy &&
+      attestationComplete,
   );
 
   onMount(() => {
@@ -185,7 +199,12 @@
     if (!session) return;
     busy = true;
     try {
-      const outcome = await importsStore.commit(session.id);
+      const outcome = await importsStore.commit(
+        session.id,
+        attestation
+          ? { listSource, listSourceDetail: listSourceDetail.trim() || null, optedIn }
+          : undefined,
+      );
       session = outcome.session;
       result = outcome.result;
       step = "results";
@@ -486,6 +505,43 @@
         </p>
       {/if}
 
+      {#if attestation}
+        <fieldset class="card attestation" data-testid="{testid}-attestation">
+          <legend class="section-title">{attestation.question}</legend>
+          {#each attestation.sources as source (source.value)}
+            <label class="attestation-option">
+              <input
+                type="radio"
+                name="{testid}-list-source"
+                value={source.value}
+                bind:group={listSource}
+                data-testid="{testid}-attestation-source-{source.value}"
+              />
+              {source.label}
+            </label>
+          {/each}
+          {#if chosenSource && !chosenSource.collectedInApp}
+            <div class="alert alert-warning" data-testid="{testid}-attestation-warning">
+              {attestation.externalWarning}
+            </div>
+            <label class="attestation-detail">
+              Where exactly? (for example the platform it was exported from)
+              <input
+                type="text"
+                class="input"
+                maxlength="500"
+                bind:value={listSourceDetail}
+                data-testid="{testid}-attestation-detail"
+              />
+            </label>
+          {/if}
+          <label class="attestation-option">
+            <input type="checkbox" bind:checked={optedIn} data-testid="{testid}-attestation-optin" />
+            {attestation.statement}
+          </label>
+        </fieldset>
+      {/if}
+
       <div class="actions">
         <button
           type="button"
@@ -597,6 +653,25 @@
 </div>
 
 <style>
+  .attestation {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    border: 1px solid var(--color-border);
+  }
+
+  .attestation-option {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: flex-start;
+  }
+
+  .attestation-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
   .import-wizard {
     display: flex;
     flex-direction: column;

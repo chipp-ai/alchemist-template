@@ -40,6 +40,28 @@ export interface ImportDefinitionSummary {
   hasSample: boolean;
   fields: ImportFieldSummary[];
   canRun: boolean;
+  /** Set when the importer must vouch for the file before it commits. */
+  attestation: ImportAttestationSpec | null;
+}
+
+export interface ImportAttestationSource {
+  value: string;
+  label: string;
+  collectedInApp: boolean;
+}
+
+export interface ImportAttestationSpec {
+  question: string;
+  statement: string;
+  externalWarning: string;
+  sources: ImportAttestationSource[];
+}
+
+/** What the commit sends for a definition with an attestation. */
+export interface ImportAttestationInput {
+  listSource: string;
+  listSourceDetail: string | null;
+  optedIn: boolean;
 }
 
 export type MappingConfidence = "exact" | "alias" | "fuzzy" | "none";
@@ -225,13 +247,16 @@ export const importsStore = {
     return res.data;
   },
 
-  async commit(sessionId: string): Promise<{
+  async commit(sessionId: string, attestation?: ImportAttestationInput): Promise<{
     session: ImportSessionSummary;
     result: ImportResult;
   }> {
     const res = await api.post<{
       data: { session: ImportSessionSummary; result: ImportResult };
-    }>(`/imports/sessions/${encodeURIComponent(sessionId)}/commit`);
+    }>(
+      `/imports/sessions/${encodeURIComponent(sessionId)}/commit`,
+      attestation ? { attestation } : undefined,
+    );
     invalidateQueries("imports:sessions");
     return res.data;
   },
