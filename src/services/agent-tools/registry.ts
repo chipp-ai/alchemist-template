@@ -162,7 +162,7 @@ export async function portalBindingsFor(user: AuthUser): Promise<PortalAccess[]>
 
 /** True when `user` may see and call `tool`. */
 export function toolAllowed(
-  tool: AgentTool,
+  tool: Pick<AgentTool, "capability" | "portalSafe">,
   user: AuthUser,
   portalBindings: PortalAccess[],
 ): boolean {

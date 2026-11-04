@@ -14,6 +14,11 @@
  *      challenges in _meta["org.paymentauth/payment-required"], credential
  *      retry in _meta["org.paymentauth/credential"], receipts attached).
  *
+ * ACCESS runs before all three: a tool that declares a `capability` passes
+ * the same role and portal check as an agent tool (`toolAllowed`), so a call
+ * the person may not make spends nothing. A tool they may not call is not
+ * registered at all, so it looks exactly like a tool that does not exist.
+ *
  * Gate failures are NORMAL tool results with honest wording (never opaque
  * errors, never thrown McpErrors -- the SDK would flatten those and strip
  * challenge/link payloads).
@@ -21,13 +26,14 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { listMcpTools } from "@/mcp/registry.ts";
+import { listMcpTools, type McpTool } from "@/mcp/registry.ts";
 import { formatToolPrice, gatePaidToolCall, mppEnabled, paymentRequiredToolResult } from "@/mcp/mpp.ts";
-import { monetizationDescriptionSuffix, runMonetizationGates } from "@/mcp/gates.ts";
+import { monetizationDescriptionSuffix, runMonetizationGates, signInRequiredText } from "@/mcp/gates.ts";
 import type { Context } from "hono";
 import type { McpAuthContext } from "@/api/middleware/mcp-auth.ts";
 import { log } from "@/lib/logger.ts";
 import { BRAND } from "@/config/brand.ts";
+import { toolAllowed } from "@/services/agent-tools/registry.ts";
 import { type AgentToolCaller, registerBridgedAgentTools } from "@/mcp/agent-tools-bridge.ts";
 
 // Ensure example tools are registered (side-effect import)
@@ -44,6 +50,29 @@ export interface McpServerContext {
    * with the request context the tools run in. Absent: no agent tools.
    */
   agentTools?: { caller: AgentToolCaller; c: Context } | null;
+}
+
+/**
+ * What this caller may do with a registry tool. Pure.
+ *
+ * Anonymous (public mode only): the tool stays listed, so the client knows to
+ * connect, and the call asks them to sign in. A signed-in caller with no
+ * resolved person (deleted, or their org changed) fails closed.
+ */
+export function mcpToolAccess(
+  tool: Pick<McpTool, "capability" | "portalSafe">,
+  auth: McpAuthContext | null,
+  caller: AgentToolCaller | null,
+): "allowed" | "sign-in" | "hidden" {
+  if (!tool.capability) return "allowed";
+  if (!auth) return "sign-in";
+  if (!caller) return "hidden";
+  const allowed = toolAllowed(
+    { capability: tool.capability, portalSafe: tool.portalSafe },
+    caller.user,
+    caller.portalBindings,
+  );
+  return allowed ? "allowed" : "hidden";
 }
 
 export function createMcpServer(context: McpServerContext = {}): McpServer {
@@ -78,6 +107,9 @@ export function createMcpServer(context: McpServerContext = {}): McpServer {
 
   // Register all tools from the registry
   for (const tool of listMcpTools()) {
+    const access = mcpToolAccess(tool, auth, context.agentTools?.caller ?? null);
+    if (access === "hidden") continue;
+
     // Convert our plain shape to the SDK's expected input shape
     const inputSchema: Record<string, z.ZodTypeAny> = { ...tool.inputSchema };
 
@@ -98,6 +130,10 @@ export function createMcpServer(context: McpServerContext = {}): McpServer {
         inputSchema,
       },
       async (args: Record<string, unknown>, extra: unknown) => {
+        if (access === "sign-in") {
+          return { isError: true, content: [{ type: "text" as const, text: signInRequiredText(tool.name) }] };
+        }
+
         // ── 1 + 2. Entitlement + credit gates (identity-based) ──
         const gate = await runMonetizationGates(tool, auth, baseUrl);
         if (gate.kind === "blocked") return gate.result;

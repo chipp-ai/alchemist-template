@@ -14,6 +14,7 @@
 import { z } from "zod";
 import type { ToolPrice } from "@/mcp/mpp.ts";
 import type { McpAuthContext } from "@/api/middleware/mcp-auth.ts";
+import type { Capability } from "@/lib/roles.ts";
 
 export type ToolInputShape = Record<string, z.ZodTypeAny>;
 
@@ -29,6 +30,19 @@ export interface McpTool {
    * `creditCost`. See src/mcp/mpp.ts.
    */
   price?: ToolPrice;
+  /**
+   * The roles.ts capability the caller needs, checked against their CURRENT
+   * role on every list and call, BEFORE the monetization gates, so a refused
+   * call spends nothing. Set this on any tool that reads or changes org data.
+   * Without it, anyone who passes the /api/mcp auth mode can call the tool.
+   */
+  capability?: Capability;
+  /**
+   * True only when a capability tool is safe for a portal viewer: its handler
+   * scopes to that one person, never the whole org. Portal viewers hold the
+   * viewer role, so a capability alone does not keep them out.
+   */
+  portalSafe?: boolean;
   /**
    * Entitlement gate for INTERACTIVE clients: the caller's org must own
    * this product (products/purchases layer). Unentitled calls return a

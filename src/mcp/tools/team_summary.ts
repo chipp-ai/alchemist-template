@@ -8,8 +8,10 @@
  * credit per call via the prepaid credit gate in src/mcp/gates.ts.
  *
  * Replace or delete this example in real projects; keep the pattern:
- * read `auth.organizationId` from the resolved MCP auth context, scope
- * every query to it, and never trust a caller-supplied org/tenant id.
+ * declare a `capability`, read `auth.organizationId` from the resolved MCP
+ * auth context, scope every query to it, and never trust a caller-supplied
+ * org/tenant id. `app.read` matches the list_team_members agent tool: any
+ * member may read it, and a portal viewer may not (no `portalSafe`).
  */
 
 import { z } from "zod";
@@ -21,6 +23,7 @@ registerMcpTool({
   description:
     "Returns a summary of the caller's own organization: team size, role breakdown, and the most recent signup.",
   inputSchema: {},
+  capability: "app.read",
   creditCost: 1,
   handler: async (_args, context) => {
     const organizationId = context?.auth?.organizationId ?? null;

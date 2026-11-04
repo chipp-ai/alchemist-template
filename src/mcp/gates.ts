@@ -49,13 +49,16 @@ function blocked(text: string): GateOutcome {
   return { kind: "blocked", result: { isError: true, content: [{ type: "text", text }] } };
 }
 
+/** The tool error for a call that needs a signed-in account and has none. */
+export function signInRequiredText(toolName: string): string {
+  return `"${toolName}" requires a signed-in account, but this call is not authenticated. ` +
+    "Tell the user to connect this MCP server with OAuth (their MCP client will open a " +
+    "sign-in page when the connection is added/refreshed). Do NOT retry until the " +
+    "connection is authenticated.";
+}
+
 function connectRequired(toolName: string): GateOutcome {
-  return blocked(
-    `"${toolName}" requires a signed-in account, but this call is not authenticated. ` +
-      "Tell the user to connect this MCP server with OAuth (their MCP client will open a " +
-      "sign-in page when the connection is added/refreshed). Do NOT retry until the " +
-      "connection is authenticated.",
-  );
+  return blocked(signInRequiredText(toolName));
 }
 
 /**

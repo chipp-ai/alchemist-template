@@ -40,7 +40,8 @@ time.
   holds, and token lookup and refresh refuse a pair issued before the
   person's logout-all cutoff. mcp_sk_ keys keep their own revoke.
 - src/mcp/registry.ts: registerMcpTool({ name, description, inputSchema,
-  handler, price?, requiredProductKey?, creditCost? }). Names are unique.
+  handler, capability?, portalSafe?, price?, requiredProductKey?,
+  creditCost? }). Names are unique.
 - src/mcp/tools/*.ts: one tool per file, registered by a side-effect import
   in src/mcp/server.ts. team_summary.ts is the pattern for a tool that reads
   the caller's own data; echo.ts is a harmless example.
@@ -68,6 +69,12 @@ time.
   context.auth.organizationId. Never trust an org or tenant id passed as a
   tool argument (CWE-639). With no auth context, return a "connect with
   OAuth" message.
+- A tool that reads or changes org data sets `capability`. Without it, any
+  signed-in person can call the tool, including a portal viewer, and a
+  creditCost tool spends the org's credits for them. The server checks the
+  capability before the credit gates, so a refused call costs nothing. Set
+  `portalSafe: true` only when the handler scopes to that one person.
 - Tests: src/__tests__/routes/mcp-feature.test.ts,
-  src/__tests__/routes/mcp-agent-tools.test.ts and
+  src/__tests__/routes/mcp-agent-tools.test.ts,
+  src/__tests__/routes/mcp-tool-access.test.ts and
   src/__tests__/routes/builtin-features.test.ts.
