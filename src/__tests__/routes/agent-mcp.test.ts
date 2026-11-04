@@ -135,6 +135,15 @@ const STARTER_ALL = [
   "update_my_profile",
 ];
 
+// The read-only mailing-list tools need `email.broadcast` (admin and up), so
+// viewers and editors must never see them. Admins and owners do.
+const MAILING_TOOLS = [
+  "get_campaign_report",
+  "list_campaigns",
+  "mailing_list_summary",
+  "mailing_readiness",
+];
+
 // ── Auth ──────────────────────────────────────────────────────────────────
 
 dbTest("agent-mcp auth: only a bearer agent token gets in", async () => {
@@ -321,7 +330,23 @@ dbTest("agent-mcp tools/list: filtered by role, hidden tools are unknown on call
     assertEquals(e, [...STARTER_ALL, "test_editor_tool"].sort());
 
     const ad = await toolNames(await bearer(admin.user));
-    assertEquals(ad, [...STARTER_ALL, "test_admin_tool", "test_editor_tool"].sort());
+    assertEquals(
+      ad,
+      [...STARTER_ALL, ...MAILING_TOOLS, "test_admin_tool", "test_editor_tool"].sort(),
+      "admin sees the mailing tools: email.broadcast is an admin capability",
+    );
+
+    // Mailing tools are hidden from viewer and editor AND unknown on call.
+    for (const name of MAILING_TOOLS) {
+      for (const who of [viewer, editor]) {
+        const r = await call(await bearer(who.user), name);
+        assertEquals(r.error.code, -32602, name);
+        assertEquals(r.error.message, `Unknown tool: ${name}`, name);
+      }
+    }
+    // The role that may use them can call one.
+    const allowed = await call(await bearer(admin.user), "mailing_readiness");
+    assertEquals(allowed.error, undefined);
 
     const hidden = await call(await bearer(viewer.user), "test_editor_tool");
     assertEquals(hidden.error.code, -32602);
