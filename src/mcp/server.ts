@@ -60,8 +60,8 @@ export function createMcpServer(context: McpServerContext = {}): McpServer {
       capabilities: {
         tools: {},
       },
-      instructions: `Tools for ${BRAND.name}. They act as the signed-in person, inside their ` +
-        "organization only, with the same permissions they have in the app. Tools marked " +
+      instructions: `Tools for ${BRAND.name}. They act as the signed-in person. The app's ` +
+        "agent tools follow that person's role and organization. Tools marked " +
         "destructive change data: ask the person before calling one.",
     },
   );

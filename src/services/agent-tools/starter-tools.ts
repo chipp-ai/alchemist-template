@@ -146,7 +146,7 @@ registerAgentTool({
 registerAgentTool({
   name: "update_my_profile",
   description:
-    "Change the signed-in user's own display name. Changes data: the person confirms first.",
+    "Change the signed-in user's own display name. Changes data: ask the person first.",
   inputSchema: {
     type: "object",
     properties: {
