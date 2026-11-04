@@ -242,6 +242,7 @@ when you work in its area, so the hub stays focused.
 | `services-jobs.md` | `src/services/**`, `src/jobs/**` | Service structure, logging contract, `AppError` classes |
 | `events.md` | `src/lib/events.ts`, `src/jobs/event-consumer.ts`, `src/api/routes/events/**`, the events migration | Durable events: publish, consumer, inbox, outbound webhooks, retry and replay mechanics |
 | `design.md` | `web/src/design/**`, `app.css`, `*.svelte` | design.json, presets, font catalog, token rules, the /#/design sheet |
+| `ux.md` | `web/src/**/*.svelte`, `landing/src/**/*.astro` | The consumer UX bar: every state designed, one state one message, plain words, toasts for outcomes, one primary action, one left edge, done means seen |
 | `frontend-state.md` | `web/src/App.svelte`, `web/src/routes.ts`, `web/src/recipe-routes.ts`, `web/src/routes/**`, `web/src/stores/**`, `query.svelte.ts`, `context-switch.svelte.ts` | Page lifetime and tenant context: the Router key, `runContextSwitch()`, store resets, the switcher checklist; public pages via `recipePublicRoutes` |
 | `files.md` | `src/services/storage*.ts`, `uploaded-file.service.ts`, `upload-types.ts`, `src/api/routes/files/**`, `web/src/stores/uploads.svelte.ts`, `web/src/components/*Upload*` | Storage service, managed uploads, org-scoped files, presigned URLs, type allowlist, cross-tenant key contract |
 | `landing.md` | `landing/**`, `src/lib/landing-site.ts` | The homepage at `/`, placeholder copy, app-first products, where front ends may live, brand colors on the landing site |
@@ -2147,7 +2148,7 @@ Before reporting any implementation as complete:
 1. **Type checks:** `deno task check` passes (in a Chipp sandbox, `deno task check:touched <every file you changed>` passes; Publish and the deploy build run the full check)
 2. **Tests written and passing:** `deno task test:fast 2>&1 | tee .scratch/test-output.txt`
 3. **API tested** (for backend changes): write a scratch test in `.scratch/` and run it
-4. **Browser verified** (for UI changes): hard reload and check the actual rendered result
+4. **Browser verified** (for UI changes): hard reload and check the actual rendered result in every state, light and dark, desktop and phone, against `.claude/rules/ux.md`
 5. **No errors** in server logs (`.scratch/logs/server.log`) or browser console
 
 **If ANY check fails: fix, re-run, proceed only when green.**
