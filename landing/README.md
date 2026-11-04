@@ -22,7 +22,8 @@ In the Builder it runs as a second preview app named "Landing site".
 
 - **Words:** `src/content/site.json`. Every page and the JSON-LD read it.
 - **Pages:** `src/pages/index.astro` ("/") and `src/pages/[...path].astro`
-  (every other page), plus sitemap.xml and robots.txt. The classic home,
+  (every other page), plus sitemap.xml, robots.txt, llms.txt, llms-full.txt
+  and `.well-known/api-catalog`. The classic home,
   about and pricing pages are `src/components/legacy/`.
 - **Composed pages:** one JSON file per page in `src/content/pages/`, any
   path (nested too), built from sections in `src/components/sections/`
@@ -67,6 +68,29 @@ A composed page for `/` makes the whole site composed: every page then comes
 from `src/content/pages/`, and the classic about and pricing pages are not
 built. A rebuilt (migrated) site works this way. See "Rebuilding a migrated
 site" in `../.claude/rules/landing.md`.
+
+## What AI agents read (fill these in site.json)
+
+Answer engines and coding agents recommend a product when they can say in
+one line what it is, read its facts as data, and find how to connect to it.
+These site.json fields drive that. Every one is optional: leave it out and
+its sentence, section or file is simply not built.
+
+| Field | Renders |
+|---|---|
+| `category: { "name": "shipment tracking board", "audience": "freight brokers" }` | "Railyard is the shipment tracking board for freight brokers." right under the home H1, plus `applicationSubCategory`, `audience` and `disambiguatingDescription` in the JSON-LD and the first line of llms.txt |
+| `pricing.plans` (+ `pricing.currency`, ISO 4217) | one schema.org `Offer` per plan with a readable price ("$49", "30 GBP", "Free"); "Contact us" gets none |
+| `useCases: [{ title, body }]` | "What can you use X for?" section |
+| `alternatives: [{ name, summary, chooseUs, chooseThem }]` | "How does X compare?" section. Be honest; `summary` is 100 words or less |
+| `agents: { mcp: { url, name }, openapi, docs, setupPrompt }` | "Use X with your AI agent" (Claude Code and Cursor install snippets, a copy-paste setup prompt), `/.well-known/api-catalog` (RFC 9727), `<link rel="service-desc">`, and llms.txt links. Set `mcp.url` to `/api/mcp` only after the MCP feature is on (`ALCHEMIST_FEATURE_MCP`); put an OpenAPI file in `public/openapi.json` or point at one under `/api/` |
+| `sameAs: ["https://github.com/acme"]` | `Organization.sameAs` (https links only) |
+| `url` | canonical URLs, absolute JSON-LD and llms.txt links, the sitemap entries and the robots.txt Sitemap line. Without it those are left out |
+
+`/llms.txt` and `/llms-full.txt` are generated from site.json and the built
+pages (`src/pages/[llms].txt.ts`, `src/lib/agent-facts.ts`). A file in
+`public/llms.txt` (the Builder's SEO settings write one) wins over the
+generated one. robots.txt keeps `/app/` and `/api/` disallowed for every
+crawler.
 
 ## The AEO rules
 

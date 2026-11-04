@@ -153,6 +153,14 @@ folder other than `web/` and `landing/` is a separate front end
 - **Copy lives in `landing/src/content/site.json`.** Change the words there,
   not in the pages. The JSON-LD is built from the same values, so it always
   matches the visible text.
+- **Fill what AI agents read.** site.json also takes `category` (name and
+  audience, rendered as "<Product> is the <category> for <audience>." under
+  the H1), `useCases`, `alternatives`, `agents` (MCP URL, OpenAPI, docs),
+  `sameAs` and `pricing.currency`. They feed the JSON-LD (SoftwareApplication
+  with Offers, Organization, FAQPage), the generated `/llms.txt` and
+  `/llms-full.txt`, `/.well-known/api-catalog` and the "Use with your AI
+  agent" section. Each is omitted when empty. Shapes: "What AI agents read"
+  in `landing/README.md`.
 - **The build enforces the AEO rules.** `cd landing && npm run build` runs
   `astro build` and then `scripts/aeo-check.mjs`; the same build runs in CI
   and in the deploy image, so a broken rule fails the deploy. The 11 rules,

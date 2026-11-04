@@ -42,6 +42,15 @@ homepage at `/app/#/`, so the product looked unfinished to every visitor.
   (`web/src/recipe-routes.ts`), or a signed-out visitor lands on the login
   form.
 
+## Fill what AI agents read
+
+When you write site.json for a real product, also fill `category` (name and
+audience: "<Product> is the <category> for <audience>"), `useCases`,
+`alternatives` when the person named any, `pricing.currency`, `sameAs`, and
+`agents` when the project has an MCP server, OpenAPI document or API docs.
+Only facts the person gave; never invent a competitor, price or claim. The
+shapes and what each renders: "What AI agents read" in `landing/README.md`.
+
 ## Build only in `web/` or `landing/`
 
 The Dockerfile builds and serves exactly two front ends: the SPA in `web/`

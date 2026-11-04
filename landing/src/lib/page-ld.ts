@@ -9,13 +9,7 @@
  * a FAQ the reader cannot see on the page is not allowed.
  */
 import type { BlogPost, ComposedPage, FaqSection } from "./composed";
-import { absoluteUrl, site } from "./site";
-
-function organization(): Record<string, unknown> {
-  const org: Record<string, unknown> = { "@type": "Organization", "@id": "#organization", name: site.name };
-  if (site.url) org.url = site.url;
-  return org;
-}
+import { absoluteUrl, organizationNode as organization, site } from "./site";
 
 function faqNode(items: { question: string; answer: string }[]): object | null {
   if (items.length === 0) return null;

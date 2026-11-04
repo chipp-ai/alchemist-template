@@ -3,45 +3,19 @@
 // pages (src/__tests__/fixtures/site-migration). Run with: npm test.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { checkDist } from "./aeo-check.mjs";
+import { build, LANDING, REPO, tempRepo as tempRepoBase } from "./temp-landing.mjs";
 import { convertForm, fileNameForPath, formatReport, importSiteModel, makeContentReader, makeRewriter, planImport } from "./import-site-model.mjs";
 import { catalogProblems } from "../src/lib/composed.ts";
 
-const LANDING = join(dirname(fileURLToPath(import.meta.url)), "..");
-const REPO = join(LANDING, "..");
 const FIXTURES = join(REPO, "src", "__tests__", "fixtures");
 const FIXTURE = join(FIXTURES, "site-migration");
 
-/** A temp repo with a copy of landing/ (shared node_modules) and web/src/design. */
+/** A temp repo (temp-landing.mjs), optionally with a site-migration fixture's chipp/ folder. */
 function tempRepo({ withFixture = false, fixture = FIXTURE, siteJson } = {}) {
-  const root = mkdtempSync(join(tmpdir(), "landing-site-"));
-  const skip = new Set(["node_modules", "dist", ".astro"]);
-  cpSync(LANDING, join(root, "landing"), {
-    recursive: true,
-    filter: (src) => !relative(LANDING, src).split(sep).some((part) => skip.has(part)),
-  });
-  symlinkSync(join(LANDING, "node_modules"), join(root, "landing", "node_modules"), "dir");
-  cpSync(join(REPO, "web", "src", "design"), join(root, "web", "src", "design"), { recursive: true });
-  // Start from the template's own content: no composed pages or posts.
-  rmSync(join(root, "landing", "src", "content", "pages"), { recursive: true, force: true });
-  rmSync(join(root, "landing", "src", "content", "posts"), { recursive: true, force: true });
-  if (siteJson) writeFileSync(join(root, "landing", "src", "content", "site.json"), JSON.stringify(siteJson, null, 2));
-  if (withFixture) cpSync(join(fixture, "chipp"), join(root, "chipp"), { recursive: true });
-  return root;
-}
-
-function build(root) {
-  const landing = join(root, "landing");
-  execFileSync(process.execPath, [join(landing, "node_modules", "astro", "bin", "astro.mjs"), "build", "--silent"], {
-    cwd: landing,
-    stdio: "pipe",
-  });
-  return join(landing, "dist");
+  return tempRepoBase({ siteJson, chippDir: withFixture ? join(fixture, "chipp") : undefined });
 }
 
 const read = (dist, path) => readFileSync(join(dist, path), "utf8");

@@ -5,6 +5,7 @@
 // that answer engines read. Every word comes from src/content/site.json.
 import Layout from "../../layouts/Layout.astro";
 import { homeFaq, homeHero, site } from "../../lib/site";
+import { agentSetup, alternatives, categoryStatement, useCases, useCasesIntro } from "../../lib/agent-facts";
 
 const hero = homeHero();
 const faq = homeFaq();
@@ -13,6 +14,19 @@ const steps = (site.steps ?? []).slice(0, 4);
 const audience = site.audience ?? [];
 const plans = site.pricing.plans ?? [];
 const shot = site.productShot?.src ? site.productShot : null;
+// What agents quote: the category sentence under the H1, use cases, honest
+// comparisons and how to connect an agent. Each is omitted when site.json
+// has none (lib/agent-facts.ts).
+const category = categoryStatement(site);
+const cases = useCases(site);
+const alts = alternatives(site);
+const agent = agentSetup(site);
+const agentIntro = agent
+  ? [
+    agent.mcpUrl ? `${site.name} has an MCP server, so Claude, ChatGPT, Cursor and other agents can use it directly.` : "",
+    agent.openapiUrl ? `Its REST API is described by an OpenAPI document.` : "",
+  ].filter(Boolean).join(" ") || `Point your agent at the ${site.name} developer docs.`
+  : "";
 const title = hero.headline === site.name ? `${site.name}: ${site.definition.what}` : `${site.name}: ${hero.headline}`;
 // The product sketch (no screenshot yet) labels its rows with the features.
 // With no features yet it draws unlabeled bars, never placeholder words.
@@ -25,6 +39,7 @@ const sketchCols = [0, 1, 2].map((i) => sketchLabels[i] ?? '');
     <div class="wrap hero-copy">
       <p class="kicker">{hero.eyebrow}</p>
       <h1 id="hero-title">{hero.headline}</h1>
+      {category && <p class="category-line" data-testid="landing-hero-category">{category}</p>}
       <p class="subhead">{hero.subhead}</p>
       <div class="actions">
         <a class="button" href={site.cta.href}>{site.cta.label}</a>
@@ -89,6 +104,25 @@ const sketchCols = [0, 1, 2].map((i) => sketchLabels[i] ?? '');
           ))}
         </ul>
         <p class="as-of">Features as of {site.asOf}.</p>
+      </div>
+    </section>
+  )}
+
+  {cases.length > 0 && (
+    <section class="section" aria-labelledby="use-cases">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="use-cases">What can you use {site.name} for?</h2>
+          <p>{useCasesIntro(site, cases)}</p>
+        </div>
+        <ul class="grid">
+          {cases.map((u) => (
+            <li class="card">
+              <h3>{u.title}</h3>
+              <p class="muted">{u.body}</p>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   )}
@@ -170,6 +204,72 @@ const sketchCols = [0, 1, 2].map((i) => sketchLabels[i] ?? '');
     </section>
   )}
 
+  {alts.length > 0 && (
+    <section class="section" aria-labelledby="compare">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="compare">How does {site.name} compare?</h2>
+          <p>An honest look at the other options, as of {site.asOf}.</p>
+        </div>
+        <ul class="grid">
+          {alts.map((a) => (
+            <li class="card compare">
+              <h3>{site.name} or {a.name}?</h3>
+              <p>{a.summary}</p>
+              {(a.chooseUs || a.chooseThem) && (
+                <dl>
+                  {a.chooseUs && <><dt>Pick {site.name} when</dt><dd class="muted">{a.chooseUs}</dd></>}
+                  {a.chooseThem && <><dt>Pick {a.name} when</dt><dd class="muted">{a.chooseThem}</dd></>}
+                </dl>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )}
+
+  {agent && (
+    <section class="section" aria-labelledby="agents" id="ai-agents">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="agents">Use {site.name} with your AI agent</h2>
+          <p>{agentIntro}</p>
+        </div>
+        <div class="agent-grid">
+          {agent.claudeCode && (
+            <div class="card">
+              <h3>Claude Code</h3>
+              <p class="muted">Run this in your terminal.</p>
+              <pre><code id="agent-claude-code">{agent.claudeCode}</code></pre>
+              <button type="button" class="button secondary copy" data-copy="agent-claude-code" data-testid="landing-agents-button-copy-claude">Copy</button>
+            </div>
+          )}
+          {agent.mcpJson && (
+            <div class="card">
+              <h3>Cursor and other MCP clients</h3>
+              <p class="muted">Add this to <code>.cursor/mcp.json</code> or your client's MCP settings.</p>
+              <pre><code id="agent-mcp-json">{agent.mcpJson}</code></pre>
+              <button type="button" class="button secondary copy" data-copy="agent-mcp-json" data-testid="landing-agents-button-copy-mcp">Copy</button>
+            </div>
+          )}
+          <div class="card agent-prompt">
+            <h3>Setup prompt</h3>
+            <p class="muted">Paste this into Claude, ChatGPT or any agent.</p>
+            <pre><code id="agent-setup-prompt">{agent.prompt}</code></pre>
+            <button type="button" class="button secondary copy" data-copy="agent-setup-prompt" data-testid="landing-agents-button-copy-prompt">Copy</button>
+          </div>
+        </div>
+        <ul class="agent-links">
+          {agent.mcpUrl && <li>MCP server: <code>{agent.mcpUrl}</code></li>}
+          {agent.openapiUrl && <li><a href={agent.openapiUrl}>OpenAPI document</a></li>}
+          {agent.docsUrl && <li><a href={agent.docsUrl}>Developer docs</a></li>}
+          <li><a href="/llms.txt">llms.txt</a></li>
+        </ul>
+      </div>
+    </section>
+  )}
+
   {faq.length > 0 && (
     <section class="section" aria-labelledby="faq">
       <div class="wrap">
@@ -196,6 +296,22 @@ const sketchCols = [0, 1, 2].map((i) => sketchLabels[i] ?? '');
       <a class="button inverse" href={site.cta.href}>{site.cta.label}</a>
     </div>
   </section>
+  {agent && (
+  <script is:inline>
+    // Copy buttons in "Use with your AI agent". The text is in the HTML either
+    // way; without JavaScript (or a clipboard) a reader selects it by hand.
+    document.querySelectorAll("button[data-copy]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var el = document.getElementById(b.getAttribute("data-copy"));
+        if (!el || !navigator.clipboard) return;
+        navigator.clipboard.writeText(el.textContent || "").then(function () {
+          b.textContent = "Copied";
+          setTimeout(function () { b.textContent = "Copy"; }, 1500);
+        });
+      });
+    });
+  </script>
+  )}
 </Layout>
 
 <style>
@@ -265,6 +381,24 @@ const sketchCols = [0, 1, 2].map((i) => sketchLabels[i] ?? '');
   .steps p { color: var(--muted); }
 
   .plan .price { font-size: 1.75rem; margin: 0.5rem 0; font-family: var(--headingFont); }
+
+  .category-line { margin-top: 1.25rem; max-width: 38rem; font-size: clamp(1.125rem, 1.8vw, 1.375rem); font-weight: 600; color: var(--text); }
+  .category-line + .subhead { margin-top: 0.5rem; }
+
+  .compare h3 { margin-bottom: 0.5rem; }
+  .compare dt { font-size: 0.9375rem; }
+
+  .agent-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+  .agent-grid h3 { margin-bottom: 0.35rem; }
+  .agent-grid pre {
+    margin: 0.75rem 0; padding: 0.875rem 1rem; overflow-x: auto;
+    background: var(--tint); border: 1px solid var(--line); border-radius: min(var(--radius), 8px);
+    font-size: 0.875rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .agent-prompt { grid-column: 1 / -1; }
+  .copy { min-height: 2.25rem; padding: 0.4rem 0.9rem; font-size: 0.9rem; }
+  .agent-links { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin-top: 1.5rem; font-size: 0.9375rem; }
+  .agent-links code { overflow-wrap: anywhere; }
 
   .faq { display: grid; gap: 0; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); column-gap: 3rem; }
   .faq-item { padding: 1.25rem 0; border-bottom: 1px solid var(--line); }

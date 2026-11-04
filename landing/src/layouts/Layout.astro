@@ -11,6 +11,7 @@
 import { absoluteUrl, formatDate, jsonLd, loadBrand, scriptJson, site, type SiteFaq } from "../lib/site";
 import "../styles/theme.css";
 import { customCode, footerLinks, headerLinks } from "../lib/content";
+import { agentSetup, apiCatalog } from "../lib/agent-facts";
 import type { PageSeo } from "../lib/composed";
 
 interface Props {
@@ -66,6 +67,10 @@ const navLinks = headerLinks();
 const footLinks = footerLinks();
 const customHead = customCode("head");
 const customBodyEnd = customCode("bodyEnd");
+// Machine-readable pointers for agents: the llms.txt index, the API catalog
+// and the OpenAPI document (only when site.json has them).
+const agents = agentSetup(site);
+const hasApiCatalog = apiCatalog(site) !== null;
 ---
 <!doctype html>
 <html lang="en">
@@ -87,6 +92,9 @@ const customBodyEnd = customCode("bodyEnd");
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href={fontsHref} />
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
+    {hasApiCatalog && <link rel="api-catalog" href="/.well-known/api-catalog" />}
+    {agents?.openapiUrl && <link rel="service-desc" type="application/vnd.oai.openapi+json" href={agents.openapiUrl} />}
     <script type="application/ld+json" set:html={ld} />
     {extraLdJson.map((x) => <script type="application/ld+json" set:html={x} />)}
     <script is:inline>

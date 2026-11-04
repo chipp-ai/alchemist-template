@@ -30,7 +30,7 @@
  * sitemap lists only "/" in this mode (landing/src/lib/pages.ts).
  */
 
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { serveStatic } from "hono/deno";
 import { APP_BASE_PATH } from "@/config/site.ts";
 import { log } from "@/lib/logger.ts";
@@ -134,6 +134,20 @@ export function scanLandingDist(dir: string = LANDING_DIST_DIR): LandingFiles {
 }
 
 /**
+ * Content types for landing files with no extension, by request path.
+ * /.well-known/api-catalog (RFC 9727) is the API catalog the landing build
+ * writes when site.json has `agents` (landing/src/lib/agent-facts.ts).
+ */
+export const LANDING_EXTENSIONLESS_TYPES: Readonly<Record<string, string>> = {
+  "/.well-known/api-catalog": "application/linkset+json",
+};
+
+function setLandingContentType(_file: string, c: Context): void {
+  const type = LANDING_EXTENSIONLESS_TYPES[c.req.path];
+  if (type) c.header("Content-Type", type);
+}
+
+/**
  * The landing site middleware, or null when `landing/dist` is not built.
  * Checked once at boot: neither the build nor the mode can change in a
  * running pod. With null, "/" falls through to the SPA shell in app.ts.
@@ -147,7 +161,7 @@ export function landingSiteMiddleware(
   mode: HomepageMode = readHomepageMode(),
 ): MiddlewareHandler | null {
   if (!landingSiteBuilt(dir)) return null;
-  const serve = serveStatic({ root: dir });
+  const serve = serveStatic({ root: dir, onFound: setLandingContentType });
   if (mode === "app") {
     const { files, pages } = scanLandingDist(dir);
     return async (c, next) => {

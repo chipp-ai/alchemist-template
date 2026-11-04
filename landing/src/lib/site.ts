@@ -17,6 +17,7 @@ import { resolve } from "node:path";
 import raw from "../content/site.json";
 import { bestTextOn, contrastRatio, mix, shadowValues, tintForContrast } from "../../../web/src/design/tokens.ts";
 import type { BlogSettings } from "./composed";
+import { type AgentFactsFields, applicationExtras, sameAs } from "./agent-facts";
 
 export interface SiteFaq {
   question: string;
@@ -42,7 +43,7 @@ export interface SiteLink {
   href: string;
 }
 
-export interface SiteContent {
+export interface SiteContent extends AgentFactsFields {
   /**
    * What the deployed root URL "/" serves. "landing" (the default) serves
    * this site; "app" serves the app there instead (an app-first product),
@@ -61,7 +62,8 @@ export interface SiteContent {
   features: SiteBlock[];
   faq: SiteFaq[];
   testimonials: { quote: string; name: string; role: string }[];
-  pricing: { question: string; answer: string; plans: SitePlan[] };
+  /** `currency` (ISO 4217, e.g. "USD") is used for Offer JSON-LD when a price has no symbol. */
+  pricing: { question: string; answer: string; plans: SitePlan[]; currency?: string };
   about: { question: string; answer: string; body: string };
   cta: SiteLink;
   /**
@@ -268,10 +270,18 @@ export function absoluteUrl(path: string): string {
   return base ? `${base}${path}` : path;
 }
 
+/** The Organization node every page's JSON-LD carries (with `sameAs` links when set). */
+export function organizationNode(content: SiteContent = site): Record<string, unknown> {
+  const org: Record<string, unknown> = { "@type": "Organization", "@id": "#organization", name: content.name };
+  if (content.url) org.url = content.url;
+  const links = sameAs(content);
+  if (links.length > 0) org.sameAs = links;
+  return org;
+}
+
 /** The JSON-LD graph for a page. `faq` is set only on pages that show the FAQ. */
 export function jsonLd(page: { path: string; title: string; description: string; faq?: SiteFaq[] }): object {
-  const org: Record<string, unknown> = { "@type": "Organization", "@id": "#organization", name: site.name };
-  if (site.url) org.url = site.url;
+  const org = organizationNode();
 
   const app: Record<string, unknown> = {
     "@type": "SoftwareApplication",
@@ -283,6 +293,7 @@ export function jsonLd(page: { path: string; title: string; description: string;
   };
   if (site.url) app.url = site.url;
   if (site.productShot?.src) app.screenshot = absoluteUrl(site.productShot.src);
+  Object.assign(app, applicationExtras(site, site.url));
 
   const webPage: Record<string, unknown> = {
     "@type": "WebPage",

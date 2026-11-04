@@ -96,6 +96,25 @@ Deno.test("with a landing build: / and marketing pages are landing, /app is the 
   }
 });
 
+Deno.test("/.well-known/api-catalog from the landing build is served as application/linkset+json, in both modes", async () => {
+  const dir = await landingBuild();
+  try {
+    await Deno.mkdir(`${dir}/.well-known`);
+    await Deno.writeTextFile(`${dir}/.well-known/api-catalog`, '{"linkset":[]}\n');
+    for (const mode of ["landing", "app"] as HomepageMode[]) {
+      const res = await buildApp(dir, mode).request("/.well-known/api-catalog");
+      assertEquals(res.status, 200, mode);
+      assertEquals(res.headers.get("content-type"), "application/linkset+json", mode);
+      assertEquals(await res.json(), { linkset: [] });
+    }
+    // Other files keep the type their extension gives.
+    const llms = await buildApp(dir).request("/llms.txt");
+    assertStringIncludes(llms.headers.get("content-type") ?? "", "text/plain");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
 Deno.test("without a landing build: / falls back to the SPA", async () => {
   const dir = await Deno.makeTempDir({ prefix: "landing-missing-" });
   try {

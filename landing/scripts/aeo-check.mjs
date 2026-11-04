@@ -17,6 +17,7 @@
 //   - FAQPage JSON-LD text matches the visible text word for word
 //   - robots.txt lets AI search crawlers in, meta-webindexer included
 //   - sitemap entries carry a lastmod
+//   - llms.txt opens with an H1 (the product name)
 //
 // Pages whose words came from somewhere else carry <main data-aeo="relaxed">:
 // composed pages rebuilt from an old site (importedFrom) and blog posts.
@@ -314,6 +315,12 @@ export function checkSitemap(xml) {
   return errors;
 }
 
+/** llms.txt (llmstxt.org) opens with an H1: "# <name>". */
+export function checkLlms(text) {
+  const first = text.split("\n").find((l) => l.trim() !== "") ?? "";
+  return /^# \S/.test(first) ? [] : ['llms.txt must open with "# <product name>"'];
+}
+
 // ── Runner ──
 
 function collectHtml(dir) {
@@ -387,6 +394,9 @@ export function checkDist(dist, { redirectsFile = join(dist, "..", "..", "chipp"
   const robots = join(dist, "robots.txt");
   if (!existsSync(robots)) problems.push("robots.txt is missing");
   else problems.push(...checkRobots(readFileSync(robots, "utf8")).map((e) => `robots.txt: ${e}`));
+  const llms = join(dist, "llms.txt");
+  if (!existsSync(llms)) problems.push("llms.txt is missing");
+  else problems.push(...checkLlms(readFileSync(llms, "utf8")).map((e) => `llms.txt: ${e}`));
   const sitemap = join(dist, "sitemap.xml");
   if (!existsSync(sitemap)) problems.push("sitemap.xml is missing");
   else problems.push(...checkSitemap(readFileSync(sitemap, "utf8")).map((e) => `sitemap.xml: ${e}`));
