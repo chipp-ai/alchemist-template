@@ -226,7 +226,8 @@ These guide all code review and implementation decisions:
 - **`deno task check`, `check:tests` and `check:touched` run the native TypeScript 7 compiler** through `scripts/check-types.ts` (a few times faster than `deno check`, same diagnostics). It falls back to `deno check` on its own when it cannot give a verdict; `CHECK_ENGINE=deno` forces `deno check`. CI runs both and fails if either fails. `scripts/lib/tsgo-check.ts` is copied from chipp-deno: change it there first, then copy it here unchanged.
 - **Kysely aggregates take columns from the query's builder, never `db.fn`:** `.select((eb) => [eb.fn.max("col").as("x")])`, not `.select([db.fn.max("col").as("x")])`. The bare form makes TypeScript search every table's columns and can add tens of seconds to every type check; `src/__tests__/kysely-unscoped-db-fn.test.ts` fails on it.
 - **Type-check the files you changed with `deno task check:touched <file> [more files]`** (up to 20 files) while you work and before you finish. Outside a Chipp sandbox, `deno task check` checks the whole app.
-- **In a Chipp sandbox (Builder or Software Factory), every `deno` command goes through a memory guard.** It REFUSES a whole-repo check (`deno task check`, `deno task check:tests`, `deno check main.ts`, `deno check src/`) and every test run, with a `[chipp deno-guard] refused` line. That is the sandbox, not a fault in this repo: do not work around it. It allows `deno check <file>` and `deno task check:touched <file>` on up to 20 files that are not `main.ts`; each also checks everything those files import. The full `deno check main.ts` runs where it can: Builder Publish runs it before merging, and the deploy build runs it again.
+- **In a Chipp sandbox (Builder or Software Factory), every `deno` command goes through a memory guard.** Since 2026-10-23 it RUNS this project's tests under a memory lease: run the tests that cover every file you touched (`deno test --env --no-check --allow-all <test files> 2>&1 | tee .scratch/test-output.txt`) and cite deno's summary line (`ok | N passed | 0 failed | M ignored`). It still refuses a whole-repo check (`deno task check`, `deno task check:tests`, `deno check main.ts`, `deno check src/`) with a `[chipp deno-guard] refused` line; that is the sandbox, not a fault in this repo, so do not work around it. It allows `deno check <file>` and `deno task check:touched <file>` on up to 20 files that are not `main.ts`; each also checks everything those files import. If the guard refuses a test run (an older sandbox image), quote the refused line verbatim in your report; never write "tests not run" without it. The full `deno check main.ts` runs at Builder Publish and in the deploy build.
+- **Change project files, not base files, to make a feature work.** `app.ts`, `web/src/components/Sidebar.svelte`, `src/api/routes/auth/index.ts`, `web/src/routes.ts` and `db/migrate.ts` / `db/_runner.ts` are the template's: their fixes reach a project through the template. Use the hooks they expose (`recipe-routes.ts`, `chipp-app.json`, registries). Never import template code from a moving URL (a branch on raw.githubusercontent.com); pin a commit SHA, or copy the file.
 - **Tests that create DB resources must use `createIsolatedUser()`** -- never the shared test user. Parallel tests can delete each other's data.
 - **NEVER use `--no-verify` or `--no-gpg-sign`** on any git command. If hooks fail, fix the underlying issue.
 - **Every interactive element gets `data-testid`** following `{area}-{component}-{element}` convention (e.g., `data-testid="settings-form-input-name"`).
@@ -254,6 +255,7 @@ when you work in its area, so the hub stays focused.
 | `frontend-state.md` | `web/src/App.svelte`, `web/src/routes.ts`, `web/src/recipe-routes.ts`, `web/src/routes/**`, `web/src/stores/**`, `query.svelte.ts`, `context-switch.svelte.ts` | Page lifetime and tenant context: the Router key, `runContextSwitch()`, store resets, the switcher checklist; public pages via `recipePublicRoutes` |
 | `files.md` | `src/services/storage*.ts`, `uploaded-file.service.ts`, `upload-types.ts`, `src/api/routes/files/**`, `web/src/stores/uploads.svelte.ts`, `web/src/components/*Upload*` | Storage service, managed uploads, org-scoped files, presigned URLs, type allowlist, cross-tenant key contract |
 | `landing.md` | `landing/**`, `src/lib/landing-site.ts` | The homepage at `/`, placeholder copy, app-first products, where front ends may live, brand colors on the landing site |
+| `security.md` | `src/api/**`, `src/auth/**`, `src/services/**`, `app.ts` | Tenant scoping, route authorization, redirects, SSRF, injection, secrets and codes out of logs, uploads and decompression, CSV and link safety, CORS, member text in prompts |
 | `ssr.md` | `src/services/ssr/**`, `src/services/storefront/**`, `web/src/islands/**`, `optional-session.ts`, `spa-shell.ts` | Server-rendered public pages: route-module discovery, escaping, JSON-LD, design tokens, `optionalSession`, caching, Svelte islands |
 
 In Claude Code these load when you read a matching file. The Alchemist
@@ -410,6 +412,11 @@ The rules:
   runs, releases it, and guards same-process overlap. A source scan
   (`src/__tests__/no-session-advisory-lock.test.ts`) fails the build on any
   `pg_try_advisory_lock(` / `pg_advisory_lock(` outside test provisioning.
+- **Key a per-IP limit on `clientIp()` from `src/lib/client-ip.ts`** (Cloudflare's
+  `cf-connecting-ip`), never the first `X-Forwarded-For` entry or a cookie: the
+  caller writes both. A limit that must hold (money, auth, mail) cannot be only
+  this fail-open limiter: back it with an atomic Postgres statement (a
+  conditional `UPDATE ... RETURNING` or a unique constraint).
 - **`SCAN`/`KEYS` are denied by the ACL** (they would leak other tenants' key
   names). If you need to enumerate your own keys, track them explicitly in a
   Redis SET or in Postgres.
@@ -565,6 +572,9 @@ Deno.test("creates an application", async () => {
 - Always use `createIsolatedUser()` for test isolation -- never shared singletons.
 - Always call `cleanup()` in a `finally` block.
 - ALWAYS capture test output to `.scratch/test-output.txt` and grep the file instead of re-running.
+- **A `dbTest` with no database is skipped, not passed.** `dbTest` in `src/__tests__/helpers.ts` sets `ignore` when neither `TEST_DATABASE_URL` nor `DATABASE_URL` is set, so deno reports the case as `ignored`. A run whose summary shows your test as `ignored` proves nothing: start Postgres (`./scripts/setup.sh`, or the sandbox `DATABASE_URL`, then `deno task db:migrate`) and run it again, and `grep ignored .scratch/test-output.txt` before you report.
+- **A test proves the fix only if it fails on the old code.** Drive the real entry point (`app.request(...)` on `app.ts` or the route's Hono app via `withTestServer`), not a copy of the logic. For a bug fix, run the new test once against the base and cite the failing line (see "Evidence").
+- **A test runner script you add ends with `process.exit(failures ? 1 : 0)`** and is chained into the package's test script (the template has no `web/tests/dom`; projects add them, and a runner that never exits hangs CI). A test that greps source must match code, not comments.
 
 ### Test Structure
 
@@ -1067,6 +1077,20 @@ planner decides which sections the app needs. **To add or remove a built-in
 section, edit `chipp-app.json`. Never hide one by editing the sidebar or the
 route table.** The server routes stay mounted (cheap and inert when unused).
 
+- **The flags are the Builder's choice.** Never flip a `chipp-app.json` flag,
+  or put placeholder copy back in `landing/src/content/site.json`, to make a
+  test pass: change the test (`src/__tests__/services/app-modules.test.ts`,
+  `landing/scripts/placeholder-copy.mjs`) so it follows the choice.
+- **The ticket that sets the product name fills every `site.json`
+  placeholder** ("Your product", "X is a web app."), not only `name`.
+
+## Public demos (`DEMO_MODE`)
+
+Read `docs/demo-mode.md` before building a demo. A public demo never shares
+one writable account or org across visitors and never grants admin: make it
+read-only, or give each visitor a throwaway org of their own. Find the demo org
+by an id the seed owns, never by a slug or name a visitor can claim.
+
 ## Design system — the FIRST step of every new project
 
 Every project used to ship looking exactly like this template. That is the
@@ -1237,7 +1261,7 @@ The `POST /auth/touch` endpoint re-issues a JWT with a fresh `exp` claim and res
 
 Multiple Claude Code workers run side-by-side on this repo's `staging` branch at all times. When you commit, **other workers' uncommitted changes may already be in your working tree** — that is expected, not a bug. The rule:
 
-**Always `git add -A` before committing.** Never cherry-pick individual files trying to "separate your changes from another worker's." Don't try to reason about which lines are "yours" and which aren't — that distinction is meaningless when sessions get compacted, contexts overlap, and the same agent picks back up with a stale model of what it already wrote. The working tree is the truth; commit all of it.
+**Always `git add -A` before committing.** Run `git status --short` first: if it lists sandbox worktree gitlinks (`worktrees/*`, `.claude/worktrees/*`) or build output (`.build-*`, `dist/`), add the path to `.gitignore` instead of committing it. Never cherry-pick individual files trying to "separate your changes from another worker's." Don't try to reason about which lines are "yours" and which aren't: that distinction is meaningless when sessions get compacted, contexts overlap, and the same agent picks back up with a stale model of what it already wrote. The working tree is the truth; commit all of it.
 
 **Never `git stash` to "isolate your commit"** from another worker's in-progress changes. Stashing parks work in a per-clone reflog that other workers can't see and that gets lost on `git reset --hard`, `git clean -fd`, or a worktree teardown — uncommitted work outside the index has no durable home. The entire point of the always-commit rule is that the index is the only place work survives.
 
@@ -1502,6 +1526,12 @@ that has purchases (FK is RESTRICT on purpose).
   entitlement in the checkout success redirect (users refresh; Stripe
   retries). `recordProductPurchase` / `applyProductSubscriptionEvent` are
   safe under replays and out-of-order delivery — go through them.
+- **Webhook handlers read Stripe defensively.** Treat `""` metadata as missing
+  (a checkout that stamps `organizationId: ""` fulfills nothing otherwise),
+  read a field that moved in newer Stripe API versions from both places
+  (`invoice.subscription` and `invoice.parent.subscription_details`), stamp
+  conversion state in the same handler that records the payment, and return
+  5xx only for a failure a retry can fix.
 - **`mapSubscriptionToTier` must only return values in the
   `subscription_tier` enum** (`FREE|STARTER|PRO|ENTERPRISE`). A made-up tier
   name crashes the org UPDATE inside the webhook.
@@ -2172,10 +2202,24 @@ Before reporting any implementation as complete:
 1. **Type checks:** `deno task check` passes (in a Chipp sandbox, `deno task check:touched <every file you changed>` passes; Publish and the deploy build run the full check)
 2. **Tests written and passing:** `deno task test:fast 2>&1 | tee .scratch/test-output.txt`
 3. **API tested** (for backend changes): write a scratch test in `.scratch/` and run it
-4. **Browser verified** (for UI changes): hard reload and check the actual rendered result in every state, light and dark, desktop and phone, against `.claude/rules/ux.md`
+4. **Browser verified** (for UI changes): hard reload and check the actual rendered result in every state, light and dark, at 375x812 and 1280x713, against `.claude/rules/ux.md`. At 375, `document.scrollingElement.scrollWidth <= innerWidth`; at 1280x713, every control is reachable and the focus ring shows
 5. **No errors** in server logs (`.scratch/logs/server.log`) or browser console
 
 **If ANY check fails: fix, re-run, proceed only when green.**
+
+## Evidence: what to run, and what to cite
+
+A report with no cited command reads as "nothing was checked". Cite the output
+itself, not a summary of it.
+
+1. **Tests.** `deno test --env --no-check --allow-all <the test files for what you changed> 2>&1 | tee .scratch/test-output.txt`, then `deno task check:touched <every changed file>`. Cite deno's summary line (`ok | N passed | 0 failed | M ignored`) and the check-types line. A `dbTest` reported as `ignored` is not a pass (see "Testing"). If the guard refuses, quote its `[chipp deno-guard] refused` line.
+2. **Red before green.** For a bug fix, run the new test against the base in a scratch worktree (`git worktree add .scratch/base <base sha>`, copy the test in, run it there, then `git worktree remove .scratch/base`). Cite its failing line, then the passing line after the fix. Never `git stash`.
+3. **Database.** `./scripts/dev.sh --api-port __API_PORT__ --port __VITE_PORT__` starts Postgres, Redis, the API and Vite. If Postgres refuses the `.env.example` credentials, use the sandbox `DATABASE_URL` and run `deno task db:migrate`. Cite the boot line from `.scratch/logs/server.log`.
+4. **Signed in, per role.** `POST /api/dev/login` with `{"email": ...}` signs in as the owner of a new org. For another role, first `POST /api/dev/seed` a user row with that `role` and the org's `organization_id`, then dev-login as that email. Call the route as each role the change touches (owner, viewer, a portal user, a user of a second org) and cite the status per role: refused roles get 403 or 404.
+5. **UI.** `dev_app_state` first, then a screenshot of each changed screen at 1280 and at 375 wide, light and dark, with the `scrollWidth` value at 375. Cite what each screenshot shows.
+6. **Live providers.** With no test key (Stripe, an LLM, R2, a Chipp key), say which call is stubbed and compare the stub's request body to the provider's documented fields. That item is UNVERIFIED, never PASS.
+7. **Landed.** Before you report, `git status --short` is empty, the push succeeded, and `git log -1 --format=%H` is the commit you pushed. Cite the pushed SHA.
+8. **One line per acceptance item:** `AC<n> PASS|FAIL|UNVERIFIED - <command or screenshot> - <result>`. Where your change departs from the ticket's literal wording, say so on that line.
 
 ## Agent verification toolkit — pick the right tool
 

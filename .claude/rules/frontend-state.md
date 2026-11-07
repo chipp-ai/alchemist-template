@@ -95,3 +95,18 @@ A page that needs no session goes in `recipePublicRoutes`
 (`web/src/recipe-routes.ts`), never in `PUBLIC_LITERAL_ROUTES` or
 `isPublicRoute` (`web/src/routes.ts` is base-owned). See
 `docs/agent-guidance/dashboard-shell.md`.
+
+- Never add `/` to `PUBLIC_PREFIX_ROUTES`: it is a prefix match, so every route
+  becomes public.
+- Packs replace `web/src/recipe-routes.ts` and `web/src/features/support.ts`
+  whole. Never add an export there that another file imports; a pack that
+  ships without it breaks the build.
+
+## Loading flags, inputs and lists
+
+- A loading flag comes from the same `createQuery` handle the template renders.
+  A spinner that reads another handle (another tab's query) never clears.
+- Never reformat a bound input's value on every keystroke (typing `100` into a
+  cents field becomes `$1.00`). Format on blur.
+- `{#each}` keys are unique ids, never a label or an index that can repeat
+  (`each_key_duplicate` crashes the page).

@@ -78,6 +78,18 @@ colour are computed (60/30/10, ink-at-alpha, contrast-chosen labels).
 the canvas are warnings. Keep the module dependency-free: the Deno API
 imports it too.
 
+Use only tokens `app.css` defines. The spacing scale is named
+(`--space-xs` to `--space-3xl`); numbered tokens like `var(--space-1)` do not
+exist, and a rule that uses one silently falls back to nothing. A new token gets a dark-mode
+value in the same change.
+
+## Check every changed screen at two sizes
+
+Before you report, view each changed screen at 375x812 and at 1280x713, in
+light and dark. Cite `document.scrollingElement.scrollWidth <= innerWidth` at
+375 (no sideways scroll), every control reachable without scrolling a hidden
+panel at 1280x713, and a visible focus ring.
+
 ## Components
 
 - The sheet at `/#/design` renders every shipped component. **Adding a

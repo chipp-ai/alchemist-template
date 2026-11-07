@@ -66,6 +66,11 @@ Protected routes use `requireAuth` middleware, which populates
 `requireCapability("...")`. Both live in `src/api/middleware/auth.ts` —
 see the `auth` rule for the role hierarchy + capability set.
 
+**A capability is not the whole check.** `app.read` admits viewers and portal
+users. A route that returns org-wide data refuses portal sessions, and it uses
+the same capability as its agent tool (`auth` rule, "REST routes and portal
+users"). Test each new route as a viewer, a portal user and another org.
+
 ## Realtime / WebSockets
 
 The template ships a working WS surface so customer apps don't plumb auth

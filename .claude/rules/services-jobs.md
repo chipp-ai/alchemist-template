@@ -85,6 +85,11 @@ double-processes. There is no leader and no Redis.
   `payload` if every window matters.
 - **Run records** go to `job_history` (`job_type = kind`, status
   completed/failed, `result` = the handler's return, `error` = message).
+- **A job that sends and then marks sent claims the row first**
+  (`UPDATE ... SET status = 'sending', locked_at = now() WHERE status = 'pending' ... RETURNING`)
+  and reclaims rows stuck in `sending` past a stale-lock time, the way
+  `src/services/email-outbox.service.ts` does. Never send and then mark: a
+  failed mark sends twice.
 - **Never start the runner from a test or a script.** `main.ts` starts it
   when `JOBS_ENABLED` is not `0`; tests call `runDueScheduledJobs({ now })`
   and `deliverDueEmails({ now })` directly with an injected clock.

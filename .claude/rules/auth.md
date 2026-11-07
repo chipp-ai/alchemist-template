@@ -83,6 +83,40 @@ owner leaving (transfer, then `POST /leave`), owner switching to a new
 email (change email via the verify-first flow below, or invite the new
 address and transfer to it).
 
+## Sign-in codes
+
+The full contract is CLAUDE.md, "Sign-in codes (OTP) contract". Two rules
+every change here keeps:
+
+- **A try cap is one statement.** Claim the try with
+  `UPDATE otps SET attempts = attempts + 1 WHERE email = $1 AND expires_at > now() AND attempts < 5 RETURNING ...`
+  (`claimOtpTry`) before the compare; no row back means refuse. Never read the
+  count and increment it in a second query, and never delete a spent row.
+- **Every route that writes `otps` uses the same limits.** send-otp and both
+  email-change steps go through `issueOtp`, `enforceOtpSendLimits` and
+  `enforceOtpVerifyLimit`: per address, per IP, per user. A resend never resets
+  `attempts` and never moves expiry past `OTP_MAX_LIFE_MINUTES` from
+  `createdAt`. Messages never say whether an account exists.
+
+## REST routes and portal users
+
+`requireCapability("app.read")` admits every viewer, and portal users are
+viewer accounts. A REST route that returns org-wide data refuses portal
+sessions (check `listPortalAccessForUser(user.id)` or scope to the bindings),
+the same way a tool without `portalSafe: true` is hidden from them. The route
+and its agent tool use the same capability. Every new route gets a test as a
+viewer, a portal user and a user of another org.
+
+## Role changes reach live sessions
+
+Demotion, removal, unlink, invite accept and email change take effect on the
+next request of every live session: `requireAuth` re-reads the user row, so
+never trust a role or org from the JWT alone. An invite never carries a role
+from another org into this one. Sign-up makes each new user the owner of a new
+org of their own. If the project adds a shared org that people join, no one
+becomes its admin by signing in first: name the admin by an explicit address
+in env, and grant nothing when that env var is unset.
+
 ## The startup session check never 401s
 
 `checkAuth()` (web/src/stores/auth.svelte.ts) calls `GET /auth/session`,

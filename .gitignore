@@ -43,3 +43,9 @@ coverage/
 
 # Temp files
 /tmp/
+
+# Sandbox worktrees and generated test bundles. Committed by `git add -A`
+# they become gitlinks and bundles in the project history.
+worktrees/
+.claude/worktrees/
+.build-*/
