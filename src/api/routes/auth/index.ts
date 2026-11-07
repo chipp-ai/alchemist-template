@@ -16,7 +16,7 @@
  *   GET  /:provider/callback        Handle OAuth callback
  */
 
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
@@ -25,6 +25,7 @@ import { log } from "@/lib/logger.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
 import { AppError, BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
 import { rateLimit } from "@/lib/redis.ts";
+import { clientIp } from "@/lib/client-ip.ts";
 import {
   type AuthUser,
   createSessionToken,
@@ -119,18 +120,170 @@ export function setSessionCookie(
  * message for many minutes, so a 10 minute code could arrive already dead.
  */
 export const OTP_TTL_MINUTES = 30;
+/**
+ * The most a code can ever live, counted from when it was minted. A resend
+ * moves a live code's expiry to OTP_TTL_MINUTES from now, but never past
+ * this. Without the cap, anyone who saw a code once could keep it working
+ * forever by asking for a resend every half hour.
+ */
+export const OTP_MAX_LIFE_MINUTES = 60;
 /** Wrong guesses a single code allows before it is spent. */
 export const OTP_MAX_ATTEMPTS = 5;
-/** Code emails per address per window. A guard against abuse, not a limit real people meet. */
-const OTP_SENDS_PER_WINDOW = 10;
-const OTP_SEND_WINDOW_SECONDS = 15 * 60;
 
-function otpExpiresAt(now = new Date()): Date {
-  return new Date(now.getTime() + OTP_TTL_MINUTES * 60 * 1000);
+/**
+ * Abuse limits on every route that mints or checks a code. Guards against
+ * abuse, not limits real people meet. They run on the shared Redis limiter,
+ * which fails open, so a Redis outage never blocks sign-in; the hard limit
+ * is OTP_MAX_ATTEMPTS, enforced in Postgres.
+ *
+ * - sendPerAddress: code emails to one address, shared by send-otp and
+ *   the email-change request, so neither route gets around the other.
+ * - sendPerIp / verifyPerIp: per client IP (`cf-connecting-ip`). Skipped
+ *   when the request carries no edge IP, so one bucket is never shared by
+ *   everyone (local dev, tests).
+ * - emailChangePerUser: email-change codes one signed-in user can ask for,
+ *   across every address.
+ */
+export const OTP_LIMITS = {
+  sendPerAddress: { limit: 10, windowSeconds: 15 * 60 },
+  sendPerIp: { limit: 30, windowSeconds: 15 * 60 },
+  verifyPerIp: { limit: 50, windowSeconds: 15 * 60 },
+  emailChangePerUser: { limit: 10, windowSeconds: 15 * 60 },
+} as const;
+
+type Limiter = (
+  name: string,
+  opts: { limit: number; windowSeconds: number },
+) => Promise<{ allowed: boolean }>;
+
+let limiter: Limiter = rateLimit;
+
+/** Test seam: count limits in memory. `null` restores the Redis limiter. */
+export function _setAuthRateLimiterForTest(fn: Limiter | null): void {
+  limiter = fn ?? rateLimit;
+}
+
+function rateLimited(message: string): AppError {
+  return new AppError(message, 429, "RATE_LIMITED");
+}
+
+/** The per-address and per-IP limits on every route that emails a code. */
+async function enforceOtpSendLimits(c: Context, email: string): Promise<void> {
+  const perAddress = await limiter(`otp-send:${email}`, OTP_LIMITS.sendPerAddress);
+  if (!perAddress.allowed) {
+    throw rateLimited(
+      "We already sent several codes to this address. Use the code in any of those emails, or wait a few minutes to ask again.",
+    );
+  }
+  const ip = clientIp(c.req);
+  if (ip) {
+    const perIp = await limiter(`otp-send:ip:${ip}`, OTP_LIMITS.sendPerIp);
+    if (!perIp.allowed) {
+      throw rateLimited(
+        "Too many code requests from this network. Wait a few minutes and try again.",
+      );
+    }
+  }
+}
+
+/** The per-IP limit on every route that checks a code. */
+async function enforceOtpVerifyLimit(c: Context): Promise<void> {
+  const ip = clientIp(c.req);
+  if (!ip) return;
+  const perIp = await limiter(`otp-verify:ip:${ip}`, OTP_LIMITS.verifyPerIp);
+  if (!perIp.allowed) {
+    throw rateLimited("Too many tries from this network. Wait a few minutes and try again.");
+  }
+}
+
+/** A code's expiry: OTP_TTL_MINUTES from now, capped at OTP_MAX_LIFE_MINUTES from minting. */
+function otpExpiresAt(now = new Date(), createdAt = now): Date {
+  return new Date(
+    Math.min(
+      now.getTime() + OTP_TTL_MINUTES * 60 * 1000,
+      createdAt.getTime() + OTP_MAX_LIFE_MINUTES * 60 * 1000,
+    ),
+  );
 }
 
 function generateOtp(): string {
   return String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
+}
+
+/**
+ * The code to email to `email`: the live, unspent one when there is one,
+ * else a new one. A resend sends the SAME code while one is still live.
+ * Email arrives late and out of order, and people press Resend while they
+ * wait. When every send minted a new code and killed the old one, the email
+ * a person finally opened held a dead code, and sign-in failed in a loop.
+ * With one live code per address, every email in the inbox works.
+ *
+ * Reusing a code keeps its try count, and its expiry moves only up to the
+ * OTP_MAX_LIFE_MINUTES cap. Shared by send-otp and the email-change request.
+ */
+async function issueOtp(email: string): Promise<string> {
+  const now = new Date();
+  await db.deleteFrom("otps").where("email", "=", email).where("expiresAt", "<=", now).execute();
+  const live = await db
+    .selectFrom("otps")
+    .select(["id", "otpCode", "createdAt"])
+    .where("email", "=", email)
+    .where("attempts", "<", OTP_MAX_ATTEMPTS)
+    .orderBy("createdAt", "desc")
+    .executeTakeFirst();
+
+  if (live) {
+    const expiresAt = otpExpiresAt(now, new Date(live.createdAt));
+    await db.updateTable("otps").set({ expiresAt }).where("id", "=", live.id).execute();
+    return live.otpCode;
+  }
+  const otpCode = generateOtp();
+  await db.deleteFrom("otps").where("email", "=", email).execute(); // spent codes
+  await db.insertInto("otps").values({ email, otpCode, expiresAt: otpExpiresAt(now) }).execute();
+  return otpCode;
+}
+
+/**
+ * Claim one try on every live, unspent code for `email`, before any compare.
+ * The increment and the limit check are one statement, so parallel guesses
+ * cannot all read the same count: Postgres serializes the row updates and at
+ * most OTP_MAX_ATTEMPTS guesses ever get a row back. Never read the count
+ * and increment it in a second query.
+ */
+async function claimOtpTry(
+  email: string,
+): Promise<{ id: string; otpCode: string; attempts: number }[]> {
+  return await db
+    .updateTable("otps")
+    .set((eb) => ({ attempts: eb("attempts", "+", 1) }))
+    .where("email", "=", email)
+    .where("expiresAt", ">", new Date())
+    .where("attempts", "<", OTP_MAX_ATTEMPTS)
+    .returning(["id", "otpCode", "attempts"])
+    .execute();
+}
+
+/** True when a live code for `email` exists but has no tries left. */
+async function hasSpentOtp(email: string): Promise<boolean> {
+  const spent = await db
+    .selectFrom("otps")
+    .select("id")
+    .where("email", "=", email)
+    .where("expiresAt", ">", new Date())
+    .executeTakeFirst();
+  return spent !== undefined;
+}
+
+/** Use up the matched code with a delete only one request can win, then every other code for the address. */
+async function consumeOtp(id: string, email: string): Promise<boolean> {
+  const consumed = await db
+    .deleteFrom("otps")
+    .where("id", "=", id)
+    .returning("id")
+    .executeTakeFirst();
+  if (!consumed) return false;
+  await db.deleteFrom("otps").where("email", "=", email).execute();
+  return true;
 }
 
 // ── Schemas ──
@@ -165,43 +318,8 @@ authRoutes.post("/send-otp", zValidator("json", sendOtpSchema, validationHook), 
     throw new BadRequestError("This address cannot sign in by email code");
   }
 
-  const throttle = await rateLimit(`otp-send:${email}`, {
-    limit: OTP_SENDS_PER_WINDOW,
-    windowSeconds: OTP_SEND_WINDOW_SECONDS,
-  });
-  if (!throttle.allowed) {
-    throw new AppError(
-      "We already sent several codes to this address. Use the code in any of those emails, or wait a few minutes to ask again.",
-      429,
-      "RATE_LIMITED",
-    );
-  }
-
-  // A resend sends the SAME code while one is still live. Email arrives late
-  // and out of order, and people press Resend while they wait. When every send
-  // minted a new code and killed the old one, the email a person finally
-  // opened held a dead code, and sign-in failed in a loop. With one live code
-  // per address, every email in the inbox works.
-  const now = new Date();
-  const expiresAt = otpExpiresAt(now);
-  await db.deleteFrom("otps").where("email", "=", email).where("expiresAt", "<=", now).execute();
-  const live = await db
-    .selectFrom("otps")
-    .select(["id", "otpCode"])
-    .where("email", "=", email)
-    .where("attempts", "<", OTP_MAX_ATTEMPTS)
-    .orderBy("createdAt", "desc")
-    .executeTakeFirst();
-
-  let otpCode: string;
-  if (live) {
-    otpCode = live.otpCode;
-    await db.updateTable("otps").set({ expiresAt }).where("id", "=", live.id).execute();
-  } else {
-    otpCode = generateOtp();
-    await db.deleteFrom("otps").where("email", "=", email).execute(); // spent codes
-    await db.insertInto("otps").values({ email, otpCode, expiresAt }).execute();
-  }
+  await enforceOtpSendLimits(c, email);
+  const otpCode = await issueOtp(email);
 
   // Send the OTP email (falls back to console.log when SMTP not configured)
   sendOtpEmail(email, otpCode).catch((err) => {
@@ -224,34 +342,20 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
   if (isVerificationAccountEmail(email)) {
     throw new UnauthorizedError("Invalid or expired code");
   }
+  await enforceOtpVerifyLimit(c);
 
-  // Every guess, right or wrong, first claims one try on each live, unspent code
-  // for this email. The increment and the limit check are one statement, so
-  // parallel guesses cannot all read the same count: Postgres serializes the
-  // row updates and at most OTP_MAX_ATTEMPTS guesses ever get a row back. A
-  // resend reuses the live code, so this is normally one row; rows from an
-  // older deploy can leave a few, and any of them works.
-  const claimed = await db
-    .updateTable("otps")
-    .set((eb) => ({ attempts: eb("attempts", "+", 1) }))
-    .where("email", "=", email)
-    .where("expiresAt", ">", new Date())
-    .where("attempts", "<", OTP_MAX_ATTEMPTS)
-    .returning(["id", "otpCode", "attempts"])
-    .execute();
+  // Every guess, right or wrong, first claims one try on each live, unspent
+  // code for this email (claimOtpTry). A resend reuses the live code, so this
+  // is normally one row; rows from an older deploy can leave a few, and any
+  // of them works.
+  const claimed = await claimOtpTry(email);
 
   if (claimed.length === 0) {
     // No try left to claim. Tell expired apart from spent. Never delete here:
     // a spent row holds the count, and deleting it would reset the limit. The
     // next send replaces it, or it expires.
-    const spent = await db
-      .selectFrom("otps")
-      .select("id")
-      .where("email", "=", email)
-      .where("expiresAt", ">", new Date())
-      .executeTakeFirst();
     throw new UnauthorizedError(
-      spent
+      (await hasSpentOtp(email))
         ? "Too many wrong tries on that code. Tap Resend code to get a new one."
         : "That code has expired. Tap Resend code to get a new one.",
     );
@@ -271,16 +375,9 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
 
   // Code matches. Consume it with a delete that only one request can win, so
   // two parallel right guesses cannot both sign in on one code.
-  const consumed = await db
-    .deleteFrom("otps")
-    .where("id", "=", match.id)
-    .returning("id")
-    .executeTakeFirst();
-  if (!consumed) {
+  if (!(await consumeOtp(match.id, email))) {
     throw new UnauthorizedError("That code was already used. Tap Resend code to get a new one.");
   }
-  // Every other code for this email is now used up too.
-  await db.deleteFrom("otps").where("email", "=", email).execute();
 
   // Look up or create user
   let user = await db
@@ -630,13 +727,17 @@ authRoutes.post(
       );
     }
 
-    // Same replace-any-existing-code semantics as POST /send-otp.
-    await db.deleteFrom("otps").where("email", "=", email).execute();
+    // The same limits as POST /send-otp (one per-address bucket for both
+    // routes), plus a per-user cap across addresses.
+    const perUser = await limiter(`email-change:user:${user.id}`, OTP_LIMITS.emailChangePerUser);
+    if (!perUser.allowed) {
+      throw rateLimited("You asked for several codes already. Wait a few minutes and try again.");
+    }
+    await enforceOtpSendLimits(c, email);
 
-    const otpCode = generateOtp();
-    const expiresAt = otpExpiresAt(); // same window as sign-in codes
-
-    await db.insertInto("otps").values({ email, otpCode, expiresAt }).execute();
+    // Same code semantics as POST /send-otp: a resend reuses the live code
+    // and keeps its try count.
+    const otpCode = await issueOtp(email);
 
     sendOtpEmail(email, otpCode).catch((err) => {
       log.error(
@@ -669,30 +770,26 @@ authRoutes.post(
       throw new BadRequestError("That is already your email address.");
     }
 
-    // Same verification semantics as POST /verify-otp: expiry window,
-    // 5-attempt cap, delete on success.
-    const otp = await db
-      .selectFrom("otps")
-      .selectAll()
-      .where("email", "=", email)
-      .where("expiresAt", ">", new Date())
-      .executeTakeFirst();
-    if (!otp) {
-      throw new UnauthorizedError("Invalid or expired code");
+    await enforceOtpVerifyLimit(c);
+
+    // Same verification semantics as POST /verify-otp: claim a try before
+    // the compare (claimOtpTry), never delete a spent code (it holds the
+    // count), consume on success with a delete only one request can win.
+    const claimed = await claimOtpTry(email);
+    if (claimed.length === 0) {
+      throw new UnauthorizedError(
+        (await hasSpentOtp(email))
+          ? "Too many attempts. Request a new code."
+          : "Invalid or expired code",
+      );
     }
-    if (otp.attempts >= 5) {
-      await db.deleteFrom("otps").where("id", "=", otp.id).execute();
-      throw new UnauthorizedError("Too many attempts. Request a new code.");
-    }
-    if (otp.otpCode !== otpCode) {
-      await db
-        .updateTable("otps")
-        .set({ attempts: otp.attempts + 1 })
-        .where("id", "=", otp.id)
-        .execute();
+    const match = claimed.find((o) => o.otpCode === otpCode);
+    if (!match) {
       throw new UnauthorizedError("Invalid code");
     }
-    await db.deleteFrom("otps").where("id", "=", otp.id).execute();
+    if (!(await consumeOtp(match.id, email))) {
+      throw new UnauthorizedError("Invalid or expired code");
+    }
 
     // Re-check the collision: the address may have been claimed since
     // the request step.

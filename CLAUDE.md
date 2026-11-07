@@ -1131,18 +1131,29 @@ code is in `src/api/routes/auth/index.ts`; the email copy is the `otp` kind in
 `src/services/email-kinds.ts`. Read this before you touch any of it.
 
 - **One live code per address.** `POST /api/auth/send-otp` reuses the live,
-  unspent code for the address and extends its expiry. It never deletes a live
+  unspent code for the address (`issueOtp`) and keeps its try count. It never deletes a live
   code and mints a new one. The reason: people press Resend while a slow mail
   gateway still holds the first email. When every send killed the old code, the
   email the person finally opened held a dead code, and sign-in failed in a
   loop. With one live code, every email in the inbox works. A new code is
   minted only when no live code is left (none, expired, or spent).
-- **Codes live 30 minutes.** `OTP_TTL_MINUTES` is 30, and the email copy says
-  "30 minutes". Change both together.
-- **Sends are limited.** At most 10 sends per address per 15 minutes, through
-  `rateLimit` in `src/lib/redis.ts`. It fails open, so a Redis outage never
-  blocks sign-in. Past the limit the route answers 429 (`RATE_LIMITED`) with a
-  plain message that tells the person to use the code in an earlier email.
+- **Codes live 30 minutes, and never more than 60 from minting.** `OTP_TTL_MINUTES`
+  is 30, and the email copy says "30 minutes". Change both together. A resend
+  moves the live code's expiry to 30 minutes from now, capped at
+  `OTP_MAX_LIFE_MINUTES` (60) after its `createdAt`. Without the cap, anyone who
+  saw a code once could keep it alive forever by asking for a resend.
+- **Every route that writes or checks `otps` is limited** (`OTP_LIMITS`):
+  10 code emails per address per 15 minutes, one bucket shared by send-otp and
+  the email-change request; 30 sends and 50 checks per client IP; 10
+  email-change requests per signed-in user. The IP is `clientIp()` from
+  `src/lib/client-ip.ts` (Cloudflare's `cf-connecting-ip`, never
+  `X-Forwarded-For`); with no edge IP the per-IP limit is skipped rather than
+  shared by everyone. The limiter is `rateLimit` in `src/lib/redis.ts` and fails
+  open, so a Redis outage never blocks sign-in; the hard limit is the try cap in
+  Postgres. Past a limit the route answers 429 (`RATE_LIMITED`) with a plain
+  message. A new route that mints or checks a code calls
+  `enforceOtpSendLimits` / `enforceOtpVerifyLimit` and goes through
+  `issueOtp` / `claimOtpTry`.
 - **`POST /api/auth/verify-otp` is forgiving about input.** It strips every
   non-digit from the pasted code ("123 456" works) and then needs exactly six
   digits. It checks every live row for the address, so a code left over from an
@@ -1154,8 +1165,8 @@ code is in `src/api/routes/auth/index.ts`; the email copy is the `otp` kind in
   helps.
 - **5 wrong tries spend a code** (`OTP_MAX_ATTEMPTS`). A spent code stops
   working, even if the right digits come next. The next send mints a new one.
-- **The try limit holds under parallel guesses.** Every guess first claims a
-  try with one statement, `UPDATE otps SET attempts = attempts + 1 WHERE ...
+- **The try limit holds under parallel guesses.** Every guess (verify-otp and
+  the email-change confirm) first claims a try with `claimOtpTry`, one statement, `UPDATE otps SET attempts = attempts + 1 WHERE ...
   AND attempts < OTP_MAX_ATTEMPTS RETURNING ...`, and only a guess that got a
   row back is compared. Never read the count and then increment it in a
   second query: parallel guesses all read the same count and slip past the
@@ -1177,16 +1188,16 @@ code is in `src/api/routes/auth/index.ts`; the email copy is the `otp` kind in
 insert a new one with a 10 minute life. It breaks Resend on slow mail, and
 10 minutes is too short for gateways that hold mail.
 
-The guard is `src/__tests__/routes/auth-otp-resend.test.ts`. It covers reuse on
+The guards are `src/__tests__/routes/auth-otp-resend.test.ts` (reuse on
 resend, the first email still working after resends, the 30 minute window and
 its extension, the expired message, tries left and spent codes, legacy rows,
-parallel wrong guesses (exactly 5 are checked), a spent code keeping its count,
-and parallel right guesses signing in once.
-It does not cover the 429 rate limit. Add a
-test when you change either.
+parallel wrong guesses, a spent code keeping its count, parallel right guesses
+signing in once) and `src/__tests__/routes/auth-otp-abuse.test.ts` (the
+email-change confirm under parallel guesses, a resend keeping the try count,
+the 60 minute cap, every 429 limit through `_setAuthRateLimiterForTest`).
 
-The email-change route (`POST /api/auth/me/email-change`) is separate and still
-replaces any existing code with a new one. This contract does not cover it.
+The email-change routes (`POST /api/auth/me/email-change` and `/confirm`) follow
+this same contract: same code reuse, same limits, same atomic try claim.
 
 ## HIPAA mode — env-var-gated, no schema changes
 

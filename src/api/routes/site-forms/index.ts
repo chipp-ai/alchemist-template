@@ -23,6 +23,7 @@
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { rateLimit } from "@/lib/redis.ts";
+import { clientIp } from "@/lib/client-ip.ts";
 import {
   createSiteFormSubmission,
   loadSiteForms,
@@ -44,15 +45,6 @@ export const HONEYPOT_FIELD = "_website";
 
 type Limiter = (name: string, opts: { limit: number; windowSeconds: number }) => Promise<{ allowed: boolean }>;
 
-/**
- * The client IP for rate limiting. On the Chipp platform every request
- * reaches the app through Cloudflare, which sets cf-connecting-ip and never
- * forwards a client's own value; without it, one shared bucket.
- */
-function clientIp(c: Context): string {
-  const ip = (c.req.header("cf-connecting-ip") ?? "").trim();
-  return /^[0-9a-fA-F:.]{2,45}$/.test(ip) ? ip : "unknown";
-}
 
 /** A same-site page path to send the visitor back to, or the form's own page. */
 function returnPath(raw: unknown, fallback: string): string {
@@ -119,7 +111,7 @@ export function createSiteFormsRoutes(options: SiteFormsRouteOptions = {}): Hono
     if (!data) return answer("invalid", 400, { error: "The form data could not be read." });
     if (typeof data[HONEYPOT_FIELD] === "string" && data[HONEYPOT_FIELD]!.trim() !== "") return answer("sent", 201);
 
-    const perIp = await limiter(`site-forms:ip:${clientIp(c)}`, SITE_FORM_LIMITS.perIp);
+    const perIp = await limiter(`site-forms:ip:${clientIp(c.req) ?? "unknown"}`, SITE_FORM_LIMITS.perIp);
     const site = await limiter("site-forms:site", SITE_FORM_LIMITS.site);
     if (!perIp.allowed || !site.allowed) {
       return answer("limited", 429, { error: "Too many messages. Please try again in a few minutes." });
