@@ -11,9 +11,9 @@
  *   The MCP spec REQUIRES HTTP servers to validate the Origin header to
  *   prevent DNS-rebinding attacks, where a malicious web page the victim
  *   visits POSTs to the (often unauthenticated, sometimes localhost) MCP
- *   endpoint from the victim's browser and invokes tools. The app's global
- *   CORS reflects any origin with credentials, so without this guard any
- *   web page could reach this endpoint cross-site.
+ *   endpoint from the victim's browser and invokes tools. CORS only controls
+ *   whether a page can READ the response; a cross-site POST still arrives
+ *   and runs. So this guard refuses the request itself.
  *
  *   Legitimate MCP clients (Claude Desktop, IDE/CLI plugins, the Inspector
  *   proxy) are Node-based and send NO Origin header, so this guard does not

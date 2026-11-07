@@ -294,7 +294,9 @@ dbTest("agent-mcp protocol: initialize, notifications, ping, unknown method, GET
 dbTest("agent-mcp: no CORS headers on this path", async () => {
   const a = await createIsolatedUser("editor");
   try {
-    const origin = "https://evil.example";
+    // An origin the rest of the API allows (local dev), so the control below
+    // proves this path is skipped on purpose, not refused by the allowlist.
+    const origin = "http://localhost:5280";
     const res = await rpc(await bearer(a.user), "tools/list", undefined, { origin });
     assertEquals(res.status, 200);
     assertEquals(res.res.headers.get("access-control-allow-origin"), null);

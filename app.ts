@@ -63,6 +63,7 @@ import { siteRedirectsMiddleware } from "@/lib/site-redirects.ts";
 import { siteFormsRoutes } from "@/api/routes/site-forms/index.ts";
 import { serveSpaShell } from "@/lib/spa-shell.ts";
 import { APP_BASE_PATH } from "@/config/site.ts";
+import { isAllowedCorsOrigin } from "@/services/app-links.ts";
 
 // ── App types ──
 
@@ -93,9 +94,11 @@ app.use("*", async (c, next) => {
   await next();
 });
 
-// CORS
+// CORS: credentialed, so only the app's own origins (isAllowedCorsOrigin in
+// app-links.ts). Reflecting any Origin would let every site read the API with
+// the visitor's session cookie.
 const corsMiddleware = cors({
-  origin: (origin) => origin, // reflect origin for dev; tighten in production
+  origin: (origin) => (isAllowedCorsOrigin(origin) ? origin : null),
   credentials: true,
   allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowHeaders: ["Content-Type", "Authorization"],

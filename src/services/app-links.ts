@@ -97,3 +97,47 @@ export function requestAppOrigin(req: RequestHeaders): string {
 export function requestWebOrigin(req: RequestHeaders): string {
   return requestPublicOrigin(req) ?? webAppOrigin();
 }
+
+function normalizeOrigin(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim());
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.origin.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isLocalDevOrigin(origin: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(origin);
+    return protocol === "http:" && (hostname === "localhost" || hostname === "127.0.0.1");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The browser origins the API answers with credentialed CORS: APP_URL,
+ * WEB_APP_URL, every host in `ALCHEMIST_PUBLIC_HOSTS`, the origins listed in
+ * `MCP_ALLOWED_ORIGINS`, and outside production any http://localhost or
+ * http://127.0.0.1 port (the Vite and API dev servers). Every other origin
+ * gets no CORS headers, so a page on another site cannot read the API with
+ * the visitor's session cookie. Never reflect the request's Origin back.
+ */
+export function isAllowedCorsOrigin(origin: string): boolean {
+  const o = normalizeOrigin(origin);
+  if (!o) return false;
+  const allowed = new Set<string>();
+  for (const raw of [appOrigin(), webAppOrigin()]) {
+    const n = normalizeOrigin(raw);
+    if (n) allowed.add(n);
+  }
+  for (const host of publicHosts()) allowed.add(`https://${host}`);
+  for (const raw of (readEnv("MCP_ALLOWED_ORIGINS") ?? "").split(",")) {
+    const n = raw.trim() ? normalizeOrigin(raw) : null;
+    if (n) allowed.add(n);
+  }
+  if (allowed.has(o)) return true;
+  return readEnv("NODE_ENV") !== "production" && isLocalDevOrigin(o);
+}
