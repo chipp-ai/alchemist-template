@@ -281,12 +281,16 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   // trying to distinguish "visitor" from "seeded" addresses, which would
   // require a heuristic on user-entered data.
   if (isDemoMode()) {
+    // Log the kind, never the subject or body: either can carry a sign-in
+    // code or a person's details, and logs outlive both.
     log.info("Demo mode: suppressing outbound email", {
       source: "email",
       to: opts.to,
-      subject: opts.subject,
+      kind: opts.kind ?? null,
     });
-    console.log(`[demo-mode] Email suppressed (would have sent to ${opts.to}): ${opts.subject}`);
+    console.log(
+      `[demo-mode] Email suppressed (would have sent to ${opts.to}): kind ${opts.kind ?? "none"}`,
+    );
     return;
   }
 
@@ -332,8 +336,13 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   if (!transport) {
     // Dev fallback: log the email to console. Kept alongside the mailbox
     // because a human tailing `deno task dev` still wants to see the OTP
-    // code scroll past without opening a second tool.
+    // code scroll past without opening a second tool. Never in production:
+    // there the body (a live sign-in code) would land in the pod logs.
     console.log(`[email] To: ${opts.to}`);
+    if (safeEnv("NODE_ENV") === "production") {
+      console.log(`[email] Not sent: SMTP is not configured (kind ${opts.kind ?? "none"})`);
+      return;
+    }
     console.log(`[email] Subject: ${opts.subject}`);
     console.log(`[email] Body: ${opts.text}`);
     return;
@@ -362,7 +371,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
       ...(headers ? { headers } : {}),
       ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
     });
-    log.info("Email sent", { source: "email", to: opts.to, subject: opts.subject });
+    log.info("Email sent", { source: "email", to: opts.to, kind: opts.kind ?? null });
   } catch (err) {
     // AUTH_CRITICAL_VERIFIED_SENDER_FALLBACK
     //
@@ -414,7 +423,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
           source: "email",
           feature: "verified-sender-fallback",
           to: opts.to,
-          subject: opts.subject,
+          kind: opts.kind ?? null,
         });
         return;
       } catch (fallbackErr) {

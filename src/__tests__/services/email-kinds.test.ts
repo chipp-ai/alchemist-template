@@ -127,7 +127,8 @@ deno("sendOtpEmail: same signature, now captured as kind=otp", async () => {
 
   const captured = lastCapturedEmail({ kind: "otp" });
   assertEquals(captured?.to, "signin@test.local");
-  assertStringIncludes(captured?.subject ?? "", "424242");
+  // The code is never in the subject: subjects are logged and shown on lock screens.
+  assertEquals((captured?.subject ?? "").includes("424242"), false);
   assertStringIncludes(captured?.text ?? "", "424242");
   assertStringIncludes(captured?.html ?? "", "424242");
   clearCapturedEmails();

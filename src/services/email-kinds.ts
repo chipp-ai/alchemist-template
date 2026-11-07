@@ -365,7 +365,10 @@ registerEmailKind<OtpEmailData>({
   kind: "otp",
   description: "Sign-in verification code. Sent on every passwordless login.",
   authCritical: true,
-  subject: (d) => `${d.otpCode} is your ${BRAND.name} verification code`,
+  // Never put the code in the subject. Transport, provider and demo logs
+  // record subjects, and lock screens show them to anyone nearby. The code is
+  // in the body and the preview text only.
+  subject: () => `Your ${BRAND.name} verification code`,
   text: (d) =>
     [
       `Your verification code is: ${d.otpCode}`,

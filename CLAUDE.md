@@ -1175,6 +1175,11 @@ code is in `src/api/routes/auth/index.ts`; the email copy is the `otp` kind in
 - **A refused guess never deletes a code.** The row holds the try count, so
   deleting it on a spent or expired guess resets the limit. A spent row stays
   until the next send replaces it or it expires.
+- **The code is only in the email body.** The `otp` subject is "Your <App>
+  verification code", never the digits: subjects are logged and shown on lock
+  screens. The transport logs a message's `kind`, never its subject or body,
+  and its no-SMTP console fallback prints the body only outside production.
+  Guard: `src/__tests__/routes/auth-otp-email-privacy.test.ts`.
 - **The client keeps the server's words.** `web/src/lib/api.ts` keeps the
   server's message on a 401 (`extractErrorMessage`) and falls back to
   "Unauthorized" only when the body has none. Do not replace it with a fixed
