@@ -93,7 +93,7 @@ deno(
 deno("toast store: registers via defineStore (DevPanel-visible)", async () => {
   const src = await read("web/src/stores/toast.svelte.ts");
   assertStringIncludes(src, 'defineStore<ToastState>("toast"');
-  // Array replacement, not push() — see CLAUDE.md "Stores and the DevPanel".
+  // Array replacement, not push() — see `docs/conventions/frontend.md` "Stores and the DevPanel".
   assert(
     !/state\.toasts\.push\(/.test(src),
     "toast store must replace the array, never push() in place",

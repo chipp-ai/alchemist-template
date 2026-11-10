@@ -304,7 +304,7 @@ export function __resetLlmFetchForTest(): void {
  *
  * For one-shot server tasks (extract, classify, summarize, draft one text).
  * Never use it to run a conversation a person types into: that is the
- * app's embedded Chipp agent (CLAUDE.md, "Chat with AI").
+ * app's embedded Chipp agent (`docs/conventions/embedded-agent.md`, "Chat with AI").
  *
  * Fails closed when unconfigured (throws `LlmNotConfiguredError` before
  * any fetch). On HTTP 402 throws `LlmCreditsExhaustedError`; on any other

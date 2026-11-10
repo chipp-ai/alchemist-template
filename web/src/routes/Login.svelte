@@ -19,7 +19,7 @@
   let resendMessage = $state<string | null>(null);
 
   // Fetch the auth config (OAuth providers list) once on mount.
-  // Use onMount, NOT $effect — see CLAUDE.md → "Stores: $effect on
+  // Use onMount, NOT $effect — see docs/conventions/frontend.md → "Stores: $effect on
   // mount is a trap; use onMount". The .then() callback writes to
   // `providers` ($state), and inside an $effect that write would
   // attribute itself as a dep, looping the fetch.

@@ -17,7 +17,7 @@
  *   the dev panel and the L1 verification layer is incomplete.
  *
  *   This is the load-bearing convention that makes the rest of the
- *   verification stack work. The CLAUDE.md rule names it explicitly:
+ *   verification stack work. The docs/conventions/frontend.md rule names it explicitly:
  *   "ALL shared cross-component state goes through `defineStore`."
  *
  * Usage

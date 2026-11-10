@@ -28,7 +28,7 @@
   let headersOpen = $state(false);
 
   onMount(() => {
-    // One-shot fetch on mount -- onMount, NOT $effect (see CLAUDE.md:
+    // One-shot fetch on mount -- onMount, NOT $effect (see docs/conventions/frontend.md:
     // "$effect on mount is a trap; use onMount").
     async function load() {
       try {

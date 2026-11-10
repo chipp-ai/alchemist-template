@@ -20,7 +20,7 @@
  *   F. No page under `web/src/routes/` keys a refetch on an org id inside
  *      `$effect` (the wrong fix that a same-org switch defeats).
  *
- * See CLAUDE.md -> "Tenant and route context" and
+ * See `docs/conventions/frontend.md` -> "Tenant and route context" and
  * `.claude/rules/frontend-state.md`.
  */
 import { assert, assertEquals } from "@std/assert";

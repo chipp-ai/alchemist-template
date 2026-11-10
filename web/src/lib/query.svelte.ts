@@ -19,7 +19,7 @@
  *   Each query's cache entry IS a `defineStore` named `query:<key>` — so
  *   every query is automatically visible to the DevPanel + the
  *   `/api/dev/app-state` verification snapshot, same as hand-written
- *   stores. The CLAUDE.md rule: client state that MIRRORS SERVER DATA goes
+ *   stores. The docs/conventions/frontend.md rule: client state that MIRRORS SERVER DATA goes
  *   through `createQuery`; client-only state (UI flags, drafts, wizards)
  *   stays on plain `defineStore`.
  *

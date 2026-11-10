@@ -4,7 +4,7 @@
  *
  * The bug class this exists for
  *
- *   Pages fetch their data once in `onMount` (see CLAUDE.md, "$effect on
+ *   Pages fetch their data once in `onMount` (see docs/conventions/frontend.md, "$effect on
  *   mount is a trap"). A global switcher (org, workspace, account) or a
  *   logout-then-login does NOT navigate, so the routed page stays mounted
  *   and keeps showing the PREVIOUS tenant's data. Chipp hit this on its

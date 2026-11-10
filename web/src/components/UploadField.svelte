@@ -182,7 +182,7 @@
     }];
 
     function patch(changes: Partial<QueueItem>): void {
-      // Top-level array replacement, per the store rules in CLAUDE.md.
+      // Top-level array replacement, per the store rules in docs/conventions/frontend.md.
       queue = queue.map((item) => (item.key === key ? { ...item, ...changes } : item));
     }
 

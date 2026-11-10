@@ -14,15 +14,27 @@ import { assert } from "@std/assert";
 const deno = Deno.test;
 const read = async (rel: string) => (await Deno.readTextFile(new URL(rel, import.meta.url))).replace(/\s+/g, " ");
 
+// CLAUDE.md is a short index since 2026-11-10; each topic lives in
+// docs/conventions/<topic>.md. The guidance is the index plus the topic
+// files, and the index must list every one of them.
+const readGuide = async (...topics: string[]) => {
+  const index = await read("../../CLAUDE.md");
+  for (const t of topics) {
+    const file = t.split("/").pop()!;
+    if (!index.includes(`| \`${file}\` |`)) throw new Error(`CLAUDE.md must list ${file} in Topics`);
+  }
+  return [index, ...(await Promise.all(topics.map((t) => read(t))))].join(" ");
+};
+
 deno("redis guidance: the hub says when Redis is and is not the answer", async () => {
-  const hub = await read("../../CLAUDE.md");
+  const hub = await readGuide("../../docs/conventions/redis.md");
   assert(hub.includes("### When Redis is the answer, and when it is not"), "hub must keep the decision section");
   assert(hub.includes("A scheduled tick, poller, reaper or sweep"), "schedulers must be named as a lock case");
   assert(hub.includes("Losing it would be a bug"), "the durability exclusion must survive");
 });
 
 deno("redis guidance: cross-pod locks are Redis, never a Postgres advisory lock", async () => {
-  const hub = await read("../../CLAUDE.md");
+  const hub = await readGuide("../../docs/conventions/redis.md");
   assert(hub.includes("Never take a Postgres advisory lock"), "the reversal must survive");
   assert(!/For real mutual exclusion use a Postgres advisory lock/.test(hub), "the old advice must not come back");
   const helper = await read("../lib/redis.ts");

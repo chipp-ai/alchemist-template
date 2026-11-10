@@ -86,7 +86,7 @@ html.reveal-ready .reveal.is-visible {
 /* ============================================================= */
 
 /*
- * Per CLAUDE.md's paint-jank rule, an infinite CSS animation (the shimmer
+ * Per docs/conventions/frontend.md's paint-jank rule, an infinite CSS animation (the shimmer
  * sweep here) is only allowed on elements that UNMOUNT when idle —
  * skeletons are exactly that: they exist only while data is loading and
  * are removed from the DOM the moment real content is ready.

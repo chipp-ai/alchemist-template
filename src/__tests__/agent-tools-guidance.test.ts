@@ -11,8 +11,20 @@ import { assert } from "@std/assert";
 const read = async (rel: string) =>
   (await Deno.readTextFile(new URL(rel, import.meta.url))).replace(/\s+/g, " ");
 
+// CLAUDE.md is a short index since 2026-11-10; each topic lives in
+// docs/conventions/<topic>.md. The guidance is the index plus the topic
+// files, and the index must list every one of them.
+const readGuide = async (...topics: string[]) => {
+  const index = await read("../../CLAUDE.md");
+  for (const t of topics) {
+    const file = t.split("/").pop()!;
+    if (!index.includes(`| \`${file}\` |`)) throw new Error(`CLAUDE.md must list ${file} in Topics`);
+  }
+  return [index, ...(await Promise.all(topics.map((t) => read(t))))].join(" ");
+};
+
 Deno.test("agent tools guidance: the hub carries the rule", async () => {
-  const hub = await read("../../CLAUDE.md");
+  const hub = await readGuide("../../docs/conventions/embedded-agent.md");
   assert(hub.includes("## Embedded agent tools: register them for every feature"));
   assert(
     hub.includes(

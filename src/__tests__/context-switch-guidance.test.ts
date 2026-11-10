@@ -14,8 +14,20 @@ import { assert } from "@std/assert";
 
 const read = async (rel: string) => (await Deno.readTextFile(new URL(rel, import.meta.url))).replace(/\s+/g, " ");
 
+// CLAUDE.md is a short index since 2026-11-10; each topic lives in
+// docs/conventions/<topic>.md. The guidance is the index plus the topic
+// files, and the index must list every one of them.
+const readGuide = async (...topics: string[]) => {
+  const index = await read("../../CLAUDE.md");
+  for (const t of topics) {
+    const file = t.split("/").pop()!;
+    if (!index.includes(`| \`${file}\` |`)) throw new Error(`CLAUDE.md must list ${file} in Topics`);
+  }
+  return [index, ...(await Promise.all(topics.map((t) => read(t))))].join(" ");
+};
+
 Deno.test("context-switch guidance: the hub carries the decision rules", async () => {
-  const hub = await read("../../CLAUDE.md");
+  const hub = await readGuide("../../docs/conventions/frontend.md", "../../docs/conventions/rule-spokes.md", "../../docs/conventions/pitfalls.md");
   assert(hub.includes("### Tenant and route context: the Router key, not per-page watches"), "hub must keep the tenant-context section");
   for (const s of [
     "keys every `<Router>`",
@@ -31,7 +43,7 @@ Deno.test("context-switch guidance: the hub carries the decision rules", async (
 });
 
 Deno.test("context-switch guidance: the mechanics live in the spoke, and the hub points at it", async () => {
-  const hub = await read("../../CLAUDE.md");
+  const hub = await readGuide("../../docs/conventions/frontend.md", "../../docs/conventions/rule-spokes.md", "../../docs/conventions/pitfalls.md");
   const spoke = await read("../../.claude/rules/frontend-state.md");
   assert(hub.includes(".claude/rules/frontend-state.md"), "hub must point at the spoke");
   assert(spoke.startsWith("--- name: frontend-state "), "spoke needs frontmatter");

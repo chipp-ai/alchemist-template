@@ -134,7 +134,7 @@
   }
 
   function setField(columnIndex: number, value: string): void {
-    // Top-level array replacement, per the store rules in CLAUDE.md.
+    // Top-level array replacement, per the store rules in docs/conventions/frontend.md.
     mapping = mapping.map((entry) =>
       entry.columnIndex === columnIndex
         ? {

@@ -11,7 +11,7 @@ Auth is already wired. Do not write a new login path.
   `/api/auth/<id>` and `/api/auth/<id>/callback` and shows the button on the
   Login page through `GET /api/auth/config`. A generic OIDC slot covers
   Keycloak, Okta, Auth0 and similar (`OIDC_*` vars). Full table: the "Social
-  login / SSO is PREBUILT" section of `CLAUDE.md`.
+  login / SSO is PREBUILT" section of `docs/conventions/auth.md`.
 - Sessions: an HttpOnly JWT cookie signed with the platform-injected
   `JWT_SECRET`.
 - Route guards in `src/api/middleware/auth.ts`: `requireAuth` (sets the user

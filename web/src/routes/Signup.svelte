@@ -13,7 +13,7 @@
   let googleEnabled = $state(false);
   let resendMessage = $state<string | null>(null);
 
-  // One-shot fetch on mount. Use onMount, NOT $effect — see CLAUDE.md
+  // One-shot fetch on mount. Use onMount, NOT $effect — see docs/conventions/frontend.md
   // → "Stores: $effect on mount is a trap; use onMount". The .then()
   // callback writes `googleEnabled` ($state); inside an $effect that
   // write would attribute as a dep and loop the request.

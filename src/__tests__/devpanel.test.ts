@@ -292,7 +292,7 @@ deno(
           `files. These call a store/api method without a reactive-read ` +
           `guard and without a cleanup return — the canonical loop shape ` +
           `that fired 24K /auth/me requests in 13min during live testing. ` +
-          `Use onMount instead. See CLAUDE.md → "$effect on mount is a ` +
+          `Use onMount instead. See docs/conventions/frontend.md → "$effect on mount is a ` +
           `trap; use onMount". Offenders:\n  - ${offenders.join("\n  - ")}`,
       );
     }

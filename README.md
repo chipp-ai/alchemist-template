@@ -125,7 +125,7 @@ db/
 scripts/
   setup.sh         one-shot dev bootstrap
   dev.sh           run API + Vite together
-CLAUDE.md          project context for AI agents
+CLAUDE.md          index for AI agents (topics in docs/conventions/)
 ```
 
 ## Customizing for your product
@@ -145,11 +145,11 @@ The template ships with the foundation you'd otherwise build yourself: organizat
 
 This template was authored so AI agents (Claude Code, Cursor, the [Alchemist AI](https://adaas.dev) platform) can extend it without ramp-up. Two things make that work:
 
-**`CLAUDE.md` at the root** documents the stack, layout, conventions, dev login flow, and gotchas. Claude Code auto-loads it on every session; other agents you point at the repo can be told to read it first. When you fork, update it:
+**`CLAUDE.md` at the root** is a short index: the hard rules, the commands, and one line per topic. Each topic (stack, layout, conventions, dev login flow, gotchas) lives in `docs/conventions/<topic>.md`, which an agent reads when it works in that area. Claude Code auto-loads the index on every session, so it stays under a 16,000-character budget (`src/__tests__/claude-md-budget.test.ts`). When you fork:
 
 - Replace the project header with your product name + a real description of what it does.
-- Document anything domain-specific (e.g. "events always carry a UTC timestamp", "we never delete records -- soft-delete via `archived_at`").
-- Add your testing conventions, deployment specifics, and any patterns that look wrong but are intentional.
+- Put anything domain-specific (e.g. "events always carry a UTC timestamp", "we never delete records -- soft-delete via `archived_at`") in the matching `docs/conventions/` file, or a new one with a line in the index.
+- Keep only hard rules in `CLAUDE.md` itself.
 
 **Predictable layout.** Routes are thin orchestration; business logic lives in services; DB types come from `src/db/schema.ts`. Agents that know the pattern can add a new feature without searching for the right file. The Alchemist AI platform's agents are trained against exactly this shape.
 

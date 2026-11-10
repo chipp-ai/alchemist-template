@@ -24,7 +24,7 @@
   // and you get an unbounded /auth/me loop. (Reproduced live: 24K
   // /auth/me requests in 13min before this fix.) onMount fires exactly
   // once after mount with no reactive tracking — the right tool for a
-  // one-shot side effect. See CLAUDE.md → "Stores: $effect on mount
+  // one-shot side effect. See docs/conventions/frontend.md → "Stores: $effect on mount
   // is a trap; use onMount".
   onMount(() => {
     authStore.checkAuth();
@@ -91,7 +91,7 @@
   // ($location, so /things/A -> /things/B remounts the detail page
   // instead of leaving it on A's data). Pages fetch in onMount and rely
   // on THIS to re-run; never add a per-page org-id watch instead. See
-  // web/src/lib/context-switch.svelte.ts and CLAUDE.md -> "Tenant and
+  // web/src/lib/context-switch.svelte.ts and docs/conventions/frontend.md -> "Tenant and
   // route context". Both <Router> mounts below must stay inside the key.
   const routerKey = $derived(`${contextSwitch.epoch}:${$location}`);
 </script>

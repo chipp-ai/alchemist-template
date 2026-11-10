@@ -161,7 +161,7 @@ export function buildSalesforceProvider(loginUrl?: string): OAuthProvider {
  *   OIDC_LABEL         optional button label (default "Continue with SSO")
  *   OIDC_SCOPES        optional scopes (default "openid email profile")
  *
- * Endpoint recipes (also in CLAUDE.md → "Social login / SSO is prebuilt"):
+ * Endpoint recipes (also in `docs/conventions/auth.md` → "Social login / SSO is prebuilt"):
  *   Keycloak:  <issuer>/protocol/openid-connect/{auth,token,userinfo}
  *              where issuer = https://<host>/realms/<realm>
  *   Okta:      https://<domain>/oauth2/default/v1/{authorize,token,userinfo}

@@ -54,7 +54,7 @@ const DEPLOY_ENV = (import.meta.env.MODE ?? "development").toString();
  * /settings/:tab — we cover the regulars without requiring a router
  * dependency. If a customer's app has bespoke patterns the agent
  * needs to see, they can add them via `extractCustomRouteParams`
- * (see CLAUDE.md → DevPanel customization).
+ * (see docs/conventions/frontend.md → DevPanel customization).
  */
 function extractRouteParams(path: string): Record<string, string> {
   const params: Record<string, string> = {};

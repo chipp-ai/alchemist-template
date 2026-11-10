@@ -30,7 +30,7 @@
 <style>
   /*
    * A single tiny inline control (icon-only chip) — the sanctioned
-   * exception in CLAUDE.md's "Hover/interactive transitions animate
+   * exception in docs/conventions/frontend.md's "Hover/interactive transitions animate
    * only compositor properties" rule allows a `color` paint transition
    * here (painted area is a few pixels). Never add background-color /
    * box-shadow / border-color to this list.

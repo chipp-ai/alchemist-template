@@ -16,8 +16,20 @@ const deno = Deno.test;
 // Prose gets re-wrapped; assert on words, not on line breaks.
 const read = async (rel: string) => (await Deno.readTextFile(new URL(rel, import.meta.url))).replace(/\s+/g, " ");
 
+// CLAUDE.md is a short index since 2026-11-10; each topic lives in
+// docs/conventions/<topic>.md. The guidance is the index plus the topic
+// files, and the index must list every one of them.
+const readGuide = async (...topics: string[]) => {
+  const index = await read("../../CLAUDE.md");
+  for (const t of topics) {
+    const file = t.split("/").pop()!;
+    if (!index.includes(`| \`${file}\` |`)) throw new Error(`CLAUDE.md must list ${file} in Topics`);
+  }
+  return [index, ...(await Promise.all(topics.map((t) => read(t))))].join(" ");
+};
+
 deno("files guidance: the hub carries the decision rules", async () => {
-  const hub = await read("../../CLAUDE.md");
+  const hub = await readGuide("../../docs/conventions/files.md");
   assert(hub.includes("## Files: decide, detect, name"), "hub must keep the decision section");
   for (const h of ["### Where a file belongs", "### How to recognize a file requirement", "### Namespaces the customer wants"]) {
     assert(hub.includes(h), `hub must keep '${h}'`);
@@ -28,7 +40,7 @@ deno("files guidance: the hub carries the decision rules", async () => {
 });
 
 deno("files guidance: the mechanics live in the spoke, and the hub points at it", async () => {
-  const hub = await read("../../CLAUDE.md");
+  const hub = await readGuide("../../docs/conventions/files.md");
   const spoke = await read("../../.claude/rules/files.md");
   assert(hub.includes(".claude/rules/files.md"), "hub must point at the spoke");
   assert(!hub.includes("## File storage — use `storage.service.ts`"), "recipes must not be duplicated back into the hub");

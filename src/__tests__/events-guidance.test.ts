@@ -19,8 +19,20 @@ const deno = Deno.test;
 const read = async (rel: string) =>
   (await Deno.readTextFile(new URL(rel, import.meta.url))).replace(/\s+/g, " ");
 
+// CLAUDE.md is a short index since 2026-11-10; each topic lives in
+// docs/conventions/<topic>.md. The guidance is the index plus the topic
+// files, and the index must list every one of them.
+const readGuide = async (...topics: string[]) => {
+  const index = await read("../../CLAUDE.md");
+  for (const t of topics) {
+    const file = t.split("/").pop()!;
+    if (!index.includes(`| \`${file}\` |`)) throw new Error(`CLAUDE.md must list ${file} in Topics`);
+  }
+  return [index, ...(await Promise.all(topics.map((t) => read(t))))].join(" ");
+};
+
 deno("events guidance: the hub carries the decision rules", async () => {
-  const hub = await read("../../CLAUDE.md");
+  const hub = await readGuide("../../docs/conventions/events.md");
   assert(
     hub.includes("## Events: publish in the transaction, handle idempotently"),
     "hub must keep the decision section",
@@ -72,7 +84,7 @@ deno("events guidance: the hub carries the decision rules", async () => {
 });
 
 deno("events guidance: the mechanics live in the spoke, and the hub points at it", async () => {
-  const hub = await read("../../CLAUDE.md");
+  const hub = await readGuide("../../docs/conventions/events.md");
   const spoke = await read("../../.claude/rules/events.md");
   assert(hub.includes(".claude/rules/events.md"), "hub must point at the spoke");
   assert(

@@ -10,7 +10,7 @@ import type { DesignConfig } from "./design/types";
 // Apply the project's design system (fonts, palette, shape, type scale)
 // before anything renders. web/src/design/design.json is the single
 // source of truth; app.css only carries first-paint fallbacks. See
-// CLAUDE.md → "Design system".
+// `docs/conventions/brand-and-design.md` → "Design system".
 applyDesign(designJson as DesignConfig);
 
 // Install observability hooks BEFORE store init / DevPanel / app
@@ -23,7 +23,7 @@ installBreadcrumbs();
 // Eagerly import every store module so each module's `defineStore()`
 // call runs before `initDevPanel()` wires the push pipeline. New
 // stores added by the agent should be added here — pattern documented
-// in CLAUDE.md → "Stores and the DevPanel".
+// in `docs/conventions/frontend.md` → "Stores and the DevPanel".
 //
 // Imports are bare (we don't use the exported bindings directly here);
 // the top-level `defineStore` call inside each module is the side

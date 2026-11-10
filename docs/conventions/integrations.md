@@ -1,0 +1,9 @@
+# Integrations and live web data
+
+## Third-party integrations: the Chipp hosted-integration broker first
+
+**Third-party integrations (Google Calendar, Drive, Notion, Slack, ...): check the Chipp hosted-integration broker FIRST -- never build a bespoke OAuth connector or ask for `GOOGLE_CLIENT_ID`-style provider secrets for a provider the platform already hosts.** Use `src/lib/chipp-integrations.ts` (`listHostedIntegrations` / `createIntegrationConnectLink` / `invokeHostedIntegration`): the platform holds the OAuth clients and tokens, the pod holds only an env-injected credential, and connecting a provider is a link the account owner clicks. Only build in-repo OAuth when the provider is genuinely absent from the platform catalog. **Read structured data, never prose:** when a tool is listed with `returnsData: true`, `invokeHostedIntegration` returns the provider's records in `data` (shape in the tool's `outputSchema`); never parse `summary`. For an endpoint no tool covers, `requestIntegrationApi(appId, provider, { method, path, query, body })` calls the provider's own API through the platform with full read/write/update/delete (when the provider lists a `<provider>_api_request` tool).
+
+## Live web data (web search)
+
+**Live web data (news tracking, research, market intel, fact-checking): use `src/lib/chipp-web-search.ts`** (`webSearch(query, options)` for ranked Google results with title, url, snippet, date, source; `options.mode: "news"` for recent articles with the publisher). Chipp hosts the search: nothing to connect, never ask for a search API key, never scrape a search engine. Server code only. To write an answer, pass the results to the LLM proxy. Each search bills the workspace's credits (about $0.0013), so cache shared results and show the source link. A `web_search_unavailable` diagnostic means the platform cannot run it right now: show that state, never fake results.

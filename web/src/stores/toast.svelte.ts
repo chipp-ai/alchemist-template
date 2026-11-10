@@ -46,7 +46,7 @@ function dismiss(id: string): void {
     clearTimeout(timer);
     timers.delete(id);
   }
-  // Top-level array replacement — see CLAUDE.md "Stores and the DevPanel".
+  // Top-level array replacement — see `docs/conventions/frontend.md` "Stores and the DevPanel".
   state.toasts = state.toasts.filter((t) => t.id !== id);
 }
 

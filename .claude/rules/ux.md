@@ -76,7 +76,7 @@ mobile). This file decides how it BEHAVES and READS. Both apply.
 
 A UI change is done only after you have looked at it rendered: each state
 above, light and dark, desktop and phone width, judged against this file.
-Use the browser tools in `CLAUDE.md` "Verifying (agent recipe)" (cheapest
+Use the browser tools in `docs/conventions/email.md` "Verifying (agent recipe)" (cheapest
 first; screenshot when the question is visual). For the landing site,
 screenshot the production build of `/` (`landing.md`). After fixing one
 problem, check the rest of the screen for the same kind of problem.

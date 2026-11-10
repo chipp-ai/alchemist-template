@@ -10,7 +10,7 @@
    * readers announce new toasts without stealing focus; each toast is
    * `role="status"` and its dismiss button is a real, keyboard-reachable
    * `<button>`. Enter/exit motion is a transform+opacity fly (compositor-
-   * only, no layout/paint properties — see CLAUDE.md's hover-transition
+   * only, no layout/paint properties — see docs/conventions/frontend.md's hover-transition
    * rule) and collapses to an instant show/hide under
    * prefers-reduced-motion.
    */

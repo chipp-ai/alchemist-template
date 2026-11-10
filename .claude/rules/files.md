@@ -1,6 +1,6 @@
 ---
 name: files
-description: File storage recipes -- storage.service.ts, the managed upload layer (uploads/), the raw org-scoped layer (org/), presigned URLs, the type allowlist and the cross-tenant key contract. Load when touching storage, uploads or downloads. The DECISION rules (where a file belongs, how to recognize a file requirement, how to honor a customer's namespace) live in the hub CLAUDE.md under "Files: decide, detect, name".
+description: File storage recipes -- storage.service.ts, the managed upload layer (uploads/), the raw org-scoped layer (org/), presigned URLs, the type allowlist and the cross-tenant key contract. Load when touching storage, uploads or downloads. The DECISION rules (where a file belongs, how to recognize a file requirement, how to honor a customer's namespace) live in the hub `docs/conventions/files.md` under "Files: decide, detect, name".
 paths:
   - "src/services/storage*.ts"
   - "src/services/uploaded-file.service.ts"

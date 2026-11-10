@@ -1,5 +1,5 @@
 /**
- * Chat with AI is the embedded Chipp agent (CLAUDE.md, "Chat with AI").
+ * Chat with AI is the embedded Chipp agent (`docs/conventions/embedded-agent.md`, "Chat with AI").
  *
  * Builds kept recreating a chat backend: a provider SDK, a call to a
  * provider's API host, a provider key, or a chat route. This fails the build

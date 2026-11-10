@@ -85,7 +85,7 @@ address and transfer to it).
 
 ## Sign-in codes
 
-The full contract is CLAUDE.md, "Sign-in codes (OTP) contract". Two rules
+The full contract is `docs/conventions/auth.md`, "Sign-in codes (OTP) contract". Two rules
 every change here keeps:
 
 - **A try cap is one statement.** Claim the try with
@@ -179,7 +179,7 @@ Those people go through the portal lane instead:
 admin issues a tokenized link bound to one record and one address; the
 recipient clicks it and lands in a read-only portal with no admin
 navigation. Minting auto-provisions a `viewer` account and NEVER modifies
-an account that already exists. Full contract: CLAUDE.md → "End-user
+an account that already exists. Full contract: `docs/conventions/portal.md` → "End-user
 portal lane: use it, never build a parallel portal".
 
 ## WebSocket auth
@@ -224,4 +224,4 @@ runs the same `resolveUser` as `requireAuth`, so the current role, the
 current org and logout-all apply. The session verifier refuses any token
 that carries a `scope` or an `aud`, so neither an agent token nor a WS token
 works as a session. Agent tokens need `JWT_SECRET`; there is no
-development fallback. Tool rules: CLAUDE.md, "Embedded agent tools".
+development fallback. Tool rules: `docs/conventions/embedded-agent.md`, "Embedded agent tools".

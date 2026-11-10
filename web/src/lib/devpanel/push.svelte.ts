@@ -20,7 +20,7 @@
  *   - Top-level proxy writes are caught immediately and debounce 1s.
  *   - Nested mutations like `state.user.name = "X"` go through Svelte's
  *     deep $state proxy for component reactivity but DON'T trip our
- *     top-level subscriber. The CLAUDE.md rule asks customers to do
+ *     top-level subscriber. The docs/conventions/frontend.md rule asks customers to do
  *     whole-object updates instead, but agents don't always follow
  *     it perfectly.
  *   - 5s heartbeat is the safety net: any change is visible to the

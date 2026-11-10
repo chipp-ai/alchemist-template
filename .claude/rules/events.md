@@ -1,6 +1,6 @@
 ---
 name: events
-description: Durable event mechanics -- src/lib/events.ts (publish, register, claim, complete, fail, replay, retention), the consumer loop in src/jobs/event-consumer.ts, POST /api/events/inbox, outbound webhook subscriptions and signing. Load when touching event code. The DECISION rules (what is an event, publish inside the transaction, idempotent handlers, topic naming) live in the hub CLAUDE.md under "Events: publish in the transaction, handle idempotently".
+description: Durable event mechanics -- src/lib/events.ts (publish, register, claim, complete, fail, replay, retention), the consumer loop in src/jobs/event-consumer.ts, POST /api/events/inbox, outbound webhook subscriptions and signing. Load when touching event code. The DECISION rules (what is an event, publish inside the transaction, idempotent handlers, topic naming) live in the hub `docs/conventions/events.md` under "Events: publish in the transaction, handle idempotently".
 paths:
   - "src/lib/events.ts"
   - "src/lib/event-signing.ts"

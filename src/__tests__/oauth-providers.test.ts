@@ -3,7 +3,7 @@
  * providers exist with env-gated enablement, the Salesforce builder
  * honors the sandbox base-URL override, and the generic OIDC slot only
  * materializes when its endpoint env vars are set. Builder agents are
- * told (CLAUDE.md → "Social login / SSO is prebuilt") that enabling SSO
+ * told (`docs/conventions/auth.md` → "Social login / SSO is prebuilt") that enabling SSO
  * is env vars only, no code; these tests keep that promise honest.
  */
 

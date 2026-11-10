@@ -13,6 +13,18 @@ import { assert } from "@std/assert";
 const read = async (rel: string) =>
   (await Deno.readTextFile(new URL(rel, import.meta.url))).replace(/\s+/g, " ");
 
+// CLAUDE.md is a short index since 2026-11-10; each topic lives in
+// docs/conventions/<topic>.md. The guidance is the index plus the topic
+// files, and the index must list every one of them.
+const readGuide = async (...topics: string[]) => {
+  const index = await read("../../CLAUDE.md");
+  for (const t of topics) {
+    const file = t.split("/").pop()!;
+    if (!index.includes(`| \`${file}\` |`)) throw new Error(`CLAUDE.md must list ${file} in Topics`);
+  }
+  return [index, ...(await Promise.all(topics.map((t) => read(t))))].join(" ");
+};
+
 Deno.test("ux guidance: the spoke loads for every page and component", async () => {
   const spoke = await read("../../.claude/rules/ux.md");
   for (const glob of ['"web/src/**/*.svelte"', '"landing/src/**/*.astro"']) {
@@ -26,7 +38,7 @@ Deno.test("ux guidance: the spoke loads for every page and component", async () 
 });
 
 Deno.test("ux guidance: the hub lists the spoke and the checklist points at it", async () => {
-  const hub = await read("../../CLAUDE.md");
+  const hub = await readGuide("../../docs/conventions/rule-spokes.md", "../../docs/conventions/verification.md");
   assert(hub.includes("| `ux.md` |"), "the spokes table must list ux.md");
   assert(hub.includes("against `.claude/rules/ux.md`"), "the verification checklist must point at ux.md");
 });

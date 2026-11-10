@@ -224,7 +224,7 @@
   );
 
   // One-shot data fetch on mount. Use onMount, NOT $effect — see
-  // CLAUDE.md → "Stores: $effect on mount is a trap; use onMount".
+  // docs/conventions/frontend.md → "Stores: $effect on mount is a trap; use onMount".
   // fetchOrg / fetchMembers / fetchInvites write store state; inside
   // an $effect those writes would attribute as deps and loop the
   // fetches.

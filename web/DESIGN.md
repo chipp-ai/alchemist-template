@@ -125,14 +125,14 @@ Rules:
   spinner for the (short) span of an in-flight button action, not a
   page/section load.
 - **`transition: all` is banned everywhere** (not just on cards — this is a
-  correctness rule, not just the CLAUDE.md scroll-jank rule). List the
+  correctness rule, not just the docs/conventions/frontend.md scroll-jank rule). List the
   properties you actually mean to animate.
 - **Every animation/transition declared in `motion.css` is disabled inside
   its trailing `@media (prefers-reduced-motion: reduce)` block**, ending
   with a blanket `*` kill-switch. If you add a new motion utility, add its
   disable rule to that same block, in order.
 - Interactive elements (buttons, list rows, cards) transition ONLY
-  `transform`/`opacity` (see CLAUDE.md's "Hover/interactive transitions
+  `transform`/`opacity` (see docs/conventions/frontend.md "Hover/interactive transitions
   animate ONLY compositor properties" section for the paint-jank rationale)
   — `color` is tolerated on tiny single controls only.
 
@@ -161,7 +161,7 @@ inventing a new one.
 1. Reach for an existing class first — the kit covers buttons, inputs,
    cards, badges, alerts, tables, empty states, modals (`<Modal>`,
    `web/src/components/Modal.svelte` — never hand-roll a backdrop, see
-   CLAUDE.md), and toasts (`toastStore` + `<ToastContainer>`).
+   docs/conventions/frontend.md), and toasts (`toastStore` + `<ToastContainer>`).
 2. If you genuinely need a new class, colors/spacing/radius/type/shadow
    come from tokens, motion comes from `motion.css` utilities, and
    `prefers-reduced-motion` is handled for any animation you add.

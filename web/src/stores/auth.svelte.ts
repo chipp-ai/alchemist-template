@@ -9,7 +9,7 @@
  * Update convention: top-level property assignment only. Whole-object
  * replacements like `state.user = newUser` notify the dev panel
  * immediately. Avoid nested mutation (`state.user.name = "X"`) — see
- * the CLAUDE.md "Stores and the DevPanel" section for the rationale.
+ * the `docs/conventions/frontend.md` "Stores and the DevPanel" section for the rationale.
  */
 
 import { api, ApiError } from "../lib/api";

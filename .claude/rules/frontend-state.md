@@ -13,7 +13,7 @@ paths:
 
 # Frontend state: tenant context and page lifetime
 
-The decision rule lives in `CLAUDE.md` -> "Tenant and route context: the
+The decision rule lives in `docs/conventions/frontend.md` -> "Tenant and route context: the
 Router key, not per-page watches". This spoke carries the mechanics.
 
 ## The contract

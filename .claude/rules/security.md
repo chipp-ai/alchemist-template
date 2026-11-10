@@ -85,7 +85,7 @@ A user of org A must never read, write, or learn the existence of org B's data.
 - Every route that mints or checks a code, a link or a session has per-identity
   and per-IP limits (`OTP_LIMITS` in `src/api/routes/auth/index.ts`, the IP
   from `src/lib/client-ip.ts`), and a cap that must hold is one atomic SQL
-  statement, never the fail-open Redis limiter alone. Full contract: CLAUDE.md,
+  statement, never the fail-open Redis limiter alone. Full contract: `docs/conventions/auth.md`,
   "Sign-in codes (OTP) contract".
 - Messages never tell a caller whether an account exists for an address.
 

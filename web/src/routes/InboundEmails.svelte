@@ -251,7 +251,7 @@
     cursor: pointer;
     /* Instant hover swap -- paint properties (background/box-shadow/border)
        never belong in a transition list on list rows; see the
-       "Hover/interactive transitions" rule in CLAUDE.md. */
+       "Hover/interactive transitions" rule in docs/conventions/frontend.md. */
   }
 
   @media (hover: hover) and (pointer: fine) {

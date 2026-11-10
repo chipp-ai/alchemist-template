@@ -3,7 +3,7 @@
   import { authStore } from "../stores/auth.svelte";
   import { orgStore } from "../stores/organization.svelte";
 
-  // One-shot fetch on mount. Use onMount, NOT $effect — see CLAUDE.md
+  // One-shot fetch on mount. Use onMount, NOT $effect — see docs/conventions/frontend.md
   // → "Stores: $effect on mount is a trap; use onMount". fetchOrg()
   // writes `state.currentOrg`, and inside an $effect that write would
   // attribute as a dep and re-fetch in a tight loop.
