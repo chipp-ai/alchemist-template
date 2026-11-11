@@ -45,7 +45,16 @@ can assert on them.
 
 ## Credentials
 
-`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME` and `SMTP_PASSWORD` are per-project
-deployment env vars. Never hardcode them and never share one account across
-projects. Without them the app still runs: mail is captured and logged, not
-delivered. The From address comes from `src/config/brand.ts`.
+Sign-in mail (the sign-in code, a sign-in link, email verification,
+password reset) needs no credential: Chipp delivers it through its auth
+mail service when a kind declares `authIntent`. See
+`docs/conventions/email.md`, "Who delivers outbound mail".
+
+Every other message needs the project's own email provider. `SMTP_HOST`,
+`SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `EMAIL_FROM` are
+per-project deployment env vars the project owner supplies through
+`request_credentials` (an SMTP endpoint from SendGrid, Resend, SES,
+Postmark, SMTP2GO or their own server). Never hardcode them and never
+share one account across projects. Without them the app still runs: mail
+is captured and logged, not delivered. The From address comes from
+`src/config/brand.ts`.

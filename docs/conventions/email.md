@@ -63,6 +63,43 @@ Invariants:
   iframes via `frameSrcdocForEmailHtml()` (CSP blocks remote loads). Keep
   it that way.
 
+## Who delivers outbound mail
+
+Chipp delivers sign-in mail for every hosted app, free. Everything else
+needs the project's own email provider.
+
+| Mail | Delivered by |
+|---|---|
+| Sign-in code, sign-in link, email verification, password reset | Chipp's auth mail service (`src/services/platform-auth-mail.ts`) |
+| Everything else: notifications, reminders, digests, receipts, invites, newsletters | The project's own provider, through `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `EMAIL_FROM` |
+
+How the auth lane works:
+
+- A kind declares `authIntent` (the `otp` and `portal_link` kinds do).
+  `sendEmailKind` passes the intent to the transport, and the transport
+  posts it to `POST $CHIPP_MAIL_URL/api/internal/project-mail/auth`. Chipp
+  renders the message from its own fixed template, from the project's
+  verified sending domain when it has one.
+- An intent is `{ kind, to, code? | link?, expiresInMinutes? }`, where
+  kind is `otp_code`, `magic_link`, `email_verification` or
+  `password_reset`. One recipient. A code is 4 to 12 letters or digits. A
+  link is https on one of the project's own domains. There is no subject or
+  body field: Chipp refuses anything that is not a sign-in message, so a
+  reminder can never be sent this way.
+- Chipp limits it per recipient and per project, with a daily cap. A 429
+  throws `PlatformAuthMailRefusedError` and never falls back to SMTP.
+  "Unavailable" (no `CHIPP_MAIL_*` env, the route not deployed, an outage)
+  falls back to the project's SMTP, else the dev mailbox.
+- A new sign-in kind (password reset, email verification) declares
+  `authIntent` too. Never declare it on a kind that is not a sign-in
+  message.
+
+Non-auth mail needs a provider key the project owner supplies (SMTP, or an
+API key for SendGrid, Resend, SES, Postmark or SMTP2GO behind an SMTP
+endpoint). Ask for it with `request_credentials`; never ship non-auth mail
+that depends on Chipp's shared sender. Until the key is set, non-auth mail
+is captured to the dev mailbox in dev and is not delivered in production.
+
 ## Outbound email: register a kind, never rebuild the shell
 
 Email is a configurable surface, not a place to hand-roll a message.
@@ -106,7 +143,9 @@ sanitize what a kind hands it.
 Invariants (each one is a defect someone already shipped):
 
 - **`authCritical` is only for mail a person cannot sign in without**:
-  the OTP code, an invite link, a portal link. Auth-critical mail skips
+  the OTP code, an invite link, a portal link. `authIntent` is narrower:
+  only the four sign-in intents Chipp delivers (an invite is
+  auth-critical but is not an auth intent). Auth-critical mail skips
   the communications gate and gets the verified-sender fallback.
   Suppressing it is a lockout, not a quiet inbox. Marking a digest
   auth-critical "to make sure it lands" makes the toggle a lie.

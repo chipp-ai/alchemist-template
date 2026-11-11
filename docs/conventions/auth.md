@@ -86,7 +86,7 @@ The template ships a complete, flag-gated social-login experience. When a builde
 
 How it works (`src/lib/oauth-providers.ts` + `src/api/routes/auth/index.ts` + `web/src/routes/Login.svelte`):
 
-- Email OTP login is always-on (the platform injects SMTP creds). OAuth providers are opt-in per deployment.
+- Email OTP login is always-on. Chipp delivers the code through its auth mail service (`src/services/platform-auth-mail.ts`); no SMTP credential is needed for it. OAuth providers are opt-in per deployment.
 - Setting a provider's env-var pair auto-registers `/api/auth/<id>` + `/api/auth/<id>/callback` and auto-shows its button on the Login page via `/auth/config`. Nothing else to wire.
 - The callback finds-or-creates the user by email, links the OAuth identity (`users.oauthProvider`/`oauthId`), marks the email verified, and issues the normal session. Provider switching on the same email is allowed.
 

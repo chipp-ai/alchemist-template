@@ -30,6 +30,11 @@ import { checkCommunicationsSuppression } from "@/services/communications.servic
 import { appOrigin } from "@/services/app-links.ts";
 import { getEnv } from "@/lib/env.ts";
 import { appPath } from "@/config/site.ts";
+import {
+  platformAuthMailConfigured,
+  type PlatformAuthIntent,
+  sendPlatformAuthMail,
+} from "@/services/platform-auth-mail.ts";
 import { oneClickUnsubscribeHeaders } from "@/services/mailing/unsubscribe-token.ts";
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -269,6 +274,15 @@ export interface SendEmailOptions {
    * debugging. Do not reach for this to "make sure it goes out".
    */
   bypassSuppression?: boolean;
+  /**
+   * The structured sign-in intent behind an auth-critical message. When set
+   * and the pod can reach Chipp's auth mail service, Chipp sends the message
+   * from its fixed template instead of this app's SMTP, and `subject` /
+   * `text` / `html` are used only for the dev mailbox. Set automatically by
+   * `sendEmailKind` for kinds that declare `authIntent`. See
+   * src/services/platform-auth-mail.ts.
+   */
+  authIntent?: PlatformAuthIntent;
 }
 
 export async function sendEmail(opts: SendEmailOptions): Promise<void> {
@@ -331,6 +345,16 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
       html: opts.html ?? null,
       headers: headers ?? null,
     });
+  }
+
+  // Auth mail goes through Chipp's auth mail service when the pod can reach
+  // it: the one kind of mail Chipp sends for every app. Reserved recipients
+  // never leave the app. `unavailable` (not configured, not deployed, an
+  // outage) falls through to this app's own transport below; a refusal
+  // (a limit, a bad intent) throws and never falls back.
+  if (opts.authIntent && platformAuthMailConfigured() && !isReservedRecipientAddress(opts.to)) {
+    const result = await sendPlatformAuthMail({ to: opts.to, intent: opts.authIntent });
+    if (result.status === "sent") return;
   }
 
   if (!transport) {

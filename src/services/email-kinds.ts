@@ -34,6 +34,7 @@
  * does not sanitize what a kind hands it.
  */
 
+import type { PlatformAuthIntent } from "@/services/platform-auth-mail.ts";
 import { BRAND } from "@/config/brand.ts";
 import { escapeHtml } from "@/lib/safe-html.ts";
 import { NotFoundError } from "@/utils/errors.ts";
@@ -61,6 +62,16 @@ export interface EmailKindDefinition<TData> {
    * actually be muted.
    */
   authCritical?: boolean;
+  /**
+   * The sign-in intent behind this kind, for Chipp's auth mail service
+   * (src/services/platform-auth-mail.ts): a code or a link on this app's
+   * own domain, nothing else. Declare it on sign-in kinds only (a code, a
+   * sign-in link, an email verification, a password reset). Chipp then
+   * sends the message from its fixed template; this kind's own subject and
+   * body are used where the service is unavailable (local dev, tests, an
+   * outage) and for the dev mailbox.
+   */
+  authIntent?: (data: TData) => PlatformAuthIntent;
   subject: (data: TData) => string;
   text: (data: TData) => string;
   /** Inner HTML. The shell is applied by the registry, never by the kind. */
@@ -140,6 +151,7 @@ export async function sendEmailKind<TData>(opts: {
     kind: def.kind,
     organizationId: opts.organizationId ?? null,
     authCritical: def.authCritical === true,
+    ...(def.authIntent ? { authIntent: def.authIntent(opts.data) } : {}),
     subject: rendered.subject,
     text: rendered.text,
     html: rendered.html,
@@ -365,6 +377,7 @@ registerEmailKind<OtpEmailData>({
   kind: "otp",
   description: "Sign-in verification code. Sent on every passwordless login.",
   authCritical: true,
+  authIntent: (d) => ({ kind: "otp_code", code: d.otpCode, expiresInMinutes: 30 }),
   // Never put the code in the subject. Transport, provider and demo logs
   // record subjects, and lock screens show them to anyone nearby. The code is
   // in the body and the preview text only.
@@ -415,6 +428,7 @@ registerEmailKind<PortalLinkEmailData>({
   kind: "portal_link",
   description: "Personal portal access link for an end user. Sent when an admin issues one.",
   authCritical: true,
+  authIntent: (d) => ({ kind: "magic_link", link: d.portalUrl }),
   subject: (d) => `Your ${d.organizationName || BRAND.name} portal link`,
   text: (d) =>
     [
