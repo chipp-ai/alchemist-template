@@ -66,7 +66,8 @@ export interface EmailKindDefinition<TData> {
    * The sign-in intent behind this kind, for Chipp's auth mail service
    * (src/services/platform-auth-mail.ts): a code or a link on this app's
    * own domain, nothing else. Declare it on sign-in kinds only (a code, a
-   * sign-in link, an email verification, a password reset). Chipp then
+   * sign-in link, an email verification, a password reset, a team invite
+   * link). Chipp then
    * sends the message from its fixed template; this kind's own subject and
    * body are used where the service is unavailable (local dev, tests, an
    * outage) and for the dev mailbox.
@@ -294,6 +295,15 @@ export interface InviteEmailData {
   expiresAt: Date;
 }
 
+/**
+ * The invite's expiry for the auth intent, in whole days (Chipp shows
+ * "expires in N days"). Left out past the 7-day maximum Chipp accepts.
+ */
+function inviteExpiry(expiresAt: Date): { expiresInMinutes?: number } {
+  const days = Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+  return days <= 7 ? { expiresInMinutes: days * 1440 } : {};
+}
+
 /** Inviter display + the " on <App>" suffix, shared by subject and body. */
 function inviteParts(d: InviteEmailData) {
   const appName = BRAND.name;
@@ -317,6 +327,10 @@ registerEmailKind<InviteEmailData>({
   description: "Team invite with an acceptance link. Sent by an admin from Settings.",
   // Auth-critical: the link IS the recipient's way into the workspace.
   authCritical: true,
+  // Chipp sends the invite from its fixed `invitation` template: the link
+  // and its expiry only, no inviter name or org name (the recipient did not
+  // ask for it, so nothing free-form goes in).
+  authIntent: (d) => ({ kind: "invitation", link: d.acceptUrl, ...inviteExpiry(d.expiresAt) }),
   subject: (d) => {
     const { inviterDisplay, onApp } = inviteParts(d);
     return `${inviterDisplay} invited you to ${d.organizationName}${onApp}`;

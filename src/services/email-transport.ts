@@ -105,6 +105,19 @@ if (smtpConfigured) {
   log.info("SMTP not configured -- emails are captured to the dev mailbox", { source: "email" });
 }
 
+/**
+ * Test seam: swap the SMTP transport for a stub (or null) and get the old
+ * one back. Lets a test model a project with its own provider without real
+ * SMTP credentials at module load.
+ */
+export function __setTransportForTest(
+  t: Pick<nodemailer.Transporter, "sendMail"> | null,
+): nodemailer.Transporter | null {
+  const previous = transport;
+  transport = t as nodemailer.Transporter | null;
+  return previous;
+}
+
 // ── Verified-sender fallback (AUTH_CRITICAL_VERIFIED_SENDER_FALLBACK) ───────────────────
 
 /**

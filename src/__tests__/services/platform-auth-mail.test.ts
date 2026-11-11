@@ -13,6 +13,7 @@ import {
   sendPlatformAuthMail,
 } from "@/services/platform-auth-mail.ts";
 import { clearCapturedEmails, lastCapturedEmail, sendEmailKind } from "@/services/email.ts";
+import { __setTransportForTest } from "@/services/email-transport.ts";
 
 const ENV = {
   CHIPP_MAIL_URL: "https://platform.chipp.test/",
@@ -146,6 +147,99 @@ Deno.test({
       await sendEmailKind({ kind: "otp", to: "someone@example.com", data: { otpCode: "111111" } });
       assertEquals(calls.length, 0);
     } finally {
+      reset();
+    }
+  },
+});
+
+Deno.test("platform auth mail: an older platform that does not know the kind is unavailable", async () => {
+  configure(400, { ok: false, error: "kind: one of otp_code, magic_link, email_verification, password_reset" });
+  try {
+    const r = await sendPlatformAuthMail({ to: TO, intent: { kind: "invitation", link: "https://acme.example/#/invite/t" } });
+    assertEquals(r.status, "unavailable");
+  } finally {
+    reset();
+  }
+  configure(400, { ok: false, error: "link: required for invitation" });
+  try {
+    await assertRejects(
+      () => sendPlatformAuthMail({ to: TO, intent: { kind: "invitation" } }),
+      PlatformAuthMailRefusedError,
+    );
+  } finally {
+    reset();
+  }
+});
+
+Deno.test({
+  name: "platform auth mail: the invite is a link-only invitation intent",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const calls = configure();
+    try {
+      await sendEmailKind({
+        kind: "invite",
+        to: TO,
+        data: {
+          inviterName: "Pat",
+          inviterEmail: "pat@chipp.ai",
+          organizationName: "Acme",
+          roleLabel: "Editor",
+          acceptUrl: "https://acme.example/#/invite/tok",
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000 + 60_000),
+        },
+      });
+      assertEquals(calls.length, 1);
+      assertEquals(calls[0].body, {
+        kind: "invitation",
+        to: TO,
+        link: "https://acme.example/#/invite/tok",
+        expiresInMinutes: 7 * 1440,
+      });
+    } finally {
+      reset();
+    }
+  },
+});
+
+Deno.test({
+  name: "platform auth mail: an app with its own provider still sends sign-in mail through Chipp",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    // The app's own SMTP (a BYO provider): it must carry ordinary mail only.
+    const viaOwnProvider: string[] = [];
+    const previous = __setTransportForTest({
+      sendMail: (m: { subject?: string }) => {
+        viaOwnProvider.push(String(m.subject));
+        return Promise.resolve({} as never);
+      },
+    });
+    const calls = configure();
+    try {
+      await sendEmailKind({ kind: "otp", to: TO, data: { otpCode: "246810" } });
+      await sendEmailKind({
+        kind: "invite",
+        to: TO,
+        data: {
+          inviterName: null,
+          inviterEmail: "pat@chipp.ai",
+          organizationName: "Acme",
+          roleLabel: "Viewer",
+          acceptUrl: "https://acme.example/#/invite/tok",
+          expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+        },
+      });
+      assertEquals(calls.map((c) => c.body.kind), ["otp_code", "invitation"]);
+      assertEquals(viaOwnProvider, []);
+
+      // When Chipp's lane is unavailable, the app's own provider is the fallback.
+      _platformAuthMailInternals.fetch = () => Promise.resolve(new Response("{}", { status: 503 }));
+      await sendEmailKind({ kind: "otp", to: TO, data: { otpCode: "135791" } });
+      assertEquals(viaOwnProvider.length, 1);
+    } finally {
+      __setTransportForTest(previous);
       reset();
     }
   },

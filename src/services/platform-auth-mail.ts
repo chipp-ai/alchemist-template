@@ -3,11 +3,14 @@
  * shared mail service.
  *
  * Chipp sends sign-in mail for every hosted app, free: a sign-in code, a
- * sign-in link, an email verification, a password reset. The app sends an
- * INTENT, never a message:
+ * sign-in link, an email verification, a password reset, a team invite
+ * link. The app sends an INTENT, never a message. This holds when the app
+ * has its own email provider too: sign-in mail stays on Chipp, so people
+ * can still sign in when the app's provider key lapses.
  *
  *   POST ${CHIPP_MAIL_URL}/api/internal/project-mail/auth
- *   { kind: "otp_code" | "magic_link" | "email_verification" | "password_reset",
+ *   { kind: "otp_code" | "magic_link" | "email_verification" | "password_reset"
+ *         | "invitation",
  *     to: "<one address>", code?: "<4-12 letters or digits>",
  *     link?: "https://<one of this app's own domains>/...",
  *     expiresInMinutes? }
@@ -30,7 +33,8 @@ export type PlatformAuthMailKind =
   | "otp_code"
   | "magic_link"
   | "email_verification"
-  | "password_reset";
+  | "password_reset"
+  | "invitation";
 
 export interface PlatformAuthIntent {
   kind: PlatformAuthMailKind;
@@ -130,6 +134,17 @@ export async function sendPlatformAuthMail(opts: {
   if (res.ok) {
     log.info("Platform auth mail sent", { source: "email", feature: "platform-auth-mail", kind: opts.intent.kind });
     return { status: "sent" };
+  }
+  // A 400 that names `kind` is a platform that does not know this kind yet
+  // (an older deploy): unavailable, like a 404. Any other 400 is a bad
+  // intent and stays a refusal.
+  if (res.status === 400 && typeof payload.error === "string" && payload.error.startsWith("kind:")) {
+    log.warn("Platform auth mail does not support this kind yet", {
+      source: "email",
+      feature: "platform-auth-mail",
+      kind: opts.intent.kind,
+    });
+    return { status: "unavailable", reason: "kind_unsupported" };
   }
   // 404: the platform has not deployed the auth route yet. 5xx: an outage.
   // A retryable 424: the provider did not take it this time. 422: the link

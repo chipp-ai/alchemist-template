@@ -70,26 +70,27 @@ needs the project's own email provider.
 
 | Mail | Delivered by |
 |---|---|
-| Sign-in code, sign-in link, email verification, password reset | Chipp's auth mail service (`src/services/platform-auth-mail.ts`) |
-| Everything else: notifications, reminders, digests, receipts, invites, newsletters | The project's own provider, through `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `EMAIL_FROM` |
+| Sign-in code, sign-in link, email verification, password reset, team invite link | Chipp's auth mail service (`src/services/platform-auth-mail.ts`), also when the project has its own provider |
+| Everything else: notifications, reminders, digests, receipts, newsletters | The project's own provider, through `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `EMAIL_FROM` |
 
 How the auth lane works:
 
-- A kind declares `authIntent` (the `otp` and `portal_link` kinds do).
+- A kind declares `authIntent` (the `otp`, `portal_link` and `invite`
+  kinds do).
   `sendEmailKind` passes the intent to the transport, and the transport
   posts it to `POST $CHIPP_MAIL_URL/api/internal/project-mail/auth`. Chipp
   renders the message from its own fixed template, from the project's
   verified sending domain when it has one.
 - An intent is `{ kind, to, code? | link?, expiresInMinutes? }`, where
-  kind is `otp_code`, `magic_link`, `email_verification` or
-  `password_reset`. One recipient. A code is 4 to 12 letters or digits. A
+  kind is `otp_code`, `magic_link`, `email_verification`,
+  `password_reset` or `invitation` (link-only, like `magic_link`). One recipient. A code is 4 to 12 letters or digits. A
   link is https on one of the project's own domains. There is no subject or
   body field: Chipp refuses anything that is not a sign-in message, so a
   reminder can never be sent this way.
 - Chipp limits it per recipient and per project, with a daily cap. A 429
   throws `PlatformAuthMailRefusedError` and never falls back to SMTP.
-  "Unavailable" (no `CHIPP_MAIL_*` env, the route not deployed, an outage)
-  falls back to the project's SMTP, else the dev mailbox.
+  "Unavailable" (no `CHIPP_MAIL_*` env, the route not deployed, a platform
+  that does not know the kind yet, an outage) falls back to the project's SMTP, else the dev mailbox.
 - A new sign-in kind (password reset, email verification) declares
   `authIntent` too. Never declare it on a kind that is not a sign-in
   message.
@@ -144,8 +145,8 @@ Invariants (each one is a defect someone already shipped):
 
 - **`authCritical` is only for mail a person cannot sign in without**:
   the OTP code, an invite link, a portal link. `authIntent` is narrower:
-  only the four sign-in intents Chipp delivers (an invite is
-  auth-critical but is not an auth intent). Auth-critical mail skips
+  only the five sign-in intents Chipp delivers (an invite is one:
+  `invitation`, the link and its expiry, nothing free-form). Auth-critical mail skips
   the communications gate and gets the verified-sender fallback.
   Suppressing it is a lockout, not a quiet inbox. Marking a digest
   auth-critical "to make sure it lands" makes the toggle a lie.
