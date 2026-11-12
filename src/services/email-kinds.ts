@@ -57,7 +57,7 @@ export interface EmailKindDefinition<TData> {
   /**
    * True when a user cannot finish signing in without this message (OTP
    * code, invite acceptance link, portal access link). Auth-critical mail
-   * SKIPS the communications gate and gets the verified-sender fallback.
+   * SKIPS the communications gate.
    * Everything else must be false: an org that muted notifications must
    * actually be muted.
    */

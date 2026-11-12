@@ -31,8 +31,8 @@ import { appOrigin } from "@/services/app-links.ts";
 import { getEnv } from "@/lib/env.ts";
 import { appPath } from "@/config/site.ts";
 import {
-  platformAuthMailConfigured,
   type PlatformAuthIntent,
+  platformAuthMailConfigured,
   sendPlatformAuthMail,
 } from "@/services/platform-auth-mail.ts";
 import { oneClickUnsubscribeHeaders } from "@/services/mailing/unsubscribe-token.ts";
@@ -118,20 +118,7 @@ export function __setTransportForTest(
   return previous;
 }
 
-// ── Verified-sender fallback (AUTH_CRITICAL_VERIFIED_SENDER_FALLBACK) ───────────────────
-
-/**
- * The platform's provider-VERIFIED sender, injected into every customer pod
- * by the shared `alchemist-customer-platform-creds` secret. Never overridable
- * by a project credential -- it is on the platform-owned env var list, so a
- * per-project value can never shadow it.
- *
- * This is the address auth-critical mail falls back to when the configured
- * sender is rejected. Empty when a deployment genuinely has no platform
- * sender (local dev), in which case the fallback is skipped and the original
- * error propagates unchanged.
- */
-const PLATFORM_EMAIL_FROM = getEnv("PLATFORM_EMAIL_FROM") ?? "";
+// ── Unverified-sender detection ─────────────────────────────────────────────
 
 /**
  * Matches the mail provider's permanent refusal to send as an unverified
@@ -194,25 +181,21 @@ export function effectiveSendHeaders(
 }
 
 /**
- * What this deployment would actually send as: the branded From, whether
- * SMTP is configured, and the provider-verified platform sender the
- * auth-critical fallback would use (null when there is none, e.g. local
- * dev). GET /api/dev/info and GET /api/dev/outbox surface this so an
- * agent can see the sender identity without reading env or code.
+ * What this deployment would actually send as: the branded From and whether
+ * SMTP is configured. GET /api/dev/info and GET /api/dev/outbox surface this
+ * so an agent can see the sender identity without reading env or code.
  */
 export function describeEmailSender(): {
   from: string;
   fromName: string;
   fromEmail: string;
   smtpConfigured: boolean;
-  platformEmailFrom: string | null;
 } {
   return {
     from: EMAIL_FROM,
     fromName: BRAND.fromName,
     fromEmail: BRAND.fromEmail,
     smtpConfigured,
-    platformEmailFrom: PLATFORM_EMAIL_FROM || null,
   };
 }
 
@@ -251,14 +234,11 @@ export interface SendEmailOptions {
   html?: string;
   /**
    * True for mail a user cannot complete their session without: the OTP login
-   * code, an invite acceptance link, a portal access link. Such a send gets
-   * the verified-sender fallback below AND skips the communications gate, so
-   * neither a misconfigured branded sender nor a muted workspace can lock
-   * anyone out of their account.
+   * code, an invite acceptance link, a portal access link. Such a send
+   * skips the communications gate, so a muted workspace can never lock anyone
+   * out of their account; with an `authIntent` Chipp delivers it.
    *
-   * Leave unset for ordinary mail. The fallback trades brand fidelity for
-   * deliverability, which is the right trade only when the alternative is a
-   * user who cannot log in.
+   * Leave unset for ordinary mail.
    */
   authCritical?: boolean;
   /**
@@ -410,70 +390,6 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
     });
     log.info("Email sent", { source: "email", to: opts.to, kind: opts.kind ?? null });
   } catch (err) {
-    // AUTH_CRITICAL_VERIFIED_SENDER_FALLBACK
-    //
-    // The configured sender was refused as unverified. For ORDINARY mail that
-    // is a real failure and the caller should hear about it. For AUTH-CRITICAL
-    // mail it is a lockout: the user cannot receive the code that is the only
-    // way into their account, and no amount of retrying the same From will
-    // ever work. So retry ONCE from the platform's verified sender, keeping
-    // the brand as the display name and routing replies back to the
-    // configured address.
-    //
-    // Ordered deliberately: this is a fallback on the failure path, never a
-    // pre-emptive rewrite of the sender. A correctly configured branded sender
-    // is used as-is and never touches this branch.
-    const canFallBack = opts.authCritical === true &&
-      isUnverifiedSenderRejection(err) &&
-      !!PLATFORM_EMAIL_FROM &&
-      BRAND.fromEmail !== PLATFORM_EMAIL_FROM;
-
-    if (canFallBack) {
-      // warn, not error: this is a handled, operator-actionable configuration
-      // problem that we just recovered from, and it repeats on every send
-      // until the domain is verified. An error here would page on a condition
-      // already contained.
-      log.warn(
-        "Sender domain not verified -- retrying auth-critical email from the platform sender",
-        {
-          source: "email",
-          feature: "verified-sender-fallback",
-          to: opts.to,
-          configuredFrom: BRAND.fromEmail,
-        },
-        err as Error,
-      );
-      try {
-        await transport.sendMail({
-          from: `${BRAND.fromName} <${PLATFORM_EMAIL_FROM}>`,
-          // Pin the SMTP envelope too. A provider checks the envelope sender
-          // as well as the header, so leaving it to nodemailer's default
-          // would reproduce the same rejection.
-          envelope: { from: PLATFORM_EMAIL_FROM, to: opts.to },
-          replyTo: BRAND.fromEmail,
-          to: opts.to,
-          subject: opts.subject,
-          text: opts.text,
-          html: opts.html,
-        });
-        log.info("Email sent", {
-          source: "email",
-          feature: "verified-sender-fallback",
-          to: opts.to,
-          kind: opts.kind ?? null,
-        });
-        return;
-      } catch (fallbackErr) {
-        // The fallback failed too. Report the ORIGINAL error below -- it names
-        // the configured sender, which is the thing an operator has to fix.
-        log.error(
-          "Verified-sender fallback also failed",
-          { source: "email", feature: "verified-sender-fallback", to: opts.to },
-          fallbackErr as Error,
-        );
-      }
-    }
-
     log.error("Failed to send email", { source: "email", to: opts.to }, err as Error);
     throw err;
   }

@@ -147,7 +147,7 @@ Invariants (each one is a defect someone already shipped):
   the OTP code, an invite link, a portal link. `authIntent` is narrower:
   only the five sign-in intents Chipp delivers (an invite is one:
   `invitation`, the link and its expiry, nothing free-form). Auth-critical mail skips
-  the communications gate and gets the verified-sender fallback.
+  the communications gate.
   Suppressing it is a lockout, not a quiet inbox. Marking a digest
   auth-critical "to make sure it lands" makes the toggle a lie.
 - **`sendTestEmail()` bypasses the gate on purpose.** It is the "prove
@@ -296,27 +296,21 @@ Mail composes as `${BRAND.fromName} <${BRAND.fromEmail}>`. The address comes
 from env the platform injects; nothing in this repo composes a From header
 by hand.
 
-- `EMAIL_FROM` — the sender every send uses. The platform sets it to the
-  project's verified own domain when one is configured (the pod env carries
-  the bare address; BRAND composes the display name). With no verified
-  domain the key is omitted and the shared platform sender stands. A
-  per-project credential may also set it; that wins over the platform's
-  branded value, because a self-supplied SMTP provider verifies its own
-  domain, not ours.
-- `PLATFORM_EMAIL_FROM` — the provider-verified platform sender. It is on
-  the platform-owned env var list, so no project credential can shadow it.
-  Empty in local dev, which disables the fallback below.
+- `EMAIL_FROM` — the sender this app's own provider sends as. It is part
+  of the provider credential group (`EMAIL_FROM`, `SMTP_HOST`,
+  `SMTP_USERNAME`, `SMTP_PASSWORD`, optional `SMTP_PORT`) the project brings
+  with `request_credentials`. There is no shared platform sender or SMTP
+  login any more.
 
-The transport carries `AUTH_CRITICAL_VERIFIED_SENDER_FALLBACK`: when SMTP
-rejects the configured sender as unverified (`sender domain not verified`),
-auth-critical mail (OTP, invite, portal link) retries once from
-`PLATFORM_EMAIL_FROM`, keeping the brand as the display name and setting
-Reply-To to the branded address. Ordinary mail never rewrites its sender:
-the outbox marks the row `failed` immediately, with the fix in `last_error`.
+Sign-in mail does not need a provider: Chipp delivers it from its own sender
+(see above). A pod with no provider of its own gets SMTP settings that point
+at Chipp's sign-in mail relay, which delivers sign-in mail only and accepts
+and drops anything else. Ordinary mail never rewrites its sender: when the
+provider refuses it (`sender domain not verified`), the outbox marks the row
+`failed` immediately, with the fix in `last_error`.
 
 In dev, `GET /api/dev/info` returns an `email` block with the effective
-From and whether `PLATFORM_EMAIL_FROM` is set; `GET /api/dev/outbox` returns
-the same snapshot next to the rows.
+From; `GET /api/dev/outbox` returns the same snapshot next to the rows.
 
-The shared platform sender is for transactional mail only. A campaign
-(newsletter) refuses to send from it; see the next section.
+A campaign (newsletter) refuses to send from a shared Chipp domain; see the
+next section.
