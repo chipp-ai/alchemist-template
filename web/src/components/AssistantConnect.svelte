@@ -5,11 +5,14 @@
    * member, a viewer included. Settings loads `info` from GET /api/assistants;
    * the per-client links and steps live in web/src/lib/assistant-connect.ts.
    */
+  import { api } from "../lib/api";
   import {
     ASSISTANT_TARGETS,
     ASSISTANTS_DOCS_URL,
+    CHIPP_TARGET,
     type AssistantsInfo,
     type AssistantTarget,
+    type ChippConnectStart,
   } from "../lib/assistant-connect";
 
   let { info }: { info: AssistantsInfo } = $props();
@@ -29,6 +32,43 @@
     }
   }
 
+  let chippBusy = $state(false);
+  let chippError = $state<string | null>(null);
+
+  /**
+   * Chipp: get a short-lived token, then form-POST it to Chipp so it never
+   * sits in a URL. The tab opens inside the click (a window opened after an
+   * await is blocked); the form then targets it. No tab: same tab.
+   */
+  async function openInChipp() {
+    if (chippBusy) return;
+    chippBusy = true;
+    chippError = null;
+    const name = "chipp-connect";
+    const win = window.open("about:blank", name);
+    try {
+      const res = await api.post<{ data: ChippConnectStart }>("/assistants/chipp", {});
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = res.data.action;
+      form.target = win ? name : "_self";
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "token";
+      input.value = res.data.token;
+      form.appendChild(input);
+      document.body.appendChild(form);
+      if (win) win.opener = null;
+      form.submit();
+      form.remove();
+    } catch {
+      win?.close();
+      chippError = "Could not open Chipp. Try again.";
+    } finally {
+      chippBusy = false;
+    }
+  }
+
   async function connect(target: AssistantTarget) {
     if (!info.mcpUrl) return;
     const href = target.url({ name: info.appName, mcpUrl: info.mcpUrl });
@@ -43,7 +83,7 @@
 </script>
 
 <section class="card settings-section" data-testid="assistants-section">
-  <h2 class="section-title">Use with Claude, ChatGPT or Grok</h2>
+  <h2 class="section-title">Use with Chipp, Claude, ChatGPT or Grok</h2>
 
   {#if !info.enabled || !info.mcpUrl}
     <p class="text-muted" data-testid="assistants-disabled">
@@ -74,6 +114,25 @@
     </div>
 
     <div class="assistants-clients" data-testid="assistants-clients">
+      {#if info.chipp}
+        <div class="assistants-row" data-testid="assistants-row-chipp">
+          <div class="assistants-row-text">
+            <div class="assistants-row-title">{CHIPP_TARGET.label}</div>
+            <div class="assistants-row-steps">
+              {chippError ?? CHIPP_TARGET.steps}
+            </div>
+          </div>
+          <button
+            type="button"
+            class="btn btn-secondary assistants-row-btn"
+            onclick={openInChipp}
+            disabled={chippBusy}
+            data-testid="assistants-btn-chipp"
+          >
+            {CHIPP_TARGET.action}
+          </button>
+        </div>
+      {/if}
       {#each ASSISTANT_TARGETS as target (target.id)}
         <div class="assistants-row" data-testid="assistants-row-{target.id}">
           <div class="assistants-row-text">

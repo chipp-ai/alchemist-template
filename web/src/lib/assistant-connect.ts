@@ -4,6 +4,7 @@
  *
  * Verified against each vendor's docs on 2026-11-12:
  *
+ * - Chipp: see CHIPP_TARGET below. It is listed first.
  * - Claude: an install link opens the "Add custom connector" dialog with
  *   the name and URL filled in; the person confirms.
  *   https://claude.com/docs/connectors/building/directory-vs-custom
@@ -24,7 +25,29 @@ export interface AssistantsInfo {
   enabled: boolean;
   appName: string;
   mcpUrl: string | null;
+  /** True when the app runs on Chipp, so the Chipp row can connect it. */
+  chipp: boolean;
 }
+
+/** POST /api/assistants/chipp: a short-lived token to form-post to `action`. */
+export interface ChippConnectStart {
+  action: string;
+  token: string;
+}
+
+/**
+ * Chipp: listed first. The app hands the member to Chipp with a signed,
+ * short-lived token (POST /api/assistants/chipp, then a form POST to Chipp).
+ * Chipp connects this app to the member's chief of staff agent, or creates
+ * one for a new Chipp user, and opens a chat about this app. The member
+ * approves the connection once on this app's sign-in page.
+ */
+export const CHIPP_TARGET = {
+  label: "Chipp",
+  action: "Open in Chipp",
+  steps: "Chipp adds this app to your personal Chipp agent and opens a chat about it. " +
+    "You approve the connection once. New to Chipp? You sign up with your email first.",
+} as const;
 
 export type AssistantId = "claude" | "chatgpt" | "grok";
 

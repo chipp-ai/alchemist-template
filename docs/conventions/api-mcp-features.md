@@ -36,6 +36,11 @@ Claude gets a link that opens its "Add custom connector" dialog with the app
 filled in; ChatGPT and Grok have no such link, so their buttons copy the MCP
 URL and open the connector page with one line of steps. The links and the
 doc URLs they were checked against live in `web/src/lib/assistant-connect.ts`.
+Chipp is listed first when the app runs on Chipp (`ALCH_MEMBER_SYNC_SECRET`
+and `PROJECT_ID` set): `POST /api/assistants/chipp` mints a 120 s token
+(`src/services/chipp-assistant-connect.ts`, wire contract in its header) that
+the browser form-posts to Chipp, which connects the app to the person's chief
+of staff agent through this same OAuth and opens a chat about the app.
 The OAuth consent signs each person in with this app's own login and admits
 every role, so an assistant acts with that person's role. Never add a second
 connect page.
