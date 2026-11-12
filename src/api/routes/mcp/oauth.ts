@@ -107,7 +107,7 @@ mcpOauthRoutes.get("/authorize", authMiddleware, async (c) => {
   } catch (err) {
     if (!(err instanceof ForbiddenError)) throw err;
     return c.html(
-      `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+      `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">` +
         `<title>${escapeHtmlText(BRAND.name)}</title>` +
         `<p style="font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 16px">` +
         `${escapeHtmlText(err.message)}</p>`,
