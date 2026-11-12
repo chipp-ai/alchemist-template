@@ -12,7 +12,13 @@
  *   X-Event-Signature: v1=<hex HMAC-SHA256(ALCH_MEMBER_SYNC_SECRET, `${timestamp}.${rawBody}`)>
  *   { "projectId": "<uuid>", "seq": <integer, ms epoch>,
  *     "members": [{ "email": string, "name": string|null,
- *                   "role": "owner"|"editor"|"viewer" }] }   (at most 500)
+ *                   "role": "owner"|"editor"|"viewer" }],      (at most 500)
+ *     "access": { "mode": "open"|"sign_in_required"|"restricted",
+ *                 "allowedEmails": string[] } }               (optional; at most 20,000)
+ *
+ *   `access` is stored in the same transaction as the reconcile. A body
+ *   without it leaves the stored setting unchanged. See
+ *   src/services/platform-access.service.ts for what "restricted" does.
  *
  *   -> 200 { ok: true, applied: true, orgId, created, updated, disconnected,
  *            skipped: [{ email, reason }] }
@@ -43,6 +49,7 @@ import {
 } from "@/lib/event-signing.ts";
 import { getEnv } from "@/lib/env.ts";
 import { log } from "@/lib/logger.ts";
+import { ACCESS_MODES, MAX_ALLOWED_EMAILS } from "@/services/platform-access.service.ts";
 import {
   applyMemberSync,
   MEMBER_SYNC_MAX_MEMBERS,
@@ -57,7 +64,8 @@ import {
 } from "@/utils/errors.ts";
 
 const LOG_SOURCE = "platform-member-sync";
-const MAX_BODY_BYTES = 512 * 1024;
+// 500 members plus up to 20,000 allowed emails.
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 /** Both env values, or null when the route is disabled on this deploy. */
 export function memberSyncConfig(): { secret: string; projectId: string } | null {
@@ -75,10 +83,17 @@ const memberSchema = z.object({
   role: z.enum(PLATFORM_ROLES),
 });
 
+const accessSchema = z.object({
+  mode: z.enum(ACCESS_MODES),
+  allowedEmails: z.array(z.string().trim().max(320)).max(MAX_ALLOWED_EMAILS),
+});
+
 const bodySchema = z.object({
   projectId: z.string().min(1).max(100),
   seq: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   members: z.array(memberSchema).max(MEMBER_SYNC_MAX_MEMBERS),
+  // Optional. Absent: the stored access setting stays as it is.
+  access: accessSchema.optional(),
 });
 
 export const platformMemberSyncRoutes = new Hono();
@@ -147,6 +162,13 @@ platformMemberSyncRoutes.post("/member-sync", async (c) => {
       name: m.name && m.name.length > 0 ? m.name : null,
       role: m.role,
     })),
+    access: body.access
+      ? {
+        mode: body.access.mode,
+        // The platform sends them lowercase and deduped; normalize anyway.
+        allowedEmails: [...new Set(body.access.allowedEmails.map(normalizeEmail).filter(Boolean))],
+      }
+      : undefined,
   });
 
   c.header("Cache-Control", "no-store");
@@ -170,6 +192,8 @@ platformMemberSyncRoutes.post("/member-sync", async (c) => {
     updated: result.updated,
     disconnected: result.disconnected,
     skipped: result.skipped.length,
+    accessMode: body.access?.mode ?? null,
+    allowedEmails: body.access?.allowedEmails.length ?? null,
   });
   return c.json({
     ok: true,

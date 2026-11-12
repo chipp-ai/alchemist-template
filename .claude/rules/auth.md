@@ -249,6 +249,22 @@ HMAC-SHA256 with `ALCH_MEMBER_SYNC_SECRET`). The reconcile is
 - **Replay:** `platform_member_sync_state` keeps the last applied `seq`; a
   delivery whose seq is not newer is ignored (200, `applied: false`).
 - Tests: `src/__tests__/routes/platform-member-sync.test.ts`.
+- **Access setting.** The sync body may carry `access: { mode, allowedEmails }`
+  (`open`, `sign_in_required`, `restricted`), stored on the state row in the
+  same transaction; a body without it keeps the stored value. In
+  `restricted` mode `assertSignInAdmitted` (`src/services/platform-access.service.ts`)
+  admits only attached members (synced or native), pending invitees and
+  `allowedEmails`, at send-otp (before a code exists), verify-otp, the
+  social callback (before an account exists) and MCP OAuth authorize.
+  Everyone else gets one 403, "This app is private. Ask the owner for
+  access." A failed check refuses. Any new sign-in path must call it.
+  Tests: `src/__tests__/routes/platform-access.test.ts`.
+- **One-time handoff from Chipp.** `POST /api/auth/platform-handoff`
+  (form body `token`, `next`) signs a synced member in with a single-use,
+  120-second JWT keyed on HMAC-SHA256(sync secret, "member-handoff:v1").
+  The jti is burned in `platform_handoff_claims`. Failures 303 to
+  `/app/#/login?handoff=failed`. Tests:
+  `src/__tests__/routes/platform-handoff.test.ts`.
 
 ## Agent tokens (embedded Chipp agent)
 

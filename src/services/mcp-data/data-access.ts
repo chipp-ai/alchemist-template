@@ -49,6 +49,7 @@ const HIDDEN_TABLES = new Set([
   "portal_access_tokens",
   "verification_sessions",
   "platform_member_sync_state",
+  "platform_handoff_claims",
   "schema_migrations",
   "events",
   "event_subscriptions",

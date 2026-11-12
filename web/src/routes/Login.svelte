@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { push } from "svelte-spa-router";
+  import { push, querystring } from "svelte-spa-router";
   import { authStore } from "../stores/auth.svelte";
   import { api } from "../lib/api";
 
@@ -17,6 +17,11 @@
   let errorMessage = $state<string | null>(null);
   let providers = $state<OAuthProviderConfig[]>([]);
   let resendMessage = $state<string | null>(null);
+  // A Chipp sign-in handoff that failed lands here with ?handoff=failed
+  // (POST /api/auth/platform-handoff).
+  const handoffFailed = $derived(
+    new URLSearchParams($querystring).get("handoff") === "failed",
+  );
 
   // Fetch the auth config (OAuth providers list) once on mount.
   // Use onMount, NOT $effect — see docs/conventions/frontend.md → "Stores: $effect on
@@ -136,6 +141,12 @@
   <div class="auth-card card reveal">
     <h1 class="auth-title">Welcome back</h1>
     <p class="auth-subtitle">Sign in to your account</p>
+
+    {#if handoffFailed && !errorMessage}
+      <div class="alert alert-warning" data-testid="login-alert-handoff-failed">
+        That sign-in link expired or was already used. Sign in with your email.
+      </div>
+    {/if}
 
     {#if errorMessage}
       <div class="alert alert-error" data-testid="login-alert-error">

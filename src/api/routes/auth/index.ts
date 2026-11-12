@@ -9,6 +9,7 @@
  * Endpoints:
  *   POST /send-otp                  Send a one-time code to an email
  *   POST /verify-otp                Verify the code and create a session
+ *   POST /platform-handoff          One-time sign-in from Chipp (synced members)
  *   POST /logout                    Clear session
  *   GET  /me                        Current user + org
  *   GET  /config                    Public auth config (which providers are wired up)
@@ -59,13 +60,19 @@ import {
   MANAGED_BY_CHIPP_MESSAGE,
   managedByOf,
 } from "@/services/platform-member-sync.service.ts";
+import { assertSignInAdmitted } from "@/services/platform-access.service.ts";
 import { verificationSessionRoutes } from "./verification-session.ts";
+import { platformHandoffRoutes } from "./platform-handoff.ts";
 
 const authRoutes = new Hono();
 
 // Platform verification sessions (read-only, platform-signed token only).
 // Disabled (404) unless the platform injected its secret. See the file.
 authRoutes.route("/verification-session", verificationSessionRoutes);
+
+// One-time sign-in handoff from Chipp for synced members (platform-signed,
+// single-use). Disabled (404) unless the member sync secret is set.
+authRoutes.route("/platform-handoff", platformHandoffRoutes);
 
 const SESSION_COOKIE = "session_id";
 const IS_PROD = getEnv("NODE_ENV") === "production";
@@ -324,6 +331,8 @@ authRoutes.post("/send-otp", zValidator("json", sendOtpSchema, validationHook), 
   }
 
   await enforceOtpSendLimits(c, email);
+  // Restricted mode: refuse BEFORE a code exists or a mail goes out.
+  await assertSignInAdmitted(email, "send-otp");
   const otpCode = await issueOtp(email);
 
   // Send the OTP email (falls back to console.log when SMTP not configured)
@@ -366,6 +375,9 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
     throw new UnauthorizedError("Invalid or expired code");
   }
   await enforceOtpVerifyLimit(c);
+  // Restricted mode, checked again: the setting may have changed since the
+  // code was sent.
+  await assertSignInAdmitted(email, "verify-otp");
 
   // Every guess, right or wrong, first claims one try on each live, unspent
   // code for this email (claimOtpTry). A resend reuses the live code, so this
@@ -1224,6 +1236,9 @@ authRoutes.get("/:provider/callback", async (c) => {
   if (!mapped.email) {
     throw new BadRequestError(`${provider.label} did not return an email address.`);
   }
+
+  // Restricted mode: refuse before an account is found or created.
+  await assertSignInAdmitted(mapped.email, "social");
 
   // ── Find or create user ──────────────────────────────────────────────
   let user = await db

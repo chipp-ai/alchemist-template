@@ -120,6 +120,17 @@ export interface PlatformMemberSyncStateTable {
   lastSeq: ColumnType<string, string | number, string | number>;
   organizationId: string | null;
   appliedAt: Generated<Date>;
+  /** NULL until the platform sends an access setting. */
+  accessMode: "open" | "sign_in_required" | "restricted" | null;
+  /** Lowercase emails admitted in restricted mode (besides members). */
+  allowedEmails: Generated<string[]>;
+}
+
+/** One row per Chipp sign-in handoff token used (single-use jti). */
+export interface PlatformHandoffClaimsTable {
+  jti: string;
+  userId: string | null;
+  claimedAt: Generated<Date>;
 }
 
 export interface SessionsTable {
@@ -804,6 +815,7 @@ export interface Database {
   otps: OtpsTable;
   verification_sessions: VerificationSessionsTable;
   platform_member_sync_state: PlatformMemberSyncStateTable;
+  platform_handoff_claims: PlatformHandoffClaimsTable;
   sessions: SessionsTable;
   api_credentials: ApiCredentialsTable;
   invites: InvitesTable;

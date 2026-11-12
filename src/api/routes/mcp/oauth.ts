@@ -36,6 +36,8 @@ import { authMiddleware, type AuthUser } from "@/api/middleware/auth.ts";
 import { escapeHtml as escapeHtmlText } from "@/lib/safe-html.ts";
 import { log } from "@/lib/logger.ts";
 import { BRAND } from "@/config/brand.ts";
+import { assertSignInAdmitted } from "@/services/platform-access.service.ts";
+import { ForbiddenError } from "@/utils/errors.ts";
 import {
   authCodeService,
   clientService,
@@ -95,7 +97,22 @@ mcpOauthRoutes.get("/authorize", authMiddleware, async (c) => {
   // reloads this same authorize URL (all params preserved) to show consent.
   const user = sessionUser(c);
   if (!user) {
+    // The login page posts to /api/auth/send-otp and /verify-otp, which
+    // enforce restricted mode themselves.
     return c.html(renderLoginPage(escapeHtmlText(client.name)));
+  }
+  // Restricted mode applies to a session that already exists too.
+  try {
+    await assertSignInAdmitted(user.email, "mcp-oauth");
+  } catch (err) {
+    if (!(err instanceof ForbiddenError)) throw err;
+    return c.html(
+      `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+        `<title>${escapeHtmlText(BRAND.name)}</title>` +
+        `<p style="font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 16px">` +
+        `${escapeHtmlText(err.message)}</p>`,
+      403,
+    );
   }
 
   return c.html(
@@ -120,6 +137,7 @@ mcpOauthRoutes.post("/authorize", authMiddleware, async (c) => {
   if (!user) {
     return c.json({ error: "access_denied", error_description: "Not authenticated" }, 401);
   }
+  await assertSignInAdmitted(user.email, "mcp-oauth");
 
   const form = await c.req.parseBody();
   const get = (k: string) => (typeof form[k] === "string" ? (form[k] as string) : "");

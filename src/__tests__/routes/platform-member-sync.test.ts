@@ -39,6 +39,9 @@ function withEnv(fn: () => Promise<void>): () => Promise<void> {
   return async () => {
     __setEnvForTest("ALCH_MEMBER_SYNC_SECRET", SECRET);
     __setEnvForTest("PROJECT_ID", PROJECT_ID);
+    // Each test starts from no stored seq or access setting (one row,
+    // shared by every test in this worker's schema).
+    await db.deleteFrom("platform_member_sync_state").execute();
     try {
       await fn();
     } finally {

@@ -55,6 +55,7 @@
 import { sql, type Transaction } from "kysely";
 import { db } from "@/db/client.ts";
 import type { Database } from "@/db/schema.ts";
+import type { AccessMode } from "@/services/platform-access.service.ts";
 import { isVerificationAccountEmail, VERIFICATION_ORG_SLUG } from "@/lib/verification-accounts.ts";
 
 export const PLATFORM_ROLES = ["owner", "editor", "viewer"] as const;
@@ -187,6 +188,8 @@ async function resolveTargetOrg(
 export async function applyMemberSync(input: {
   seq: number;
   members: DesiredMember[];
+  /** Absent: the stored access setting is left as it is. */
+  access?: { mode: AccessMode; allowedEmails: string[] };
 }): Promise<MemberSyncResult> {
   const desired = input.members.map((m) => ({ ...m, email: normalizeEmail(m.email) }));
 
@@ -297,7 +300,14 @@ export async function applyMemberSync(input: {
 
     await trx
       .updateTable("platform_member_sync_state")
-      .set({ lastSeq: input.seq, organizationId: orgId, appliedAt: now })
+      .set({
+        lastSeq: input.seq,
+        organizationId: orgId,
+        appliedAt: now,
+        ...(input.access
+          ? { accessMode: input.access.mode, allowedEmails: input.access.allowedEmails }
+          : {}),
+      })
       .where("id", "=", true)
       .execute();
 
