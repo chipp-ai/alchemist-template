@@ -66,6 +66,16 @@ export interface UsersTable {
   >;
   /** JSONB blob of arbitrary user-scoped preferences (notifications, tz, locale, …). */
   preferences: Generated<Record<string, unknown>>;
+  /**
+   * 'platform' when the Chipp platform member sync created this row
+   * (POST /api/platform/member-sync). NULL for every app-native account;
+   * the sync never touches those.
+   */
+  managedBy: ColumnType<
+    "platform" | null,
+    "platform" | null | undefined,
+    "platform" | null | undefined
+  >;
   createdAt: CreatedAt;
   updatedAt: UpdatedAt;
 }
@@ -101,6 +111,15 @@ export interface VerificationSessionsTable {
   status: Generated<"claimed" | "issued" | "failed">;
   expiresAt: Date | null;
   createdAt: CreatedAt;
+}
+
+/** One row: the highest platform member sync `seq` applied. */
+export interface PlatformMemberSyncStateTable {
+  id: Generated<boolean>;
+  /** BIGINT: postgres.js returns it as a string. */
+  lastSeq: ColumnType<string, string | number, string | number>;
+  organizationId: string | null;
+  appliedAt: Generated<Date>;
 }
 
 export interface SessionsTable {
@@ -784,6 +803,7 @@ export interface Database {
   users: UsersTable;
   otps: OtpsTable;
   verification_sessions: VerificationSessionsTable;
+  platform_member_sync_state: PlatformMemberSyncStateTable;
   sessions: SessionsTable;
   api_credentials: ApiCredentialsTable;
   invites: InvitesTable;

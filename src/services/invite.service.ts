@@ -24,6 +24,10 @@ import { BadRequestError, ForbiddenError, NotFoundError } from "@/utils/errors.t
 import { sendInviteEmail } from "@/services/email.ts";
 import { ASSIGNABLE_ROLES, type AssignableRole, roleLabel } from "@/lib/roles.ts";
 import { log } from "@/lib/logger.ts";
+import {
+  isPlatformManagedEmail,
+  MANAGED_BY_CHIPP_MESSAGE,
+} from "@/services/platform-member-sync.service.ts";
 import { getEnv } from "@/lib/env.ts";
 import { appPath } from "@/config/site.ts";
 
@@ -96,6 +100,11 @@ export async function createInvite(input: CreateInviteInput): Promise<PendingInv
     .executeTakeFirst();
   if (existingMember) {
     throw new BadRequestError("That email is already a member of this organization.");
+  }
+  // A platform-managed account follows the Chipp project's members; an
+  // invite would move it into another org until the next sync moves it back.
+  if (await isPlatformManagedEmail(input.email)) {
+    throw new ForbiddenError(MANAGED_BY_CHIPP_MESSAGE);
   }
 
   const existingPending = await db
@@ -351,6 +360,9 @@ export async function acceptInvite(opts: {
       "This invite was sent to a different email address. Sign in with that email to accept.",
     );
   }
+  if (await isPlatformManagedEmail(invite.email)) {
+    throw new ForbiddenError(MANAGED_BY_CHIPP_MESSAGE);
+  }
 
   // Atomic claim — only one of N concurrent accepts wins.
   const claimed = await db
@@ -407,6 +419,11 @@ export async function claimInvite(token: string): Promise<{
 }> {
   // Resolves to a live invite (throws on invalid / expired / used).
   const invite = await resolveInviteByToken(token);
+  // An invite sent before the person became platform-managed must not move
+  // the managed account out of the org the Chipp project put it in.
+  if (await isPlatformManagedEmail(invite.email)) {
+    throw new ForbiddenError(MANAGED_BY_CHIPP_MESSAGE);
+  }
 
   // Atomic single-use claim — only one of N concurrent clicks wins.
   const claimed = await db

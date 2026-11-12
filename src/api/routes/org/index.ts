@@ -20,6 +20,11 @@
  * admin, can't remove the owner, can't self-remove) via the
  * `canManage` helper from the same hierarchy module.
  *
+ * Platform-managed members (users.managed_by = 'platform', created by the
+ * Chipp member sync) belong to the Chipp project: role change, removal,
+ * ownership transfer and leave all answer 403 for them. Change them on
+ * Chipp; the sync applies it.
+ *
  * IMPORTANT: DELETE /members/:userId previously hard-DELETED the user
  * row. That took sessions, oauth bindings, and any FK'd domain data
  * with it. The new behavior is SOFT-DISCONNECT — set
@@ -38,6 +43,11 @@ import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "@
 import { ASSIGNABLE_ROLES, canManage } from "@/lib/roles.ts";
 import { createInvite, listPendingInvites, revokeInvite } from "@/services/invite.service.ts";
 import { log } from "@/lib/logger.ts";
+import {
+  isPlatformManaged,
+  MANAGED_BY_CHIPP_MESSAGE,
+  managedByOf,
+} from "@/services/platform-member-sync.service.ts";
 
 const orgRoutes = new Hono();
 
@@ -146,7 +156,7 @@ orgRoutes.get("/members", async (c) => {
 
   const members = await db
     .selectFrom("users")
-    .select(["id", "email", "name", "picture", "role", "lastLoginAt", "createdAt"])
+    .select(["id", "email", "name", "picture", "role", "managedBy", "lastLoginAt", "createdAt"])
     .where("organizationId", "=", user.organizationId)
     .orderBy("createdAt", "asc")
     .execute();
@@ -238,12 +248,16 @@ orgRoutes.patch(
 
     const target = await db
       .selectFrom("users")
-      .select(["id", "role"])
+      .select(["id", "role", "managedBy"])
       .where("id", "=", targetUserId)
       .where("organizationId", "=", user.organizationId)
       .executeTakeFirst();
     if (!target) {
       throw new NotFoundError("User", targetUserId);
+    }
+    // The Chipp platform owns managed rows (platform-member-sync.service.ts).
+    if (isPlatformManaged(target)) {
+      throw new ForbiddenError(MANAGED_BY_CHIPP_MESSAGE);
     }
 
     if (!canManage(user.role, target.role)) {
@@ -290,12 +304,16 @@ orgRoutes.delete(
 
     const target = await db
       .selectFrom("users")
-      .select(["id", "role"])
+      .select(["id", "role", "managedBy"])
       .where("id", "=", targetUserId)
       .where("organizationId", "=", user.organizationId)
       .executeTakeFirst();
     if (!target) {
       throw new NotFoundError("User", targetUserId);
+    }
+    // The Chipp platform owns managed rows (platform-member-sync.service.ts).
+    if (isPlatformManaged(target)) {
+      throw new ForbiddenError(MANAGED_BY_CHIPP_MESSAGE);
     }
 
     if (!canManage(user.role, target.role)) {
@@ -367,12 +385,17 @@ orgRoutes.post(
 
     const target = await db
       .selectFrom("users")
-      .select(["id", "email", "role"])
+      .select(["id", "email", "role", "managedBy"])
       .where("id", "=", targetUserId)
       .where("organizationId", "=", user.organizationId)
       .executeTakeFirst();
     if (!target) {
       throw new NotFoundError("User", targetUserId);
+    }
+    // A managed member's role follows the Chipp project; the next sync
+    // would undo a transfer to them.
+    if (isPlatformManaged(target)) {
+      throw new ForbiddenError(MANAGED_BY_CHIPP_MESSAGE);
     }
 
     await db.transaction().execute(async (trx) => {
@@ -432,6 +455,10 @@ orgRoutes.post("/leave", requireAuth, async (c) => {
     throw new ForbiddenError(
       "The organization owner can't leave. Transfer ownership or delete the organization first.",
     );
+  }
+  // The next platform sync would re-attach a managed member who left.
+  if (isPlatformManaged({ managedBy: await managedByOf(user.id) })) {
+    throw new ForbiddenError(MANAGED_BY_CHIPP_MESSAGE);
   }
 
   await db

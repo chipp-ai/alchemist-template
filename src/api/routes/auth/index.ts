@@ -23,7 +23,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { db } from "@/db/client.ts";
 import { log } from "@/lib/logger.ts";
 import { validationHook } from "@/utils/zod-validation-hook.ts";
-import { AppError, BadRequestError, UnauthorizedError } from "@/utils/errors.ts";
+import { AppError, BadRequestError, ForbiddenError, UnauthorizedError } from "@/utils/errors.ts";
 import { rateLimit } from "@/lib/redis.ts";
 import { clientIp } from "@/lib/client-ip.ts";
 import {
@@ -54,6 +54,11 @@ import { requestAppOrigin, requestWebOrigin } from "@/services/app-links.ts";
 import { oauthTokenService } from "@/services/mcp-oauth/service.ts";
 import { appPath } from "@/config/site.ts";
 import { isVerificationAccountEmail } from "@/lib/verification-accounts.ts";
+import {
+  isPlatformManaged,
+  MANAGED_BY_CHIPP_MESSAGE,
+  managedByOf,
+} from "@/services/platform-member-sync.service.ts";
 import { verificationSessionRoutes } from "./verification-session.ts";
 
 const authRoutes = new Hono();
@@ -332,6 +337,24 @@ authRoutes.post("/send-otp", zValidator("json", sendOtpSchema, validationHook), 
 });
 
 /**
+ * A platform-managed account (users.managed_by = 'platform') that the Chipp
+ * member sync disconnected has no organization. Its access comes only from
+ * the Chipp project, so a sign-in must not mint a session for it (that
+ * session would carry no org, and resolveUser refuses it on every request
+ * anyway). Refuse with a plain message instead. App-native accounts keep
+ * their existing behavior. See src/services/platform-member-sync.service.ts.
+ */
+function refuseDisconnectedManagedUser(
+  user: { managedBy: string | null; organizationId: string | null } | undefined,
+): void {
+  if (user && isPlatformManaged(user) && !user.organizationId) {
+    throw new ForbiddenError(
+      "Your access to this app was removed. Ask the project owner to add you on Chipp again.",
+    );
+  }
+}
+
+/**
  * POST /verify-otp
  * Verifies the one-time code and creates a session.
  * If the user doesn't exist, creates a new user and org.
@@ -382,9 +405,10 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
   // Look up or create user
   let user = await db
     .selectFrom("users")
-    .select(["id", "email", "name", "role", "organizationId"])
+    .select(["id", "email", "name", "role", "organizationId", "managedBy"])
     .where("email", "=", email)
     .executeTakeFirst();
+  refuseDisconnectedManagedUser(user);
 
   let organization:
     | { id: string; name: string; slug: string | null; subscriptionTier: string }
@@ -416,7 +440,7 @@ authRoutes.post("/verify-otp", zValidator("json", verifyOtpSchema, validationHoo
           organizationId: org.id,
           emailVerified: true,
         })
-        .returning(["id", "email", "name", "role", "organizationId"])
+        .returning(["id", "email", "name", "role", "organizationId", "managedBy"])
         .executeTakeFirstOrThrow();
 
       return { user: newUser, org };
@@ -719,6 +743,11 @@ authRoutes.post(
 
     if (email === user.email) {
       throw new BadRequestError("That is already your email address.");
+    }
+    // The platform member sync matches managed accounts by email, so the
+    // address of a managed account changes only on Chipp.
+    if (isPlatformManaged({ managedBy: await managedByOf(user.id) })) {
+      throw new ForbiddenError(MANAGED_BY_CHIPP_MESSAGE);
     }
     if (await findEmailCollision(email, user.id)) {
       return c.json(
@@ -1199,9 +1228,10 @@ authRoutes.get("/:provider/callback", async (c) => {
   // ── Find or create user ──────────────────────────────────────────────
   let user = await db
     .selectFrom("users")
-    .select(["id", "email", "name", "role", "organizationId"])
+    .select(["id", "email", "name", "role", "organizationId", "managedBy"])
     .where("email", "=", mapped.email)
     .executeTakeFirst();
+  refuseDisconnectedManagedUser(user);
 
   if (!user) {
     const displayName = mapped.name ?? mapped.email.split("@")[0];
@@ -1231,7 +1261,7 @@ authRoutes.get("/:provider/callback", async (c) => {
           organizationId: org.id,
           emailVerified: true,
         })
-        .returning(["id", "email", "name", "role", "organizationId"])
+        .returning(["id", "email", "name", "role", "organizationId", "managedBy"])
         .executeTakeFirstOrThrow();
 
       return newUser;

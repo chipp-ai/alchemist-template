@@ -47,6 +47,7 @@ import { portalRoutes } from "@/api/routes/portal/index.ts";
 import { agentMcpRoutes } from "@/api/routes/agent-mcp/index.ts";
 import { storageLocalRoutes } from "@/api/routes/storage-local/index.ts";
 import { eventsRoutes } from "@/api/routes/events/index.ts";
+import { platformMemberSyncRoutes } from "@/api/routes/platform/member-sync.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 import { headlessApiRouter } from "@/services/headless-api/router.ts";
 import { embeddedAgentRouter } from "@/services/embedded-agent/router.ts";
@@ -237,6 +238,12 @@ app.route("/api/ingest/email", ingestEmailRoutes);
 // caller is the platform or a relay. Dormant until the secret is
 // configured. See src/api/routes/events/index.ts.
 app.route("/api/events", eventsRoutes);
+
+// Platform member sync: the Chipp platform keeps the people who hold a role
+// on the Chipp project in step with this app's users. HMAC-signed, 404 until
+// the platform injects ALCH_MEMBER_SYNC_SECRET. See
+// src/api/routes/platform/member-sync.ts.
+app.route("/api/platform", platformMemberSyncRoutes);
 
 // Inbound-email dashboard reads (auth-required, org-scoped). See
 // src/api/routes/inbound-emails/index.ts.

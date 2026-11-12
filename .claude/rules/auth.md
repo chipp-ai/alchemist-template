@@ -10,6 +10,8 @@ paths:
   - "src/api/routes/invite/**"
   - "src/api/routes/auth/**"
   - "src/lib/verification-*.ts"
+  - "src/api/routes/platform/**"
+  - "src/services/platform-member-sync.service.ts"
 ---
 
 # Auth + authorization
@@ -213,6 +215,40 @@ verification account.
   `students` row makes a student), extend `provisionVerificationAccount` to
   create that row for the matching role and add the role to
   `VERIFICATION_ROLES`. Keep the account in the verification org.
+
+## Platform member sync (Chipp project members, platform-signed)
+
+People who hold a role on the Chipp project (owner, editor, viewer) get an
+account here without an invite. The platform POSTs the FULL desired set to
+`POST /api/platform/member-sync` (`src/api/routes/platform/member-sync.ts`),
+signed like the event inbox (`X-Event-Timestamp`, `X-Event-Signature`,
+HMAC-SHA256 with `ALCH_MEMBER_SYNC_SECRET`). The reconcile is
+`src/services/platform-member-sync.service.ts`.
+
+- **Off unless the platform injected `ALCH_MEMBER_SYNC_SECRET` and
+  `PROJECT_ID`.** Without both the route 404s. Never set the secret by hand.
+- **`users.managed_by = 'platform'` marks the rows the sync owns.** It
+  creates, updates and disconnects only those. A row with `managed_by` NULL
+  (invited here, or signed up here) is app-native and the sync never touches
+  it; a desired member whose email is a native row comes back as
+  `skipped: [{ email, reason: "app_account" }]`.
+- **Target org:** the org of an attached managed row, else the org of a
+  native user who is a platform owner, else the oldest org that is not the
+  verification org, else a new "Team" org.
+- **Roles:** platform viewer and editor map 1:1. Platform owner maps to
+  owner only when the target org has no native owner, and only one platform
+  owner holds it; the rest are admins. A native owner is never demoted.
+- **Removal is the soft-disconnect** (`organization_id` NULL, role viewer)
+  plus `token_invalidated_before = now()`, so sessions and MCP tokens end.
+  A disconnected managed account cannot sign in (verify-otp and social login
+  answer 403); a later sync that lists it again re-attaches the same row.
+- **The app does not edit managed rows.** Role change, remove, ownership
+  transfer, leave, email change and invites answer 403 with
+  `MANAGED_BY_CHIPP_MESSAGE`; the members list returns `managedBy` so the UI
+  shows "Managed by Chipp" and hides those controls.
+- **Replay:** `platform_member_sync_state` keeps the last applied `seq`; a
+  delivery whose seq is not newer is ignored (200, `applied: false`).
+- Tests: `src/__tests__/routes/platform-member-sync.test.ts`.
 
 ## Agent tokens (embedded Chipp agent)
 
