@@ -13,6 +13,7 @@
   import AppErrorBoundary from "./components/AppErrorBoundary.svelte";
   import { initRevealOnScroll } from "./lib/reveal-dom";
   import { navigateWithTransition } from "./lib/view-transitions-dom";
+  import { rememberReturnTo } from "./lib/return-to";
 
   // One-shot session check on mount.
   //
@@ -45,6 +46,8 @@
     const path = $location;
 
     if (!authStore.isAuthenticated && !isPublicRoute(path)) {
+      // Remember the page they asked for, so sign-in lands them there.
+      rememberReturnTo(path);
       navigateWithTransition(replace, "/login");
     }
   });

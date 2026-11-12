@@ -288,6 +288,26 @@ export async function resolveOptionalUser(
   return await resolveUser(payload);
 }
 
+/**
+ * True when the request carries a session for a current member of this app.
+ * A platform verification session (read-only, `vrf` claim) is not a member:
+ * the landing site uses this to send members from "/" to the app home while
+ * the verifier still sees the landing page. Never throws.
+ */
+export async function isSignedInMember(
+  c: { req: { header: (name: string) => string | undefined } },
+): Promise<boolean> {
+  try {
+    const candidates = getSessionTokenCandidates(c);
+    if (candidates.length === 0) return false;
+    const payload = await verifyFirstValidToken(candidates);
+    if (!payload || isVerificationSessionPayload(payload)) return false;
+    return (await resolveUser(payload)) !== null;
+  } catch {
+    return false;
+  }
+}
+
 /** Methods that never change server state. */
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 /** State-changing paths a verification session may still call. */

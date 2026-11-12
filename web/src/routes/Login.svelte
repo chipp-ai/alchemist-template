@@ -3,6 +3,7 @@
   import { push, querystring } from "svelte-spa-router";
   import { authStore } from "../stores/auth.svelte";
   import { api } from "../lib/api";
+  import { oauthStartUrl, takeReturnTo } from "../lib/return-to";
 
   interface OAuthProviderConfig {
     id: string;
@@ -73,7 +74,7 @@
 
     try {
       await authStore.verifyOtp(email, otpCode);
-      push("/");
+      push(takeReturnTo() ?? "/");
     } catch (err) {
       errorMessage =
         err instanceof Error ? err.message : "Verification failed. Please try again.";
@@ -128,7 +129,7 @@
       // Refresh the store from /auth/me so the rest of the SPA sees
       // the freshly-issued session without a hard reload.
       await authStore.checkAuth();
-      push("/");
+      push(takeReturnTo() ?? "/");
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : "Dev login failed";
     } finally {
@@ -248,7 +249,7 @@
           <button
             class="btn btn-secondary oauth-btn"
             style="--provider-color: {p.color}"
-            onclick={() => (window.location.href = `/api/auth/${p.id}`)}
+            onclick={() => (window.location.href = oauthStartUrl(p.id))}
             data-testid="login-btn-{p.id}"
           >
             {p.label}

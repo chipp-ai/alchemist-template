@@ -53,7 +53,7 @@ import {
 import { getEnv } from "@/lib/env.ts";
 import { requestAppOrigin, requestWebOrigin } from "@/services/app-links.ts";
 import { oauthTokenService } from "@/services/mcp-oauth/service.ts";
-import { appPath } from "@/config/site.ts";
+import { appPath, safeAppRoute } from "@/config/site.ts";
 import { isVerificationAccountEmail } from "@/lib/verification-accounts.ts";
 import {
   isPlatformManaged,
@@ -75,6 +75,14 @@ authRoutes.route("/verification-session", verificationSessionRoutes);
 authRoutes.route("/platform-handoff", platformHandoffRoutes);
 
 const SESSION_COOKIE = "session_id";
+/** Cookie (provider-suffixed) holding the SPA route to open after OAuth. */
+export const OAUTH_NEXT_COOKIE = "oauth_next";
+
+/** Where an OAuth sign-in lands: the asked-for SPA route, else the app home. */
+export function oauthLandingUrl(webOrigin: string, next: string | null): string {
+  const route = safeAppRoute(next);
+  return `${webOrigin}${appPath(route ? `/#${route}` : "/#/")}`;
+}
 const IS_PROD = getEnv("NODE_ENV") === "production";
 
 // ── Config (public, no auth) ──
@@ -1138,6 +1146,21 @@ authRoutes.get("/:provider", (c) => {
     path: "/",
     maxAge: 600, // 10 minutes
   });
+  // The page the person asked for before they were sent to sign in
+  // (?next=<SPA route>, from web/src/lib/return-to.ts). The callback sends
+  // them there instead of the app home. Kept only when it is a safe route.
+  const next = safeAppRoute(c.req.query("next"));
+  if (next) {
+    setCookie(c, `${OAUTH_NEXT_COOKIE}_${provider.id}`, next, {
+      httpOnly: true,
+      secure: IS_PROD,
+      sameSite: "Lax",
+      path: "/",
+      maxAge: 600,
+    });
+  } else {
+    deleteCookie(c, `${OAUTH_NEXT_COOKIE}_${provider.id}`, { path: "/" });
+  }
 
   return c.redirect(buildAuthorizeUrl(provider, state, requestAppOrigin(c.req)));
 });
@@ -1158,6 +1181,8 @@ authRoutes.get("/:provider/callback", async (c) => {
     throw new BadRequestError("Invalid OAuth callback");
   }
   deleteCookie(c, `oauth_state_${provider.id}`, { path: "/" });
+  const next = safeAppRoute(getCookie(c, `${OAUTH_NEXT_COOKIE}_${provider.id}`));
+  deleteCookie(c, `${OAUTH_NEXT_COOKIE}_${provider.id}`, { path: "/" });
 
   const clientId = getEnv(provider.clientIdEnv)!;
   const clientSecret = getEnv(provider.clientSecretEnv)!;
@@ -1316,8 +1341,9 @@ authRoutes.get("/:provider/callback", async (c) => {
     email: user.email,
   });
 
-  // Land on the SPA, not the landing site that may own "/".
-  return c.redirect(`${requestWebOrigin(c.req)}${appPath("/#/")}`);
+  // Land on the page they asked for, else the app home: never the landing
+  // site that may own "/".
+  return c.redirect(oauthLandingUrl(requestWebOrigin(c.req), next));
 });
 
 export { authRoutes };

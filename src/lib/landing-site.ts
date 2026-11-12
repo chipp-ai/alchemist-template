@@ -28,12 +28,23 @@
  * old link lands on the app instead of a stale page. 302, not 301, because
  * the mode is one line in site.json and a browser caches a 301 forever. The
  * sitemap lists only "/" in this mode (landing/src/lib/pages.ts).
+ *
+ * Signed-in visitors skip the landing page (2026-11-12). In landing mode a
+ * GET or HEAD of "/" from someone with a valid session answers a 302 to the
+ * app home (`appPath("/#/")`), so a member who opens the bare domain, or
+ * follows a link to it, lands in the app. The landing page shows only to
+ * signed-out visitors and crawlers. A platform verification session is not
+ * redirected: the verifier checks the landing page as a visitor sees it.
+ * Only "/" redirects; the other marketing pages stay readable signed in.
+ * The check reads the session cookie and touches the database only when a
+ * session_id cookie this app signed is present.
  */
 
 import type { Context, MiddlewareHandler } from "hono";
 import { serveStatic } from "hono/deno";
-import { APP_BASE_PATH } from "@/config/site.ts";
+import { APP_BASE_PATH, appPath } from "@/config/site.ts";
 import { log } from "@/lib/logger.ts";
+import { isSignedInMember } from "@/api/middleware/auth.ts";
 
 /** Where `npm run build` in landing/ writes the site, relative to the repo root. */
 export const LANDING_DIST_DIR = "./landing/dist";
@@ -156,9 +167,16 @@ function setLandingContentType(_file: string, c: Context): void {
  * the non-HTML files, redirects the HTML pages to "/" and passes "/" and
  * everything else on to the SPA.
  */
+/** Where a signed-in visitor who opens "/" goes: the app home. */
+export const SIGNED_IN_HOME = appPath("/#/");
+
+/** Whether this request carries a signed-in session. Injectable for tests. */
+export type SignedInCheck = (c: Context) => Promise<boolean>;
+
 export function landingSiteMiddleware(
   dir: string = LANDING_DIST_DIR,
   mode: HomepageMode = readHomepageMode(),
+  signedIn: SignedInCheck = isSignedInMember,
 ): MiddlewareHandler | null {
   if (!landingSiteBuilt(dir)) return null;
   const serve = serveStatic({ root: dir, onFound: setLandingContentType });
@@ -173,7 +191,16 @@ export function landingSiteMiddleware(
     };
   }
   return async (c, next) => {
-    if (!isLandingPath(c.req.path)) return await next();
+    const path = c.req.path;
+    if (!isLandingPath(path)) return await next();
+    if (path === "/" && (c.req.method === "GET" || c.req.method === "HEAD")) {
+      // The answer depends on the session cookie: never share it in a cache.
+      c.header("Vary", "Cookie");
+      if (await signedIn(c)) {
+        c.header("Cache-Control", "private, no-store");
+        return c.redirect(SIGNED_IN_HOME, 302);
+      }
+    }
     return await serve(c, next);
   };
 }

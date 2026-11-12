@@ -3,6 +3,7 @@
   import { push } from "svelte-spa-router";
   import { authStore } from "../stores/auth.svelte";
   import { api } from "../lib/api";
+  import { oauthStartUrl, takeReturnTo } from "../lib/return-to";
 
   let name = $state("");
   let email = $state("");
@@ -50,7 +51,7 @@
 
     try {
       await authStore.verifyOtp(email, otpCode, name);
-      push("/");
+      push(takeReturnTo() ?? "/");
     } catch (err) {
       errorMessage =
         err instanceof Error
@@ -197,7 +198,7 @@
 
       <button
         class="btn btn-secondary auth-google"
-        onclick={() => (window.location.href = "/api/auth/google")}
+        onclick={() => (window.location.href = oauthStartUrl("google"))}
         data-testid="signup-btn-google"
       >
         <svg width="18" height="18" viewBox="0 0 24 24">

@@ -13,6 +13,8 @@ import {
   landingSiteMiddleware,
   readHomepageMode,
   scanLandingDist,
+  SIGNED_IN_HOME,
+  type SignedInCheck,
 } from "@/lib/landing-site.ts";
 import { PAGES, sitemapPages } from "../../../landing/src/lib/pages.ts";
 import { APP_BASE_PATH } from "@/config/site.ts";
@@ -42,13 +44,17 @@ async function landingBuild(): Promise<string> {
 }
 
 /** The same order app.ts uses: API, SPA prefix, landing site, SPA fallback. */
-function buildApp(landingDir: string, mode: HomepageMode = "landing"): Hono {
+function buildApp(
+  landingDir: string,
+  mode: HomepageMode = "landing",
+  signedIn?: SignedInCheck,
+): Hono {
   const app = new Hono();
   app.get("/health", (c) => c.json({ status: "ok" }));
   app.get("/api/thing", (c) => c.json({ ok: true }));
   app.get(APP_BASE_PATH, (c) => c.html(SPA_HTML));
   app.get(`${APP_BASE_PATH}/*`, (c) => c.html(SPA_HTML));
-  const landing = landingSiteMiddleware(landingDir, mode);
+  const landing = landingSiteMiddleware(landingDir, mode, signedIn);
   if (landing) app.use("/*", landing);
   app.use("/*", async (c, next) => {
     if (c.req.path.startsWith("/api/")) return await next();
@@ -307,4 +313,84 @@ Deno.test("the template ships in landing mode", () => {
     readHomepageMode(new URL("../../../landing/src/content/site.json", import.meta.url).pathname),
     "landing",
   );
+});
+
+/** A fake session check: signed in when the request carries `session_id=member`. */
+const fakeSignedIn: SignedInCheck = (c) =>
+  Promise.resolve((c.req.header("Cookie") ?? "").includes("session_id=member"));
+const MEMBER = { headers: { Cookie: "session_id=member" } };
+
+Deno.test("landing mode: a signed-in member who opens / goes to the app home; signed out sees the landing page", async () => {
+  const dir = await landingBuild();
+  try {
+    const app = buildApp(dir, "landing", fakeSignedIn);
+    assertEquals(SIGNED_IN_HOME, `${APP_BASE_PATH}/#/`);
+
+    const member = await app.request("/", MEMBER);
+    assertEquals(member.status, 302);
+    assertEquals(member.headers.get("Location"), SIGNED_IN_HOME);
+    assertEquals(member.headers.get("Cache-Control"), "private, no-store");
+    // A query string (a campaign link) is still the bare domain.
+    assertEquals((await app.request("/?utm_source=x", MEMBER)).headers.get("Location"), SIGNED_IN_HOME);
+    assertEquals((await app.request("/", { method: "HEAD", ...MEMBER })).status, 302);
+
+    const visitor = await app.request("/");
+    assertEquals(visitor.status, 200);
+    assertStringIncludes(await visitor.text(), "LANDING HOME");
+    assertStringIncludes(visitor.headers.get("Vary") ?? "", "Cookie");
+
+    // Only "/" redirects: the other landing pages, files, the app and the API are unchanged.
+    assertStringIncludes(await (await app.request("/pricing/", MEMBER)).text(), "LANDING PRICING");
+    assertStringIncludes(await (await app.request("/robots.txt", MEMBER)).text(), "User-agent");
+    assertEquals(await (await app.request("/app/", MEMBER)).text(), SPA_HTML);
+    assertEquals((await (await app.request("/api/thing", MEMBER)).json()).ok, true);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("landing mode: the session check runs only for GET and HEAD of /", async () => {
+  const dir = await landingBuild();
+  try {
+    const seen: string[] = [];
+    const app = buildApp(dir, "landing", (c) => {
+      seen.push(`${c.req.method} ${c.req.path}`);
+      return Promise.resolve(true);
+    });
+    await app.request("/pricing/");
+    await app.request("/robots.txt");
+    await app.request("/app/");
+    await app.request("/", { method: "POST" });
+    assertEquals(seen, []);
+    await app.request("/");
+    assertEquals(seen, ["GET /"]);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("app-first mode: / is the SPA for members and visitors alike (no redirect)", async () => {
+  const dir = await landingBuild();
+  try {
+    const app = buildApp(dir, "app", fakeSignedIn);
+    const member = await app.request("/", MEMBER);
+    assertEquals(member.status, 200);
+    assertEquals(await member.text(), SPA_HTML);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("the default session check: no cookie, a foreign cookie or a garbage cookie is signed out", async () => {
+  const dir = await landingBuild();
+  try {
+    const app = buildApp(dir, "landing");
+    for (const cookie of [undefined, "session_id=not-a-jwt", "other=1"]) {
+      const res = await app.request("/", cookie ? { headers: { Cookie: cookie } } : undefined);
+      assertEquals(res.status, 200, `cookie ${cookie}`);
+      assertStringIncludes(await res.text(), "LANDING HOME");
+    }
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });
