@@ -46,7 +46,9 @@ registerMcpTool({
     let mostRecent: string | null = null;
     for (const row of rows) {
       roleCounts[row.role] = (roleCounts[row.role] ?? 0) + 1;
-      const createdAt = row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt);
+      const createdAt = row.createdAt instanceof Date
+        ? row.createdAt.toISOString()
+        : String(row.createdAt);
       if (!mostRecent || createdAt > mostRecent) mostRecent = createdAt;
     }
 

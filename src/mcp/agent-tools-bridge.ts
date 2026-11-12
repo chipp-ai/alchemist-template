@@ -194,7 +194,9 @@ export function registerBridgedAgentTools(
           windowSeconds: 60,
         });
         if (!rl.allowed) {
-          return toolError("Too many tool calls in the last minute. Wait a minute, then try again.");
+          return toolError(
+            "Too many tool calls in the last minute. Wait a minute, then try again.",
+          );
         }
         if (tool.write) {
           log.info("Agent tool write call over MCP", {

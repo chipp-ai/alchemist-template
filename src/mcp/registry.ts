@@ -44,6 +44,11 @@ export interface McpTool {
    */
   portalSafe?: boolean;
   /**
+   * True for a tool that only reads. The server advertises
+   * `readOnlyHint: true`, so an assistant may call it without asking.
+   */
+  readOnly?: boolean;
+  /**
    * Entitlement gate for INTERACTIVE clients: the caller's org must own
    * this product (products/purchases layer). Unentitled calls return a
    * Stripe Checkout link the agent relays to its human. Requires
@@ -77,7 +82,9 @@ export function registerMcpTool(tool: McpTool): void {
         "credits) are mutually exclusive -- pick ONE metered lane per tool.",
     );
   }
-  if (tool.creditCost !== undefined && (!Number.isInteger(tool.creditCost) || tool.creditCost <= 0)) {
+  if (
+    tool.creditCost !== undefined && (!Number.isInteger(tool.creditCost) || tool.creditCost <= 0)
+  ) {
     throw new Error(`MCP tool "${tool.name}": creditCost must be a positive integer.`);
   }
   registeredTools.push(tool);

@@ -59,6 +59,39 @@ time.
 - src/api/routes/mcp/api-keys.ts: GET/POST/DELETE /api/mcp/api-keys, mcp_sk_
   keys for headless callers (session only, shown once).
 
+## Generic read tools (every project)
+
+Four registry tools ship in every project, so a person who connects Claude,
+ChatGPT or Grok with their own login can read the app's data on day one:
+
+| Tool | What it reads |
+|---|---|
+| `list_documents` | the org's files (`uploaded_files`: uploads, imports, generated PDFs and exports), metadata only |
+| `read_document` | one file: text for text-like types, a 10 minute download URL (forced download) for every file, base64 for a binary of 256 KB or less on request |
+| `describe_data_model` | the app's tables, columns, types, primary keys and relations |
+| `query_data` | rows from one table: columns, simple filters, order, limit (at most 200), offset |
+
+- All four use `capability: "app.read"`, so every member (a viewer
+  included) can call them; a portal viewer and an anonymous caller cannot.
+  They are advertised `readOnlyHint: true`. Writes stay with the agent
+  tools, which need their own capability (`app.write` and up) and the
+  `tools:write` scope.
+- `query_data` is structured, never SQL text. It runs in a READ ONLY
+  transaction with a 5 second statement timeout, and every query is pinned
+  to the caller's `organization_id`. A table without that column is listed
+  but not queryable.
+- Auth, secret and system tables are never shown (users, sign-in codes,
+  sessions, API keys, OAuth, invites, portal links, verification, member
+  sync state, the event log, the job queue, the email outbox), nor any
+  column whose name suggests a secret. Billing tables need `billing.manage`
+  and mailing-list tables need `email.broadcast`.
+- A project table with sensitive data: call
+  `configureMcpDataTable("table", { hidden: true })` or
+  `configureMcpDataTable("table", { capability: "org.update" })` from
+  `src/services/mcp-data/data-access.ts`. Project-specific tools still go in
+  `src/mcp/tools/` and are added on top.
+- Tests: src/__tests__/routes/mcp-read-tools.test.ts.
+
 ## Rules
 
 - Add a tool through registerMcpTool in a new file under src/mcp/tools/ and

@@ -247,8 +247,7 @@ export async function gatePaidToolCall(
   if (!wantFiat && !wantCrypto) {
     return {
       kind: "unconfigured",
-      message:
-        `Tool "${toolName}" is priced, but none of its price lanes match the server's ` +
+      message: `Tool "${toolName}" is priced, but none of its price lanes match the server's ` +
         "configured payment methods.",
     };
   }
@@ -388,11 +387,10 @@ export function paymentRequiredToolResult(
     isError: true,
     content: [{
       type: "text",
-      text:
-        `Payment required: "${toolName}" costs ${formatToolPrice(price)} per call. ` +
+      text: `Payment required: "${toolName}" costs ${formatToolPrice(price)} per call. ` +
         "This server accepts MPP machine payments (https://mpp.dev). If your agent runtime " +
         "supports MPP (mppx client, @stripe/link-cli), pay one of the attached challenges and " +
-        "retry this call with the credential in _meta[\"org.paymentauth/credential\"]. " +
+        'retry this call with the credential in _meta["org.paymentauth/credential"]. ' +
         "If it does not, tell the user this tool is paid and cannot be used from this client. " +
         "Do NOT retry without payment.",
     }],

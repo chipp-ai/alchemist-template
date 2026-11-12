@@ -74,7 +74,14 @@ async function allToolNames(bearer?: string): Promise<string[]> {
   return body.result.tools.map((t: any) => t.name);
 }
 // The MCP registry's example tools, always listed alongside.
-const REGISTRY_TOOLS = new Set(["echo", "get_team_summary"]);
+const REGISTRY_TOOLS = new Set([
+  "echo",
+  "get_team_summary",
+  "list_documents",
+  "read_document",
+  "describe_data_model",
+  "query_data",
+]);
 
 let rpcId = 0;
 async function rpc(method: string, params: unknown, bearer?: string) {

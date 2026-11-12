@@ -27,8 +27,17 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { listMcpTools, type McpTool } from "@/mcp/registry.ts";
-import { formatToolPrice, gatePaidToolCall, mppEnabled, paymentRequiredToolResult } from "@/mcp/mpp.ts";
-import { monetizationDescriptionSuffix, runMonetizationGates, signInRequiredText } from "@/mcp/gates.ts";
+import {
+  formatToolPrice,
+  gatePaidToolCall,
+  mppEnabled,
+  paymentRequiredToolResult,
+} from "@/mcp/mpp.ts";
+import {
+  monetizationDescriptionSuffix,
+  runMonetizationGates,
+  signInRequiredText,
+} from "@/mcp/gates.ts";
 import type { Context } from "hono";
 import type { McpAuthContext } from "@/api/middleware/mcp-auth.ts";
 import { log } from "@/lib/logger.ts";
@@ -39,6 +48,9 @@ import { type AgentToolCaller, registerBridgedAgentTools } from "@/mcp/agent-too
 // Ensure example tools are registered (side-effect import)
 import "@/mcp/tools/echo.ts";
 import "@/mcp/tools/team_summary.ts";
+// Generic read tools every project gets: documents, data model, read-only rows.
+import "@/mcp/tools/project_files.ts";
+import "@/mcp/tools/project_data.ts";
 
 export interface McpServerContext {
   /** Resolved caller identity (null when unauthenticated in public mode). */
@@ -128,10 +140,14 @@ export function createMcpServer(context: McpServerContext = {}): McpServer {
       {
         description,
         inputSchema,
+        ...(tool.readOnly ? { annotations: { readOnlyHint: true, destructiveHint: false } } : {}),
       },
       async (args: Record<string, unknown>, extra: unknown) => {
         if (access === "sign-in") {
-          return { isError: true, content: [{ type: "text" as const, text: signInRequiredText(tool.name) }] };
+          return {
+            isError: true,
+            content: [{ type: "text" as const, text: signInRequiredText(tool.name) }],
+          };
         }
 
         // ── 1 + 2. Entitlement + credit gates (identity-based) ──
@@ -146,8 +162,7 @@ export function createMcpServer(context: McpServerContext = {}): McpServer {
                 isError: true,
                 content: [{
                   type: "text" as const,
-                  text:
-                    `"${tool.name}" is a paid tool, but this server has no payment method ` +
+                  text: `"${tool.name}" is a paid tool, but this server has no payment method ` +
                     "configured yet, so the call cannot proceed. Do NOT retry. Tell the user " +
                     "the server operator needs to configure MPP payments (MPP_SECRET_KEY + " +
                     "Stripe credentials).",
