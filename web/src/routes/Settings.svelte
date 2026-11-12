@@ -11,6 +11,9 @@
   } from "../lib/permissions";
   import { api, ApiError } from "../lib/api";
   import Modal from "../components/Modal.svelte";
+  import AssistantConnect from "../components/AssistantConnect.svelte";
+  import type { AssistantsInfo } from "../lib/assistant-connect";
+  import { SHARING_DOCS_URL } from "../lib/assistant-connect";
   import {
     billingStore,
     formatPrice,
@@ -19,9 +22,9 @@
 
   // ---------- Tabs ----------
 
-  type Tab = "profile" | "team" | "billing" | "notifications";
+  type Tab = "profile" | "team" | "billing" | "notifications" | "assistants";
 
-  const TABS: Tab[] = ["profile", "team", "billing", "notifications"];
+  const TABS: Tab[] = ["profile", "team", "billing", "notifications", "assistants"];
 
   // A List-Unsubscribe link (or a bookmark) can deep-link straight to a
   // tab: /#/settings?tab=notifications.
@@ -43,6 +46,23 @@
   const showBilling = $derived(
     paymentsConfigured || hasBillingAccount || deepLinkedBilling,
   );
+
+  // AI assistants: shown to every member, a viewer included, once the
+  // app's MCP server is on with sign-in (GET /api/assistants). A deep link
+  // to ?tab=assistants still opens it and explains when it is off.
+  let assistantsInfo = $state<AssistantsInfo | null>(null);
+  const showAssistants = $derived(
+    assistantsInfo?.enabled === true || initialTab() === "assistants",
+  );
+
+  async function fetchAssistantsInfo() {
+    try {
+      const res = await api.get<{ data: AssistantsInfo }>("/assistants");
+      assistantsInfo = res.data;
+    } catch {
+      // Unknown: leave the tab hidden.
+    }
+  }
 
   async function fetchBillingStatus() {
     try {
@@ -234,6 +254,7 @@
     orgStore.fetchInvites();
     fetchNotificationSettings();
     fetchBillingStatus();
+    fetchAssistantsInfo();
   });
 
   async function handleInvite(e: Event) {
@@ -451,7 +472,28 @@
         Billing
       </button>
     {/if}
+    {#if showAssistants}
+      <button
+        class="tab"
+        class:active={activeTab === "assistants"}
+        onclick={() => (activeTab = "assistants")}
+        data-testid="settings-tab-assistants"
+      >
+        AI assistants
+      </button>
+    {/if}
   </div>
+
+  <!-- AI assistants Tab -->
+  {#if activeTab === "assistants"}
+    {#if assistantsInfo}
+      <AssistantConnect info={assistantsInfo} />
+    {:else}
+      <section class="card settings-section">
+        <p class="text-muted">Loading...</p>
+      </section>
+    {/if}
+  {/if}
 
   <!-- Profile Tab -->
   {#if activeTab === "profile"}
@@ -674,17 +716,32 @@
 
       <!-- Members list -->
       <h3 class="subsection-title">Members</h3>
+      {#if orgStore.members.some((m) => m.managedBy === "platform")}
+        <p class="text-muted managed-note" data-testid="settings-team-managed-note">
+          People with a role on the Chipp project are added here and kept in sync
+          automatically, marked "Managed by Chipp". Change their access in Chipp. People
+          invited here in the app are separate.
+          <a href={SHARING_DOCS_URL} target="_blank" rel="noopener noreferrer" data-testid="settings-team-link-sharing-docs">
+            Sharing and roles
+          </a>
+        </p>
+      {/if}
       <div class="list-rows" data-testid="settings-team-members">
         {#each orgStore.members as member (member.id)}
           {@const isSelf = member.id === authStore.user?.id}
+          {@const isManaged = member.managedBy === "platform"}
           {@const canManageThis =
             !isSelf &&
+            !isManaged &&
             canManage(authStore.user?.role ?? "", member.role)}
           <div class="list-row" data-testid="settings-team-member-{member.id}">
             <div class="list-row-main">
               <div class="list-row-title">
                 {member.name ?? member.email}
                 {#if isSelf}<span class="text-muted">(you)</span>{/if}
+                {#if isManaged}
+                  <span class="badge managed-badge" data-testid="settings-team-managed-{member.id}">Managed by Chipp</span>
+                {/if}
               </div>
               <div class="list-row-meta">{member.email}</div>
             </div>
@@ -706,7 +763,7 @@
             {:else}
               <span class="badge">{roleLabel(member.role)}</span>
             {/if}
-            {#if canTransferOwnership && !isSelf && member.role !== "owner"}
+            {#if canTransferOwnership && !isSelf && !isManaged && member.role !== "owner"}
               <button
                 type="button"
                 class="btn btn-ghost"
@@ -1026,6 +1083,15 @@
 <style>
   .settings-page {
     max-width: 640px;
+  }
+
+  .managed-note {
+    margin: 0 0 var(--space-sm);
+    font-size: var(--text-sm);
+  }
+
+  .managed-badge {
+    margin-left: var(--space-xs);
   }
 
   .settings-section {

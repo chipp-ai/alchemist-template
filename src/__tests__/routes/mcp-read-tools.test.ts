@@ -87,7 +87,11 @@ async function tools(bearer?: string): Promise<any[]> {
   return (await rpc("tools/list", {}, bearer)).result.tools;
 }
 
-async function call(bearer: string, name: string, args: Record<string, unknown> = {}): Promise<any> {
+async function call(
+  bearer: string,
+  name: string,
+  args: Record<string, unknown> = {},
+): Promise<any> {
   return await rpc("tools/call", { name, arguments: args }, bearer);
 }
 
@@ -137,34 +141,37 @@ async function storeCsv(organizationId: string, name: string, body: string) {
   });
 }
 
-dbTest("mcp read tools: an OAuth viewer sees and calls the read tools, never a write tool", async () => {
-  const org = await createIsolatedUser("owner");
-  try {
-    const viewer = await oauthToken(await addMember(org.org.id, "viewer"));
-    const listed = await tools(viewer);
-    const names = listed.map((t) => t.name);
-    for (const name of READ_TOOLS) {
-      assert(names.includes(name), `${name} missing: ${names.join(", ")}`);
-      const tool = listed.find((t) => t.name === name);
-      assertEquals(tool.annotations?.readOnlyHint, true);
+dbTest(
+  "mcp read tools: an OAuth viewer sees and calls the read tools, never a write tool",
+  async () => {
+    const org = await createIsolatedUser("owner");
+    try {
+      const viewer = await oauthToken(await addMember(org.org.id, "viewer"));
+      const listed = await tools(viewer);
+      const names = listed.map((t) => t.name);
+      for (const name of READ_TOOLS) {
+        assert(names.includes(name), `${name} missing: ${names.join(", ")}`);
+        const tool = listed.find((t) => t.name === name);
+        assertEquals(tool.annotations?.readOnlyHint, true);
+      }
+      assert(!names.includes(WRITE_TOOL), names.join(", "));
+
+      data(await call(viewer, "describe_data_model"));
+      data(await call(viewer, "list_documents"));
+      data(await call(viewer, "query_data", { table: "uploaded_files" }));
+
+      const before = writeRuns;
+      refusalText(await call(viewer, WRITE_TOOL));
+      assertEquals(writeRuns, before);
+
+      // The control: an editor does get the write tool.
+      const editor = await oauthToken(await addMember(org.org.id, "editor"));
+      assert((await tools(editor)).some((t) => t.name === WRITE_TOOL));
+    } finally {
+      await org.cleanup();
     }
-    assert(!names.includes(WRITE_TOOL), names.join(", "));
-
-    data(await call(viewer, "describe_data_model"));
-    data(await call(viewer, "list_documents"));
-    data(await call(viewer, "query_data", { table: "uploaded_files" }));
-
-    const before = writeRuns;
-    refusalText(await call(viewer, WRITE_TOOL));
-    assertEquals(writeRuns, before);
-
-    // The control: an editor does get the write tool.
-    const editor = await oauthToken(await addMember(org.org.id, "editor"));
-    assert((await tools(editor)).some((t) => t.name === WRITE_TOOL));
-  } finally {
-    await org.cleanup();
-  }
-});
+  },
+);
 
 dbTest("mcp read tools: a portal viewer gets none of them", async () => {
   const org = await createIsolatedUser("owner");
@@ -179,7 +186,9 @@ dbTest("mcp read tools: a portal viewer gets none of them", async () => {
       tokenHash: crypto.randomUUID(),
     }).execute();
     const names = (await tools(await oauthToken(id))).map((t) => t.name);
-    for (const name of READ_TOOLS) assert(!names.includes(name), `${name} listed for a portal viewer`);
+    for (const name of READ_TOOLS) {
+      assert(!names.includes(name), `${name} listed for a portal viewer`);
+    }
   } finally {
     await org.cleanup();
   }
@@ -187,7 +196,10 @@ dbTest("mcp read tools: a portal viewer gets none of them", async () => {
 
 dbTest("mcp read tools: an anonymous caller in public mode is asked to sign in", async () => {
   __setEnvForTest("MCP_AUTH_MODE", "public");
-  const reply = await rpc("tools/call", { name: "query_data", arguments: { table: "uploaded_files" } });
+  const reply = await rpc("tools/call", {
+    name: "query_data",
+    arguments: { table: "uploaded_files" },
+  });
   assertStringIncludes(refusalText(reply).toLowerCase(), "sign");
 });
 
@@ -219,7 +231,9 @@ dbTest("mcp read tools: the data model leaves out auth and secret tables and col
     // Billing tables need billing.manage: hidden from a viewer.
     assert(!tables.has("credit_ledger_entries"));
     for (const t of tables.values()) {
-      for (const c of t.columns) assert(!HIDDEN_COLUMN_PATTERN.test(c.name), `${t.table}.${c.name}`);
+      for (const c of t.columns) {
+        assert(!HIDDEN_COLUMN_PATTERN.test(c.name), `${t.table}.${c.name}`);
+      }
     }
     const files = tables.get("uploaded_files");
     assertExists(files);
@@ -229,94 +243,120 @@ dbTest("mcp read tools: the data model leaves out auth and secret tables and col
 
     // The owner sees the billing tables.
     const owner = await oauthToken(org.user.id);
-    const ownerTables = data(await call(owner, "describe_data_model")).tables.map((t: any) => t.table);
+    const ownerTables = data(await call(owner, "describe_data_model")).tables.map((t: any) =>
+      t.table
+    );
     assert(ownerTables.includes("credit_ledger_entries"));
   } finally {
     await org.cleanup();
   }
 });
 
-dbTest("mcp read tools: query_data is pinned to the caller's org and refuses what it must", async () => {
-  const a = await createIsolatedUser("owner");
-  const b = await createIsolatedUser("owner");
-  try {
-    await storeCsv(a.org.id, "a-report.csv", "x,y\n1,2\n");
-    await storeCsv(a.org.id, "a-other.csv", "x\n3\n");
-    const bFile = await storeCsv(b.org.id, "b-secret.csv", "z\n9\n");
-    const viewer = await oauthToken(await addMember(a.org.id, "viewer"));
+dbTest(
+  "mcp read tools: query_data is pinned to the caller's org and refuses what it must",
+  async () => {
+    const a = await createIsolatedUser("owner");
+    const b = await createIsolatedUser("owner");
+    try {
+      await storeCsv(a.org.id, "a-report.csv", "x,y\n1,2\n");
+      await storeCsv(a.org.id, "a-other.csv", "x\n3\n");
+      const bFile = await storeCsv(b.org.id, "b-secret.csv", "z\n9\n");
+      const viewer = await oauthToken(await addMember(a.org.id, "viewer"));
 
-    const all = data(await call(viewer, "query_data", { table: "uploaded_files", columns: ["id", "filename"] }));
-    assertEquals(all.rows.length, 2);
-    assert(all.rows.every((r: any) => r.filename.startsWith("a-")));
+      const all = data(
+        await call(viewer, "query_data", { table: "uploaded_files", columns: ["id", "filename"] }),
+      );
+      assertEquals(all.rows.length, 2);
+      assert(all.rows.every((r: any) => r.filename.startsWith("a-")));
 
-    // Another org's id through a filter is simply no rows.
-    const cross = data(
-      await call(viewer, "query_data", {
-        table: "uploaded_files",
-        filters: [{ column: "id", op: "eq", value: bFile.id }],
-      }),
-    );
-    assertEquals(cross.rows.length, 0);
+      // Another org's id through a filter is simply no rows.
+      const cross = data(
+        await call(viewer, "query_data", {
+          table: "uploaded_files",
+          filters: [{ column: "id", op: "eq", value: bFile.id }],
+        }),
+      );
+      assertEquals(cross.rows.length, 0);
 
-    // Filter values are data, never SQL.
-    const injected = data(
-      await call(viewer, "query_data", {
-        table: "uploaded_files",
-        filters: [{ column: "filename", op: "eq", value: "x' OR '1'='1" }],
-      }),
-    );
-    assertEquals(injected.rows.length, 0);
+      // Filter values are data, never SQL.
+      const injected = data(
+        await call(viewer, "query_data", {
+          table: "uploaded_files",
+          filters: [{ column: "filename", op: "eq", value: "x' OR '1'='1" }],
+        }),
+      );
+      assertEquals(injected.rows.length, 0);
 
-    const filtered = data(
-      await call(viewer, "query_data", {
-        table: "uploaded_files",
-        columns: ["filename"],
-        filters: [{ column: "filename", op: "ilike", value: "%REPORT%" }],
-        orderBy: { column: "filename", direction: "desc" },
-      }),
-    );
-    assertEquals(filtered.rows, [{ filename: "a-report.csv" }]);
+      const filtered = data(
+        await call(viewer, "query_data", {
+          table: "uploaded_files",
+          columns: ["filename"],
+          filters: [{ column: "filename", op: "ilike", value: "%REPORT%" }],
+          orderBy: { column: "filename", direction: "desc" },
+        }),
+      );
+      assertEquals(filtered.rows, [{ filename: "a-report.csv" }]);
 
-    const capped = data(await call(viewer, "query_data", { table: "uploaded_files", limit: 1 }));
-    assertEquals(capped.rows.length, 1);
-    assertEquals(capped.truncated, true);
-    refusalText(await call(viewer, "query_data", { table: "uploaded_files", limit: MAX_QUERY_ROWS + 1 }));
+      const capped = data(await call(viewer, "query_data", { table: "uploaded_files", limit: 1 }));
+      assertEquals(capped.rows.length, 1);
+      assertEquals(capped.truncated, true);
+      refusalText(
+        await call(viewer, "query_data", { table: "uploaded_files", limit: MAX_QUERY_ROWS + 1 }),
+      );
 
-    assertStringIncludes(refusalText(await call(viewer, "query_data", { table: "users" })), "not found");
-    assertStringIncludes(refusalText(await call(viewer, "query_data", { table: "mcp_oauth_tokens" })), "not found");
-    assertStringIncludes(
-      refusalText(await call(viewer, "query_data", { table: "credit_ledger_entries" })),
-      "not found",
-    );
-    assertStringIncludes(refusalText(await call(viewer, "query_data", { table: "products" })), "organization_id");
-    assertStringIncludes(
-      refusalText(await call(viewer, "query_data", { table: "uploaded_files", columns: ["nope"] })),
-      "Unknown column",
-    );
-  } finally {
-    await a.cleanup();
-    await b.cleanup();
-  }
-});
+      assertStringIncludes(
+        refusalText(await call(viewer, "query_data", { table: "users" })),
+        "not found",
+      );
+      assertStringIncludes(
+        refusalText(await call(viewer, "query_data", { table: "mcp_oauth_tokens" })),
+        "not found",
+      );
+      assertStringIncludes(
+        refusalText(await call(viewer, "query_data", { table: "credit_ledger_entries" })),
+        "not found",
+      );
+      assertStringIncludes(
+        refusalText(await call(viewer, "query_data", { table: "products" })),
+        "organization_id",
+      );
+      assertStringIncludes(
+        refusalText(
+          await call(viewer, "query_data", { table: "uploaded_files", columns: ["nope"] }),
+        ),
+        "Unknown column",
+      );
+    } finally {
+      await a.cleanup();
+      await b.cleanup();
+    }
+  },
+);
 
-dbTest("mcp read tools: documents are org-scoped, text is inlined, and the URL is absolute", async () => {
-  const a = await createIsolatedUser("owner");
-  const b = await createIsolatedUser("owner");
-  try {
-    const mine = await storeCsv(a.org.id, "numbers.csv", "n\n42\n");
-    const theirs = await storeCsv(b.org.id, "theirs.csv", "n\n7\n");
-    const viewer = await oauthToken(await addMember(a.org.id, "viewer"));
+dbTest(
+  "mcp read tools: documents are org-scoped, text is inlined, and the URL is absolute",
+  async () => {
+    const a = await createIsolatedUser("owner");
+    const b = await createIsolatedUser("owner");
+    try {
+      const mine = await storeCsv(a.org.id, "numbers.csv", "n\n42\n");
+      const theirs = await storeCsv(b.org.id, "theirs.csv", "n\n7\n");
+      const viewer = await oauthToken(await addMember(a.org.id, "viewer"));
 
-    const listed = data(await call(viewer, "list_documents", { query: "numbers" }));
-    assertEquals(listed.documents.map((d: any) => d.id), [mine.id]);
+      const listed = data(await call(viewer, "list_documents", { query: "numbers" }));
+      assertEquals(listed.documents.map((d: any) => d.id), [mine.id]);
 
-    const read = data(await call(viewer, "read_document", { id: mine.id }));
-    assertEquals(read.text, "n\n42\n");
-    assert(/^https?:\/\//.test(read.downloadUrl), read.downloadUrl);
+      const read = data(await call(viewer, "read_document", { id: mine.id }));
+      assertEquals(read.text, "n\n42\n");
+      assert(/^https?:\/\//.test(read.downloadUrl), read.downloadUrl);
 
-    assertStringIncludes(refusalText(await call(viewer, "read_document", { id: theirs.id })), "not found");
-  } finally {
-    await a.cleanup();
-    await b.cleanup();
-  }
-});
+      assertStringIncludes(
+        refusalText(await call(viewer, "read_document", { id: theirs.id })),
+        "not found",
+      );
+    } finally {
+      await a.cleanup();
+      await b.cleanup();
+    }
+  },
+);

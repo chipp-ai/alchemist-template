@@ -40,6 +40,8 @@ export interface OrgMember {
   name: string | null;
   picture: string | null;
   role: string;
+  /** "platform" when the Chipp project manages this member. */
+  managedBy?: "platform" | null;
   lastLoginAt: string | null;
   createdAt: string;
 }

@@ -26,3 +26,16 @@ system, OAuth server or MCP endpoint.**
 - The credit ledger (`src/services/credit.service.ts`) and the OAuth tables
   exist in every project either way. Both features spend the same
   organization credit balance.
+
+## People connect their own assistant
+
+When MCP is on with `MCP_AUTH_MODE=oauth`, Settings shows an "AI assistants"
+tab to every signed-in member, a viewer included
+(`web/src/components/AssistantConnect.svelte`, data from `GET /api/assistants`).
+Claude gets a link that opens its "Add custom connector" dialog with the app
+filled in; ChatGPT and Grok have no such link, so their buttons copy the MCP
+URL and open the connector page with one line of steps. The links and the
+doc URLs they were checked against live in `web/src/lib/assistant-connect.ts`.
+The OAuth consent signs each person in with this app's own login and admits
+every role, so an assistant acts with that person's role. Never add a second
+connect page.

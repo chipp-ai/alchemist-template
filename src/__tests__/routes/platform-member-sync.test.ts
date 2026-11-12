@@ -51,7 +51,13 @@ function withEnv(fn: () => Promise<void>): () => Promise<void> {
 }
 
 function dbTest(name: string, fn: () => Promise<void>) {
-  Deno.test({ name, ignore: !HAS_DB, sanitizeResources: false, sanitizeOps: false, fn: withEnv(fn) });
+  Deno.test({
+    name,
+    ignore: !HAS_DB,
+    sanitizeResources: false,
+    sanitizeOps: false,
+    fn: withEnv(fn),
+  });
 }
 
 interface Member {
@@ -87,7 +93,15 @@ function uniqueEmail(tag: string): string {
 async function userByEmail(email: string) {
   return await db
     .selectFrom("users")
-    .select(["id", "email", "name", "role", "organizationId", "managedBy", "tokenInvalidatedBefore"])
+    .select([
+      "id",
+      "email",
+      "name",
+      "role",
+      "organizationId",
+      "managedBy",
+      "tokenInvalidatedBefore",
+    ])
     .where("email", "=", email)
     .executeTakeFirst();
 }
@@ -137,131 +151,141 @@ dbTest("member sync: another project's delivery is 403", async () => {
 dbTest("member sync: a body with one email twice is 400", async () => {
   const email = uniqueEmail("dup");
   const res = await deliver({
-    members: [{ email, name: null, role: "viewer" }, { email: email.toUpperCase(), name: null, role: "editor" }],
+    members: [{ email, name: null, role: "viewer" }, {
+      email: email.toUpperCase(),
+      name: null,
+      role: "editor",
+    }],
   });
   assertEquals(res.status, 400);
 });
 
 // ── Reconcile ───────────────────────────────────────────────────────────────
 
-dbTest("member sync: creates, updates, demotes, disconnects and re-attaches managed rows; native rows untouched", async () => {
-  // The platform owner already uses the app (a native owner): that org is the target.
-  const owner = await createIsolatedUser("owner");
-  const nativeEditor = await db
-    .insertInto("users")
-    .values({
-      email: uniqueEmail("native-editor"),
-      name: "Native Editor",
-      role: "editor",
-      organizationId: owner.org.id,
-      emailVerified: true,
-    })
-    .returning(["id", "email"])
-    .executeTakeFirstOrThrow();
-  try {
-    const a = uniqueEmail("a");
-    const b = uniqueEmail("b");
-    const c = uniqueEmail("c");
+dbTest(
+  "member sync: creates, updates, demotes, disconnects and re-attaches managed rows; native rows untouched",
+  async () => {
+    // The platform owner already uses the app (a native owner): that org is the target.
+    const owner = await createIsolatedUser("owner");
+    const nativeEditor = await db
+      .insertInto("users")
+      .values({
+        email: uniqueEmail("native-editor"),
+        name: "Native Editor",
+        role: "editor",
+        organizationId: owner.org.id,
+        emailVerified: true,
+      })
+      .returning(["id", "email"])
+      .executeTakeFirstOrThrow();
+    try {
+      const a = uniqueEmail("a");
+      const b = uniqueEmail("b");
+      const c = uniqueEmail("c");
 
-    const res1 = await deliver({
-      members: [
-        { email: owner.user.email, name: "Owner", role: "owner" },
-        { email: a, name: "Alice", role: "owner" },
-        { email: b, name: "Bob", role: "editor" },
-        { email: c, name: null, role: "viewer" },
-      ],
-    });
-    assertEquals(res1.status, 200);
-    const body1 = await res1.json();
-    assertEquals(body1.ok, true);
-    assertEquals(body1.applied, true);
-    assertEquals(body1.orgId, owner.org.id);
-    assertEquals(body1.created, 3);
-    assertEquals(body1.updated, 0);
-    assertEquals(body1.disconnected, 0);
-    assertEquals(body1.skipped, [{ email: owner.user.email, reason: "app_account" }]);
+      const res1 = await deliver({
+        members: [
+          { email: owner.user.email, name: "Owner", role: "owner" },
+          { email: a, name: "Alice", role: "owner" },
+          { email: b, name: "Bob", role: "editor" },
+          { email: c, name: null, role: "viewer" },
+        ],
+      });
+      assertEquals(res1.status, 200);
+      const body1 = await res1.json();
+      assertEquals(body1.ok, true);
+      assertEquals(body1.applied, true);
+      assertEquals(body1.orgId, owner.org.id);
+      assertEquals(body1.created, 3);
+      assertEquals(body1.updated, 0);
+      assertEquals(body1.disconnected, 0);
+      assertEquals(body1.skipped, [{ email: owner.user.email, reason: "app_account" }]);
 
-    const ua = await userByEmail(a);
-    const ub = await userByEmail(b);
-    const uc = await userByEmail(c);
-    assertExists(ua);
-    assertExists(ub);
-    assertExists(uc);
-    // The native owner keeps the owner slot: a platform owner becomes admin.
-    assertEquals(ua.role, "admin");
-    assertEquals(ub.role, "editor");
-    assertEquals(uc.role, "viewer");
-    for (const u of [ua, ub, uc]) {
-      assertEquals(u.managedBy, "platform");
-      assertEquals(u.organizationId, owner.org.id);
+      const ua = await userByEmail(a);
+      const ub = await userByEmail(b);
+      const uc = await userByEmail(c);
+      assertExists(ua);
+      assertExists(ub);
+      assertExists(uc);
+      // The native owner keeps the owner slot: a platform owner becomes admin.
+      assertEquals(ua.role, "admin");
+      assertEquals(ub.role, "editor");
+      assertEquals(uc.role, "viewer");
+      for (const u of [ua, ub, uc]) {
+        assertEquals(u.managedBy, "platform");
+        assertEquals(u.organizationId, owner.org.id);
+      }
+      assertEquals(uc.name, c.split("@")[0]);
+
+      // The native rows are untouched.
+      const ownerRow = await userByEmail(owner.user.email);
+      assertEquals(ownerRow?.role, "owner");
+      assertEquals(ownerRow?.managedBy, null);
+      assertEquals((await userByEmail(nativeEditor.email))?.role, "editor");
+
+      // A session minted before the change sees the new role on its next request.
+      const bSession = { sub: ub.id, iat: Math.floor(Date.now() / 1000) - 60 };
+      assertEquals((await resolveUser(bSession))?.role, "editor");
+
+      // Second delivery: rename a, demote b, drop c.
+      const res2 = await deliver({
+        members: [
+          { email: owner.user.email, name: "Owner", role: "owner" },
+          { email: a, name: "Alice Smith", role: "owner" },
+          { email: b, name: "Bob", role: "viewer" },
+        ],
+      });
+      const body2 = await res2.json();
+      assertEquals(body2.applied, true);
+      assertEquals(body2.created, 0);
+      assertEquals(body2.updated, 2);
+      assertEquals(body2.disconnected, 1);
+      assertEquals((await userByEmail(a))?.name, "Alice Smith");
+      assertEquals((await userByEmail(b))?.role, "viewer");
+      assertEquals((await resolveUser(bSession))?.role, "viewer");
+      const ucGone = await userByEmail(c);
+      assertEquals(ucGone?.organizationId, null);
+      assertEquals(ucGone?.role, "viewer");
+      assertExists(ucGone?.tokenInvalidatedBefore);
+      assertEquals(
+        await resolveUser({ sub: uc.id, iat: Math.floor(Date.now() / 1000) - 60 }),
+        null,
+      );
+      // The native editor was not in the desired set and is still attached.
+      assertEquals((await userByEmail(nativeEditor.email))?.organizationId, owner.org.id);
+
+      // The same body again changes nothing.
+      const res3 = await deliver({
+        members: [
+          { email: owner.user.email, name: "Owner", role: "owner" },
+          { email: a, name: "Alice Smith", role: "owner" },
+          { email: b, name: "Bob", role: "viewer" },
+        ],
+      });
+      const body3 = await res3.json();
+      assertEquals([body3.created, body3.updated, body3.disconnected], [0, 0, 0]);
+
+      // Listing c again re-attaches the same row.
+      const res4 = await deliver({
+        members: [
+          { email: a, name: "Alice Smith", role: "owner" },
+          { email: b, name: "Bob", role: "viewer" },
+          { email: c, name: null, role: "editor" },
+        ],
+      });
+      const body4 = await res4.json();
+      assertEquals(body4.orgId, owner.org.id);
+      assertEquals(body4.created, 0);
+      assertEquals(body4.updated, 1);
+      const ucBack = await userByEmail(c);
+      assertEquals(ucBack?.id, uc.id);
+      assertEquals(ucBack?.organizationId, owner.org.id);
+      assertEquals(ucBack?.role, "editor");
+    } finally {
+      await owner.cleanup();
     }
-    assertEquals(uc.name, c.split("@")[0]);
-
-    // The native rows are untouched.
-    const ownerRow = await userByEmail(owner.user.email);
-    assertEquals(ownerRow?.role, "owner");
-    assertEquals(ownerRow?.managedBy, null);
-    assertEquals((await userByEmail(nativeEditor.email))?.role, "editor");
-
-    // A session minted before the change sees the new role on its next request.
-    const bSession = { sub: ub.id, iat: Math.floor(Date.now() / 1000) - 60 };
-    assertEquals((await resolveUser(bSession))?.role, "editor");
-
-    // Second delivery: rename a, demote b, drop c.
-    const res2 = await deliver({
-      members: [
-        { email: owner.user.email, name: "Owner", role: "owner" },
-        { email: a, name: "Alice Smith", role: "owner" },
-        { email: b, name: "Bob", role: "viewer" },
-      ],
-    });
-    const body2 = await res2.json();
-    assertEquals(body2.applied, true);
-    assertEquals(body2.created, 0);
-    assertEquals(body2.updated, 2);
-    assertEquals(body2.disconnected, 1);
-    assertEquals((await userByEmail(a))?.name, "Alice Smith");
-    assertEquals((await userByEmail(b))?.role, "viewer");
-    assertEquals((await resolveUser(bSession))?.role, "viewer");
-    const ucGone = await userByEmail(c);
-    assertEquals(ucGone?.organizationId, null);
-    assertEquals(ucGone?.role, "viewer");
-    assertExists(ucGone?.tokenInvalidatedBefore);
-    assertEquals(await resolveUser({ sub: uc.id, iat: Math.floor(Date.now() / 1000) - 60 }), null);
-    // The native editor was not in the desired set and is still attached.
-    assertEquals((await userByEmail(nativeEditor.email))?.organizationId, owner.org.id);
-
-    // The same body again changes nothing.
-    const res3 = await deliver({
-      members: [
-        { email: owner.user.email, name: "Owner", role: "owner" },
-        { email: a, name: "Alice Smith", role: "owner" },
-        { email: b, name: "Bob", role: "viewer" },
-      ],
-    });
-    const body3 = await res3.json();
-    assertEquals([body3.created, body3.updated, body3.disconnected], [0, 0, 0]);
-
-    // Listing c again re-attaches the same row.
-    const res4 = await deliver({
-      members: [
-        { email: a, name: "Alice Smith", role: "owner" },
-        { email: b, name: "Bob", role: "viewer" },
-        { email: c, name: null, role: "editor" },
-      ],
-    });
-    const body4 = await res4.json();
-    assertEquals(body4.orgId, owner.org.id);
-    assertEquals(body4.created, 0);
-    assertEquals(body4.updated, 1);
-    const ucBack = await userByEmail(c);
-    assertEquals(ucBack?.id, uc.id);
-    assertEquals(ucBack?.organizationId, owner.org.id);
-    assertEquals(ucBack?.role, "editor");
-  } finally {
-    await owner.cleanup();
-  }
-});
+  },
+);
 
 dbTest("member sync: with no native owner, one platform owner becomes the owner", async () => {
   // A native editor whose email the platform lists as an owner picks the org.
@@ -314,7 +338,11 @@ dbTest("member sync: a replayed or older seq is ignored", async () => {
     const seq = nextSeq();
     const first = await deliver({
       seq,
-      members: [{ email: owner.user.email, name: null, role: "owner" }, { email: m, name: null, role: "editor" }],
+      members: [{ email: owner.user.email, name: null, role: "owner" }, {
+        email: m,
+        name: null,
+        role: "editor",
+      }],
     });
     assertEquals((await first.json()).applied, true);
 
@@ -341,10 +369,18 @@ dbTest("member sync: verification account addresses are skipped as reserved", as
   try {
     const reserved = verificationAccountEmail("admin");
     const res = await deliver({
-      members: [{ email: owner.user.email, name: null, role: "owner" }, { email: reserved, name: null, role: "editor" }],
+      members: [{ email: owner.user.email, name: null, role: "owner" }, {
+        email: reserved,
+        name: null,
+        role: "editor",
+      }],
     });
     const body = await res.json();
-    assert(body.skipped.some((s: { email: string; reason: string }) => s.email === reserved && s.reason === "reserved"));
+    assert(
+      body.skipped.some((s: { email: string; reason: string }) =>
+        s.email === reserved && s.reason === "reserved"
+      ),
+    );
     assertEquals((await userByEmail(reserved))?.managedBy ?? null, null);
   } finally {
     await owner.cleanup();
@@ -366,49 +402,60 @@ async function verifyOtpAs(email: string): Promise<Response> {
   });
 }
 
-dbTest("member sync: OTP sign-in lands a managed user in the synced org; a disconnected one gets no session", async () => {
-  const owner = await createIsolatedUser("owner");
-  try {
-    const m = uniqueEmail("otp");
-    const gone = uniqueEmail("otp-gone");
-    await deliver({
-      members: [
-        { email: owner.user.email, name: null, role: "owner" },
-        { email: m, name: "M", role: "editor" },
-        { email: gone, name: "G", role: "viewer" },
-      ],
-    });
-    await deliver({
-      members: [{ email: owner.user.email, name: null, role: "owner" }, { email: m, name: "M", role: "editor" }],
-    });
+dbTest(
+  "member sync: OTP sign-in lands a managed user in the synced org; a disconnected one gets no session",
+  async () => {
+    const owner = await createIsolatedUser("owner");
+    try {
+      const m = uniqueEmail("otp");
+      const gone = uniqueEmail("otp-gone");
+      await deliver({
+        members: [
+          { email: owner.user.email, name: null, role: "owner" },
+          { email: m, name: "M", role: "editor" },
+          { email: gone, name: "G", role: "viewer" },
+        ],
+      });
+      await deliver({
+        members: [{ email: owner.user.email, name: null, role: "owner" }, {
+          email: m,
+          name: "M",
+          role: "editor",
+        }],
+      });
 
-    const ok = await verifyOtpAs(m);
-    assertEquals(ok.status, 200);
-    const okBody = await ok.json();
-    assertEquals(okBody.organization?.id, owner.org.id);
-    const cookie = ok.headers.get("set-cookie") ?? "";
-    const token = /session_id=([^;]+)/.exec(cookie)?.[1];
-    assertExists(token);
-    const me = await app.request("/api/auth/me", { headers: { cookie: `session_id=${token}` } });
-    assertEquals(me.status, 200);
-    const meUser = await resolveUser({ sub: okBody.user.id, iat: Math.floor(Date.now() / 1000) });
-    assertEquals(meUser?.organizationId, owner.org.id);
-    assertEquals(meUser?.role, "editor");
+      const ok = await verifyOtpAs(m);
+      assertEquals(ok.status, 200);
+      const okBody = await ok.json();
+      assertEquals(okBody.organization?.id, owner.org.id);
+      const cookie = ok.headers.get("set-cookie") ?? "";
+      const token = /session_id=([^;]+)/.exec(cookie)?.[1];
+      assertExists(token);
+      const me = await app.request("/api/auth/me", { headers: { cookie: `session_id=${token}` } });
+      assertEquals(me.status, 200);
+      const meUser = await resolveUser({ sub: okBody.user.id, iat: Math.floor(Date.now() / 1000) });
+      assertEquals(meUser?.organizationId, owner.org.id);
+      assertEquals(meUser?.role, "editor");
 
-    const refused = await verifyOtpAs(gone);
-    assertEquals(refused.status, 403);
-    assertEquals(refused.headers.get("set-cookie"), null);
-  } finally {
-    await owner.cleanup();
-  }
-});
+      const refused = await verifyOtpAs(gone);
+      assertEquals(refused.status, 403);
+      assertEquals(refused.headers.get("set-cookie"), null);
+    } finally {
+      await owner.cleanup();
+    }
+  },
+);
 
 dbTest("member sync: the app refuses to change, remove or invite a managed member", async () => {
   const owner = await createIsolatedUser("owner");
   try {
     const m = uniqueEmail("guard");
     await deliver({
-      members: [{ email: owner.user.email, name: null, role: "owner" }, { email: m, name: null, role: "editor" }],
+      members: [{ email: owner.user.email, name: null, role: "owner" }, {
+        email: m,
+        name: null,
+        role: "editor",
+      }],
     });
     const managed = await userByEmail(m);
     assertExists(managed);
@@ -421,7 +468,10 @@ dbTest("member sync: the app refuses to change, remove or invite a managed membe
       body: JSON.stringify({ role: "viewer" }),
     });
     assertEquals(role.status, 403);
-    const remove = await app.request(`/api/org/members/${managed.id}`, { method: "DELETE", headers });
+    const remove = await app.request(`/api/org/members/${managed.id}`, {
+      method: "DELETE",
+      headers,
+    });
     assertEquals(remove.status, 403);
     const transfer = await app.request(`/api/org/transfer-ownership`, {
       method: "POST",
@@ -440,7 +490,10 @@ dbTest("member sync: the app refuses to change, remove or invite a managed membe
     // An invite in another org cannot pull the managed account away.
     const other = await createIsolatedUser("owner");
     try {
-      const otherCookie = `session_id=${await createSessionToken({ ...other.user, role: "owner" })}`;
+      const otherCookie = `session_id=${await createSessionToken({
+        ...other.user,
+        role: "owner",
+      })}`;
       const invite = await app.request(`/api/org/invites`, {
         method: "POST",
         headers: { "content-type": "application/json", cookie: otherCookie },

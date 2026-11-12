@@ -48,6 +48,7 @@ import { agentMcpRoutes } from "@/api/routes/agent-mcp/index.ts";
 import { storageLocalRoutes } from "@/api/routes/storage-local/index.ts";
 import { eventsRoutes } from "@/api/routes/events/index.ts";
 import { platformMemberSyncRoutes } from "@/api/routes/platform/member-sync.ts";
+import { assistantsRoutes } from "@/api/routes/assistants/index.ts";
 import { devRoutesEnabled } from "@/lib/dev-mode.ts";
 import { headlessApiRouter } from "@/services/headless-api/router.ts";
 import { embeddedAgentRouter } from "@/services/embedded-agent/router.ts";
@@ -244,6 +245,10 @@ app.route("/api/events", eventsRoutes);
 // the platform injects ALCH_MEMBER_SYNC_SECRET. See
 // src/api/routes/platform/member-sync.ts.
 app.route("/api/platform", platformMemberSyncRoutes);
+
+// What the Settings "AI assistants" panel needs: is the MCP server on, and
+// its URL. See src/api/routes/assistants/index.ts.
+app.route("/api/assistants", assistantsRoutes);
 
 // Inbound-email dashboard reads (auth-required, org-scoped). See
 // src/api/routes/inbound-emails/index.ts.
