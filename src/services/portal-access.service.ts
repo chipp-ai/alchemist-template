@@ -90,11 +90,16 @@ export interface IssuedPortalAccess {
  * Issue a portal link for one record, auto-provisioning the account it
  * signs in as.
  *
- * Account resolution, and the rule that matters: find-or-create BY EMAIL,
- * and NEVER modify an account that already exists. An admin who is also an
- * employee keeps their admin role and their org; they simply gain a portal
- * link too. Silently demoting a real user to `viewer` because someone
- * issued them a portal link would be a live privilege regression.
+ * Account resolution: find-or-create BY EMAIL, and NEVER modify an account
+ * that already exists. Silently demoting a real user to `viewer` because
+ * someone issued them a portal link would be a live privilege regression.
+ *
+ * A portal link may only ever sign in as a portal account (`viewer`) of the
+ * issuing org. An address that already belongs to any other account (an
+ * owner or admin here, or any account in another org) is refused. Without
+ * this rule, anyone who signs up owns their own org, can mint a link for a
+ * victim's address with `sendEmail: false`, and claiming it signs them in
+ * as the victim: full account takeover. That person signs in normally.
  */
 export async function issuePortalAccess(
   input: IssuePortalAccessInput,
@@ -324,6 +329,20 @@ export async function claimPortalAccess(token: string): Promise<ClaimedPortalAcc
     .where("id", "=", row.userId)
     .executeTakeFirst();
   if (!user) throw dead;
+  // A portal link signs in ONLY a portal account of the issuing org. Checked
+  // again here, not just at issue time: it kills links minted before the
+  // issue-time rule existed, and links whose account was later promoted or
+  // moved. Same ambiguous error for the caller.
+  if (!isPortalAccountOf(user, row.organizationId)) {
+    log.warn("Portal claim refused: link bound to a non-portal account", {
+      source: LOG_SOURCE,
+      feature: "claim",
+      accessId: row.id,
+      organizationId: row.organizationId,
+      userId: user.id,
+    });
+    throw dead;
+  }
 
   await db
     .updateTable("portal_access_tokens")
@@ -352,7 +371,7 @@ export async function claimPortalAccess(token: string): Promise<ClaimedPortalAcc
     // The session is minted against the account's OWN org and role, not
     // the token's. A pre-existing admin claiming a portal link stays an
     // admin of their own workspace; they do not get re-homed by a link.
-    organizationId: user.organizationId ?? row.organizationId,
+    organizationId: row.organizationId,
     role: user.role,
     access: toPortalAccess(row),
   };
@@ -360,19 +379,35 @@ export async function claimPortalAccess(token: string): Promise<ClaimedPortalAcc
 
 // ── Internals ──────────────────────────────────────────────────────────────
 
+/** True only for a `viewer` account that belongs to `organizationId`. */
+function isPortalAccountOf(
+  user: { role: string | null; organizationId: string | null },
+  organizationId: string,
+): boolean {
+  return user.role === PORTAL_ROLE && user.organizationId === organizationId;
+}
+
 async function findOrCreatePortalUser(
   email: string,
   organizationId: string,
 ): Promise<{ userId: string; provisioned: boolean }> {
   const existing = await db
     .selectFrom("users")
-    .select(["id"])
+    .select(["id", "role", "organizationId"])
     .where("email", "=", email)
     .executeTakeFirst();
 
-  // Never touch an existing account. See the doc comment on
-  // issuePortalAccess for why this is not an oversight.
-  if (existing) return { userId: existing.id, provisioned: false };
+  // Never touch an existing account, and never bind a link to one that is
+  // not a portal account of this org. See the doc comment on
+  // issuePortalAccess: a link for any other account is an account takeover.
+  if (existing) {
+    if (!isPortalAccountOf(existing, organizationId)) {
+      throw new ForbiddenError(
+        "This address already has its own account. They can sign in directly; a portal link cannot be issued for it.",
+      );
+    }
+    return { userId: existing.id, provisioned: false };
+  }
 
   const created = await db
     .insertInto("users")

@@ -26,6 +26,7 @@ import {
 } from "@/services/portal-access.service.ts";
 import { clearCapturedEmails, lastCapturedEmail, listCapturedEmails } from "@/services/email.ts";
 import { getEnv } from "@/lib/env.ts";
+import { ForbiddenError, NotFoundError } from "@/utils/errors.ts";
 
 const HAS_DB = !!(getEnv("TEST_DATABASE_URL") || getEnv("DATABASE_URL"));
 
@@ -88,20 +89,38 @@ dbTest("mint: auto-provisions a viewer account and emails the link", async () =>
   }
 });
 
-dbTest("mint: NEVER downgrades an account that already exists", async () => {
+dbTest("mint: refuses an address that already has a non-portal account, and never changes it", async () => {
   const admin = await createIsolatedUser("owner");
   const other = await createIsolatedUser("owner");
   try {
     clearCapturedEmails();
-    // Issue a portal link to a person who is already an owner elsewhere.
-    const issued = await issuePortalAccess({
-      organizationId: admin.org.id,
-      email: other.user.email,
-      subjectType: "employee",
-      subjectId: "emp-2",
-      createdByUserId: admin.user.id,
-    });
-    assertEquals(issued.provisionedUser, false);
+    // An owner elsewhere: a link for them would let the issuer sign in as
+    // them (anyone who signs up owns an org and can mint links).
+    await assertRejects(
+      () =>
+        issuePortalAccess({
+          organizationId: admin.org.id,
+          email: other.user.email,
+          subjectType: "employee",
+          subjectId: "emp-2",
+          createdByUserId: admin.user.id,
+          sendEmail: false,
+        }),
+      ForbiddenError,
+    );
+    // The issuer's own org's owner is refused too: no escalation in-org.
+    await assertRejects(
+      () =>
+        issuePortalAccess({
+          organizationId: admin.org.id,
+          email: admin.user.email,
+          subjectType: "employee",
+          subjectId: "emp-2b",
+          sendEmail: false,
+        }),
+      ForbiddenError,
+    );
+    assertEquals(listCapturedEmails({ kind: "portal_link" }).length, 0);
 
     const unchanged = await db
       .selectFrom("users")
@@ -109,15 +128,55 @@ dbTest("mint: NEVER downgrades an account that already exists", async () => {
       .where("id", "=", other.user.id)
       .executeTakeFirstOrThrow();
     assertEquals(unchanged.role, "owner", "an existing account must keep its role");
-    assertEquals(
-      unchanged.organizationId,
-      other.org.id,
-      "an existing account must keep its org",
-    );
+    assertEquals(unchanged.organizationId, other.org.id, "an existing account must keep its org");
+    const minted = await db
+      .selectFrom("portal_access_tokens")
+      .select("id")
+      .where("userId", "in", [other.user.id, admin.user.id])
+      .execute();
+    assertEquals(minted.length, 0, "no link row may be bound to a non-portal account");
   } finally {
     clearCapturedEmails();
     await admin.cleanup();
     await other.cleanup();
+  }
+});
+
+dbTest("claim: a link bound to a non-portal account never signs it in", async () => {
+  const attacker = await createIsolatedUser("owner");
+  const victim = await createIsolatedUser("owner");
+  const email = uniqueEmail("legit-viewer");
+  try {
+    // A legitimate link, then rebind its row to the victim: the shape of a
+    // link minted before the issue-time rule existed.
+    const issued = await issuePortalAccess({
+      organizationId: attacker.org.id,
+      email,
+      subjectType: "employee",
+      subjectId: "emp-x",
+      sendEmail: false,
+    });
+    await db
+      .updateTable("portal_access_tokens")
+      .set({ userId: victim.user.id, email: victim.user.email })
+      .where("id", "=", issued.access.id)
+      .execute();
+    await assertRejects(() => claimPortalAccess(issued.token), NotFoundError);
+
+    // A viewer later promoted in the same org loses portal sign-in too.
+    const second = await issuePortalAccess({
+      organizationId: attacker.org.id,
+      email,
+      subjectType: "employee",
+      subjectId: "emp-y",
+      sendEmail: false,
+    });
+    await db.updateTable("users").set({ role: "admin" }).where("email", "=", email).execute();
+    await assertRejects(() => claimPortalAccess(second.token), NotFoundError);
+  } finally {
+    await attacker.cleanup();
+    await victim.cleanup();
+    await deleteUsers([email]);
   }
 });
 
