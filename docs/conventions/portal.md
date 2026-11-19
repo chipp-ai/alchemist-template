@@ -39,6 +39,25 @@ Invariants:
   find-or-creates by email; a pre-existing admin who is also an employee
   keeps their role and their org. Downgrading them to `viewer` because
   someone issued a portal link would be a live privilege regression.
+- **A portal link only ever signs in a portal account of the issuing
+  org.** A portal account has role `viewer` and belongs to the org that
+  issued the link. The rule works at three points:
+  - **Issue refuses other accounts.** If the address already belongs to
+    any non-viewer account, or to an account in another org, issuing
+    throws `ForbiddenError` (HTTP 403). No link row is written and no
+    email is sent. The existing account is not changed.
+  - **Claim checks the rule again.** A link minted before this rule, or
+    one whose account was later promoted or moved to another org, is dead.
+    Claim returns the same ambiguous 404 as for any invalid link.
+  - **The session org is the link's org**, never the account's own org.
+  - A refused person signs in the normal way (the standard sign-in), not
+    through a portal link.
+  - **Why:** every self-signup owns an org and holds `team.invite`, so
+    that person can issue portal links. Without this rule, anyone could
+    mint a link for someone else's address with `sendEmail: false`, claim
+    it, and take over that account. The rule works with the invariant
+    above: minting never modifies an account, and it never binds a link to
+    an account that is not a portal account of the issuing org.
 - **Only a SHA-256 of the token is stored.** A database read cannot mint a
   session. The consequence: a re-send cannot resurrect the same URL, so it
   ISSUES A FRESH LINK and retires the old one. Tell admins "resend"; the
