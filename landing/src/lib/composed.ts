@@ -403,7 +403,7 @@ function hasFileExtension(path: string): boolean {
 }
 
 /** Paths the server owns. A landing page there would never be served. */
-const RESERVED_PREFIXES = ["/api/", "/app/", "/_astro/", "/.well-known/"];
+const RESERVED_PREFIXES = ["/api/", "/app/", "/_astro/", "/_campaign/", "/.well-known/"];
 const RESERVED_EXACT = new Set(["/health/", "/robots.txt/", "/sitemap.xml/", "/index.html/"]);
 
 /** Problems with a page path, or [] when it is a clean site path. */

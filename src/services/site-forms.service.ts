@@ -54,7 +54,9 @@ function shopListPath(file: string): string | null {
   try {
     const data = JSON.parse(text) as { items?: unknown; indexPath?: unknown };
     if (!Array.isArray(data?.items) || data.items.length === 0) return null;
-    return typeof data.indexPath === "string" && data.indexPath.trim() ? normalizePagePath(data.indexPath) : "/shop/";
+    return typeof data.indexPath === "string" && data.indexPath.trim()
+      ? normalizePagePath(data.indexPath)
+      : "/shop/";
   } catch (err) {
     log.warn("site forms: landing products.json does not parse", {
       source: "site-forms",
@@ -117,11 +119,15 @@ export function loadSiteForms(
   walk("");
   const forms = new Map<string, SiteFormEntry>();
   for (const { form, pagePath } of formsOf(pages)) {
-    if (!forms.has(form.name)) forms.set(form.name, { form, pagePath: normalizePagePath(pagePath) });
+    if (!forms.has(form.name)) {
+      forms.set(form.name, { form, pagePath: normalizePagePath(pagePath) });
+    }
   }
   // The landing build fails when a page uses this name next to products, so the page form never wins on a live site.
   const shop = shopListPath(productsFile);
-  if (shop && !forms.has(PRODUCT_ENQUIRY_FORM.name)) forms.set(PRODUCT_ENQUIRY_FORM.name, { form: PRODUCT_ENQUIRY_FORM, pagePath: shop });
+  if (shop && !forms.has(PRODUCT_ENQUIRY_FORM.name)) {
+    forms.set(PRODUCT_ENQUIRY_FORM.name, { form: PRODUCT_ENQUIRY_FORM, pagePath: shop });
+  }
   return forms;
 }
 
@@ -160,7 +166,10 @@ function validDate(s: string): boolean {
 export function validateSubmission(
   form: SiteForm,
   raw: RawSubmission,
-): { ok: true; values: Record<string, SubmittedValue> } | { ok: false; errors: Record<string, string> } {
+): { ok: true; values: Record<string, SubmittedValue> } | {
+  ok: false;
+  errors: Record<string, string>;
+} {
   const values: Record<string, SubmittedValue> = {};
   const errors: Record<string, string> = {};
   for (const f of form.fields) {
@@ -168,8 +177,9 @@ export function validateSubmission(
     if (f.type === "checkboxes") {
       const picked = list(input);
       const options = f.options ?? [];
-      if (picked.some((p) => !options.includes(p))) errors[f.name] = "Pick from the listed options.";
-      else if (f.required && picked.length === 0) errors[f.name] = "Pick at least one.";
+      if (picked.some((p) => !options.includes(p))) {
+        errors[f.name] = "Pick from the listed options.";
+      } else if (f.required && picked.length === 0) errors[f.name] = "Pick at least one.";
       else if (picked.length > 0) values[f.name] = [...new Set(picked)];
       continue;
     }
@@ -200,7 +210,9 @@ export function validateSubmission(
       case "url":
         try {
           const u = new URL(value);
-          if (u.protocol !== "http:" && u.protocol !== "https:") problem = "Enter a web address that starts with http.";
+          if (u.protocol !== "http:" && u.protocol !== "https:") {
+            problem = "Enter a web address that starts with http.";
+          }
         } catch {
           problem = "Enter a valid web address.";
         }
@@ -230,6 +242,47 @@ interface SiteFormEmailData {
   formName: string;
   pagePath: string;
   fields: { label: string; value: string }[];
+  /** Where the visitor came from (attributionLines). Absent or empty: not shown. */
+  source?: { label: string; value: string }[];
+}
+
+/** Words for each attribution key, in the order the email lists them. */
+const ATTRIBUTION_LABELS: [string, string][] = [
+  ["landingCampaignName", "Landing page version"],
+  ["utmSource", "Source"],
+  ["utmMedium", "Medium"],
+  ["utmCampaign", "Campaign"],
+  ["utmTerm", "Keyword"],
+  ["utmContent", "Ad"],
+  ["campaign", "Link"],
+  ["gclid", "Google Ads click"],
+  ["gbraid", "Google Ads click"],
+  ["wbraid", "Google Ads click"],
+  ["fbclid", "Meta ad click"],
+  ["msclkid", "Microsoft Ads click"],
+  ["liFatId", "LinkedIn ad click"],
+  ["ttclid", "TikTok ad click"],
+];
+
+/** The "where they came from" lines of the owner email. */
+export function attributionLines(
+  attribution: Record<string, string> | null,
+): { label: string; value: string }[] {
+  if (!attribution) return [];
+  return ATTRIBUTION_LABELS.filter(([k]) => attribution[k]).map(([k, label]) => ({
+    label,
+    value: attribution[k],
+  }));
+}
+
+function sourceTable(d: SiteFormEmailData): string {
+  const rows = d.source ?? [];
+  if (rows.length === 0) return "";
+  return `<p><strong>Where they came from</strong></p><table role="presentation" cellpadding="6" cellspacing="0">${
+    rows.map((f) =>
+      `<tr><td valign="top">${escapeHtml(f.label)}</td><td>${escapeHtml(f.value)}</td></tr>`
+    ).join("")
+  }</table>`;
 }
 
 registerEmailKind<SiteFormEmailData>({
@@ -237,18 +290,27 @@ registerEmailKind<SiteFormEmailData>({
   description: "A visitor sent a form on the public website.",
   subject: (d) => `New "${d.formName}" form from your website`,
   text: (d) =>
-    [`A visitor sent the "${d.formName}" form on ${d.pagePath}.`, "", ...d.fields.map((f) => `${f.label}: ${f.value}`)]
-      .join("\n"),
+    [
+      `A visitor sent the "${d.formName}" form on ${d.pagePath}.`,
+      "",
+      ...d.fields.map((f) => `${f.label}: ${f.value}`),
+      ...((d.source ?? []).length > 0
+        ? ["", "Where they came from:", ...(d.source ?? []).map((f) => `${f.label}: ${f.value}`)]
+        : []),
+    ].join("\n"),
   body: (d) => ({
     previewText: `New "${d.formName}" form from your website`,
-    html: `<p>A visitor sent the <strong>${escapeHtml(d.formName)}</strong> form on ${escapeHtml(d.pagePath)}.</p>` +
+    html:
+      `<p>A visitor sent the <strong>${escapeHtml(d.formName)}</strong> form on ${
+        escapeHtml(d.pagePath)
+      }.</p>` +
       `<table role="presentation" cellpadding="6" cellspacing="0">${
         d.fields.map((f) =>
-          `<tr><td valign="top"><strong>${escapeHtml(f.label)}</strong></td><td style="white-space:pre-wrap">${
-            escapeHtml(f.value)
-          }</td></tr>`
+          `<tr><td valign="top"><strong>${
+            escapeHtml(f.label)
+          }</strong></td><td style="white-space:pre-wrap">${escapeHtml(f.value)}</td></tr>`
         ).join("")
-      }</table>`,
+      }</table>${sourceTable(d)}`,
   }),
   sample: () => ({
     formName: "contact",
@@ -257,6 +319,11 @@ registerEmailKind<SiteFormEmailData>({
       { label: "Name", value: "Sample Visitor" },
       { label: "Email", value: "visitor@example.com" },
       { label: "Message", value: "Hello, I would like a quote." },
+    ],
+    source: [
+      { label: "Landing page version", value: "Dentists, Google Search" },
+      { label: "Source", value: "google" },
+      { label: "Campaign", value: "dentists-q4" },
     ],
   }),
 });
@@ -294,6 +361,8 @@ export async function createSiteFormSubmission(input: {
   values: Record<string, SubmittedValue>;
   userAgent?: string | null;
   recipients: string[];
+  /** Where the visitor came from (siteFormAttribution). Empty or absent: stored as NULL. */
+  attribution?: Record<string, string> | null;
 }): Promise<SiteFormSubmission> {
   const { form, pagePath } = input.entry;
   const fields = form.fields
@@ -303,6 +372,8 @@ export async function createSiteFormSubmission(input: {
     .filter((f) => f.type === "email")
     .map((f) => input.values[f.name])
     .find((v): v is string => typeof v === "string" && EMAIL_RE.test(v));
+  const attribution = input.attribution ?? null;
+  const source = attributionLines(attribution);
 
   const row = await db.transaction().execute(async (trx) => {
     const saved = await trx
@@ -312,11 +383,17 @@ export async function createSiteFormSubmission(input: {
         pagePath,
         data: input.values,
         userAgent: input.userAgent ? input.userAgent.slice(0, 500) : null,
+        attribution: attribution && Object.keys(attribution).length > 0 ? attribution : null,
       })
       .returningAll()
       .executeTakeFirstOrThrow();
     if (input.recipients.length > 0) {
-      const rendered = renderEmailKind<SiteFormEmailData>(SITE_FORM_EMAIL_KIND, { formName: form.name, pagePath, fields });
+      const rendered = renderEmailKind<SiteFormEmailData>(SITE_FORM_EMAIL_KIND, {
+        formName: form.name,
+        pagePath,
+        fields,
+        source,
+      });
       for (const to of input.recipients) {
         await enqueueEmail({
           to,

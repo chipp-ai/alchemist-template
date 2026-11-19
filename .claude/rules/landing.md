@@ -1,6 +1,6 @@
 ---
 name: landing
-description: The homepage at the deployed root URL "/" -- the landing site in landing/ vs the SPA in web/, the factory placeholder copy in landing/src/content/site.json that must never ship, app-first products that serve the app at "/", building only in web/ or landing/, brand colors on the landing site, composed pages at any path, the blog, site forms, redirects, approved custom code, and rebuilding a migrated site (chipp/site-migration/). Load when touching landing/, chipp/site-migration/, chipp/redirects.json or the site forms and redirects code.
+description: The homepage at the deployed root URL "/" -- the landing site in landing/ vs the SPA in web/, the factory placeholder copy in landing/src/content/site.json that must never ship, app-first products that serve the app at "/", building only in web/ or landing/, brand colors on the landing site, composed pages at any path, the blog, site forms, redirects, approved custom code, and rebuilding a migrated site (chipp/site-migration/). Load when touching landing/, chipp/site-migration/, chipp/redirects.json or the site forms and redirects code, or landing campaigns (dynamic targeting).
 paths:
   - "landing/**"
   - "src/lib/landing-site.ts"
@@ -131,6 +131,47 @@ page in the nav, or `nav` in site.json sets the header and footer links.
   snippet with both approval fields is rendered, and only on the landing
   site. Add one only after the owner approved that exact snippet; record
   who and when. Never add a snippet on your own initiative.
+
+## Campaigns (dynamic targeting)
+
+When the owner runs ads, emails or QR codes to a page and wants the page to
+match the message, add a campaign: `landing/src/content/campaigns/<id>.json`.
+
+```json
+{
+  "name": "Dentists, Google Search",
+  "page": "/",
+  "match": { "utm_campaign": ["dentists-*"], "utm_term": ["*dentist*"] },
+  "title": "The AI receptionist for dental offices",
+  "hero": {
+    "headline": "Never miss a patient call again",
+    "subhead": "Acme answers patient calls, books cleanings and fills cancellations.",
+    "cta": { "label": "Start a free trial", "href": "/app/#/signup" }
+  }
+}
+```
+
+- The file name is the id (lowercase, digits, dashes). `page` is `"/"`
+  (default) or a composed page with a hero section.
+- `match` maps a URL value to patterns: case-insensitive, `*` is a
+  wildcard. Any fit selects the campaign. Lower `order` (default 100) wins,
+  then the id. `?campaign=<id>` always selects it; give that link to the
+  owner for QR codes and to preview.
+- Only the hero, the main call to action, the title and the description
+  change. The variant shows only words from the file: never print a URL
+  value on the page.
+- The build writes the variant to `/_campaign/<id>/` (noindex, canonical
+  to the base page, not in the sitemap) and checks it like any page. The
+  server answers the base URL with it (`src/lib/landing-site.ts`), so the
+  ad's URL stays in the address bar. Landing mode only.
+- Tell the owner the URL to put in the ad, for example
+  `https://<domain>/?utm_campaign=dentists-search`. In Google Ads, put
+  `utm_term={keyword}` in the final URL suffix to pass the keyword.
+- Site form leads store the UTM values, ad click ids and campaign in
+  `site_form_submissions.attribution`, and the owner email lists them
+  under "Where they came from".
+- Analytics snippets can read the variant: `data-campaign` on `<html>` and
+  `<meta name="landing-campaign">`.
 
 ## Rebuilding a migrated site
 

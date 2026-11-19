@@ -38,6 +38,16 @@
  * Only "/" redirects; the other marketing pages stay readable signed in.
  * The check reads the session cookie and touches the database only when a
  * session_id cookie this app signed is present.
+ *
+ * Campaign variants (2026-11-19, dynamic targeting). A campaign file in
+ * `landing/src/content/campaigns/<id>.json` names a page, the URL values
+ * that select it and the words that change (landing/src/lib/campaigns.ts).
+ * The build writes its page to `/_campaign/<id>/`. In landing mode, a GET
+ * or HEAD of the campaign's page whose URL selects it (`?campaign=<id>`, or
+ * a `match` such as `utm_campaign=dentists-*`) is answered with that page's
+ * HTML, at the visitor's own URL: the server picks, so nothing flickers,
+ * and the ad's URL stays in the address bar for analytics. A URL that
+ * selects no campaign gets the base page. App-first mode has no campaigns.
  */
 
 import type { Context, MiddlewareHandler } from "hono";
@@ -45,12 +55,22 @@ import { serveStatic } from "hono/deno";
 import { APP_BASE_PATH, appPath } from "@/config/site.ts";
 import { log } from "@/lib/logger.ts";
 import { isSignedInMember } from "@/api/middleware/auth.ts";
+import {
+  type Campaign,
+  campaignPagePath,
+  campaignPath,
+  parseCampaigns,
+  selectCampaign,
+} from "../../landing/src/lib/campaigns.ts";
 
 /** Where `npm run build` in landing/ writes the site, relative to the repo root. */
 export const LANDING_DIST_DIR = "./landing/dist";
 
 /** The landing copy file. Its optional `homepage` field picks the mode. */
 export const LANDING_SITE_JSON = "./landing/src/content/site.json";
+
+/** The campaign files, relative to the repo root. */
+export const LANDING_CAMPAIGNS_DIR = "./landing/src/content/campaigns";
 
 /** What "/" serves: the landing site (default) or the app. */
 export type HomepageMode = "landing" | "app";
@@ -76,6 +96,59 @@ export function readHomepageMode(file: string = LANDING_SITE_JSON): HomepageMode
     });
   }
   return "landing";
+}
+
+/**
+ * Read the campaign files. The build already failed on a bad file, so a
+ * problem here means the file changed after the build: skip it and warn.
+ * A missing folder means no campaigns.
+ */
+export function readCampaigns(dir: string = LANDING_CAMPAIGNS_DIR): Campaign[] {
+  const files: { file: string; data: unknown }[] = [];
+  let entries: Deno.DirEntry[];
+  try {
+    entries = [...Deno.readDirSync(dir)];
+  } catch {
+    return [];
+  }
+  for (const e of entries) {
+    if (!e.isFile || !e.name.endsWith(".json")) continue;
+    const file = `src/content/campaigns/${e.name}`;
+    try {
+      files.push({ file, data: JSON.parse(Deno.readTextFileSync(`${dir}/${e.name}`)) });
+    } catch {
+      files.push({ file, data: null });
+    }
+  }
+  const { campaigns, problems } = parseCampaigns(files);
+  if (problems.length > 0) {
+    log.warn("landing campaigns skipped", {
+      source: "landing-site",
+      feature: "campaigns",
+      problems: problems.join("; "),
+    });
+  }
+  return campaigns;
+}
+
+/**
+ * The built HTML of each campaign, keyed by id. A campaign whose page is
+ * not in the build (built before the file was added) is left out.
+ */
+export function loadCampaignPages(dir: string, campaigns: Campaign[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const c of campaigns) {
+    try {
+      out.set(c.id, Deno.readTextFileSync(`${dir}${campaignPath(c.id)}index.html`));
+    } catch {
+      log.warn("landing campaign has no built page; serving the base page", {
+        source: "landing-site",
+        feature: "campaigns",
+        campaign: c.id,
+      });
+    }
+  }
+  return out;
 }
 
 /** True when the landing site is built: `<dir>/index.html` exists. */
@@ -177,6 +250,7 @@ export function landingSiteMiddleware(
   dir: string = LANDING_DIST_DIR,
   mode: HomepageMode = readHomepageMode(),
   signedIn: SignedInCheck = isSignedInMember,
+  campaignList: Campaign[] = readCampaigns(),
 ): MiddlewareHandler | null {
   if (!landingSiteBuilt(dir)) return null;
   const serve = serveStatic({ root: dir, onFound: setLandingContentType });
@@ -190,15 +264,31 @@ export function landingSiteMiddleware(
       return await next();
     };
   }
+  const campaignPages = loadCampaignPages(dir, campaignList);
+  const campaigns = campaignList.filter((c) => campaignPages.has(c.id));
+  const campaignPaths = new Set(campaigns.map((c) => c.page));
   return async (c, next) => {
     const path = c.req.path;
     if (!isLandingPath(path)) return await next();
-    if (path === "/" && (c.req.method === "GET" || c.req.method === "HEAD")) {
+    const read = c.req.method === "GET" || c.req.method === "HEAD";
+    if (path === "/" && read) {
       // The answer depends on the session cookie: never share it in a cache.
       c.header("Vary", "Cookie");
       if (await signedIn(c)) {
         c.header("Cache-Control", "private, no-store");
         return c.redirect(SIGNED_IN_HOME, 302);
+      }
+    }
+    if (read && campaignPaths.size > 0 && !path.endsWith(".html")) {
+      const query = new URL(c.req.url).searchParams;
+      const page = campaignPagePath(path);
+      const campaign = campaignPaths.has(page) && query.size > 0
+        ? selectCampaign(campaigns, page, query)
+        : null;
+      const html = campaign ? campaignPages.get(campaign.id) : undefined;
+      if (campaign && html) {
+        c.header("X-Landing-Campaign", campaign.id);
+        return c.html(html);
       }
     }
     return await serve(c, next);

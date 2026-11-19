@@ -92,3 +92,13 @@ folder other than `web/` and `landing/` is a separate front end
   button label and link colors are derived by contrast (`bestTextOn` in
   `web/src/design/tokens.ts`), never hardcoded: a design may pick a white
   primary.
+
+## Campaigns (dynamic targeting)
+
+A page can show different hero words per ad, email or QR code: one file per
+campaign in `landing/src/content/campaigns/<id>.json`, selected by URL
+values such as `utm_campaign`. The build makes a noindex variant page; the
+server picks it before any HTML is sent, so there is no flicker. Leads
+record the UTM values and the campaign. Details: "Campaigns" in
+`.claude/rules/landing.md` and `landing/src/lib/campaigns.ts`.
+

@@ -19,12 +19,14 @@ import {
   siteContentProblems,
   formsOf,
 } from "./composed";
+import { type Campaign, parseCampaigns } from "./campaigns";
 import { type LandingPage, PAGES } from "./pages";
 import { hasShop, shopPath, shopPathProblems, shopRoutes } from "./shop";
 import { site, type SiteLink } from "./site";
 
 const pageFiles = import.meta.glob("../content/pages/**/*.json", { eager: true, import: "default" });
 const postFiles = import.meta.glob("../content/posts/**/*.json", { eager: true, import: "default" });
+const campaignFiles = import.meta.glob("../content/campaigns/*.json", { eager: true, import: "default" });
 const customCodeFiles = import.meta.glob("../content/custom-code.json", { eager: true, import: "default" });
 // Read as text, so an empty file (or "{}") means "no shop" instead of a parse error.
 const dataFiles = import.meta.glob(["../content/products.json", "../content/blog-terms.json"], { eager: true, query: "?raw", import: "default" });
@@ -124,6 +126,29 @@ export function composedPageAt(path: string): ComposedPage | undefined {
  * a composed page replaces; none on a composed site (its "/" is composed).
  */
 export const classicPages: LandingPage[] = isComposedSite ? [] : PAGES.filter((p) => !composedPageAt(p.path));
+
+// ── Campaigns (dynamic targeting, lib/campaigns.ts) ──
+
+function loadCampaigns(): Campaign[] {
+  const parsed = parseCampaigns(entries(campaignFiles));
+  const bad = [...parsed.problems];
+  for (const c of parsed.campaigns) {
+    const where = `src/content/campaigns/${c.id}.json`;
+    const page = composedPageAt(c.page);
+    if (page) {
+      if (!page.sections.some((s) => s.type === "hero")) {
+        bad.push(`${where}.page: ${c.page} has no hero section, so a campaign has nothing to change; add a hero section to that page`);
+      }
+    } else if (!(c.page === "/" && classicPages.some((p) => p.path === "/"))) {
+      bad.push(`${where}.page: ${c.page} is not a page a campaign can change (the home page "/" or a composed page in src/content/pages/)`);
+    }
+  }
+  if (bad.length > 0) throw new Error(`[landing content] campaigns:\n  - ${bad.join("\n  - ")}`);
+  return parsed.campaigns;
+}
+
+/** Every campaign, in the order the server tries them. */
+export const campaigns: Campaign[] = loadCampaigns();
 
 /** The site's date range for a page: its own dates, or site.json's. */
 export function pageDates(page: { publishedAt?: string; updatedAt?: string }): { published: string; updated: string } {

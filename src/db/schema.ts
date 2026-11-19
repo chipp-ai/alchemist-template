@@ -701,6 +701,12 @@ export interface SiteFormSubmissionsTable {
     never
   >;
   userAgent: string | null;
+  /** UTM values, ad click ids and the landing campaign of the page the form was sent from. */
+  attribution: ColumnType<
+    Record<string, string> | null,
+    Record<string, string> | null | undefined,
+    never
+  >;
   createdAt: CreatedAt;
 }
 

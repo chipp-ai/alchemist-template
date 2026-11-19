@@ -12,10 +12,14 @@ import ProductPage from "../components/shop/ProductPage.astro";
 import ShopList from "../components/shop/ShopList.astro";
 import ComposedPage from "../components/ComposedPage.astro";
 import About from "../components/legacy/About.astro";
+import Home from "../components/legacy/Home.astro";
 import Pricing from "../components/legacy/Pricing.astro";
 import type { BlogPost as Post, BlogSettings, ComposedPage as Page } from "../lib/composed";
 import { pathParam } from "../lib/composed";
-import { blog, catalog, classicPages, composedPages, posts, shopPages } from "../lib/content";
+import { blog, campaigns, catalog, classicPages, composedPageAt, composedPages, posts, shopPages } from "../lib/content";
+import type { Campaign } from "../lib/campaigns";
+import { campaignPath } from "../lib/campaigns";
+import { campaignComposedPage } from "../lib/campaign-pages";
 import type { ShopRoute } from "../lib/shop";
 
 type Entry =
@@ -23,7 +27,8 @@ type Entry =
   | { kind: "page"; page: Page }
   | { kind: "blog"; blog: BlogSettings }
   | { kind: "post"; post: Post; blog: BlogSettings }
-  | { kind: "shop"; route: ShopRoute };
+  | { kind: "shop"; route: ShopRoute }
+  | { kind: "campaign"; campaign: Campaign; page: Page | null };
 
 export function getStaticPaths() {
   const out: { params: { path: string | undefined }; props: { entry: Entry } }[] = [];
@@ -44,6 +49,15 @@ export function getStaticPaths() {
   for (const route of shopPages) {
     out.push({ params: { path: pathParam(route.path) }, props: { entry: { kind: "shop", route } } });
   }
+  // One noindex page per campaign at /_campaign/<id>/ (lib/campaigns.ts).
+  // The server answers the base page's URL with it when the URL selects it.
+  for (const campaign of campaigns) {
+    const base = composedPageAt(campaign.page) ?? null;
+    out.push({
+      params: { path: pathParam(campaignPath(campaign.id)) },
+      props: { entry: { kind: "campaign", campaign, page: base ? campaignComposedPage(base, campaign) : null } },
+    });
+  }
   return out;
 }
 
@@ -52,6 +66,8 @@ const { entry } = Astro.props as { entry: Entry };
 {entry.kind === "classic" && entry.name === "about" && <About />}
 {entry.kind === "classic" && entry.name === "pricing" && <Pricing />}
 {entry.kind === "page" && <ComposedPage page={entry.page} />}
+{entry.kind === "campaign" && entry.page && <ComposedPage page={entry.page} campaign={entry.campaign.id} />}
+{entry.kind === "campaign" && !entry.page && <Home campaign={entry.campaign} />}
 {entry.kind === "blog" && <BlogList blog={entry.blog} />}
 {entry.kind === "post" && <BlogPost post={entry.post} blog={entry.blog} />}
 {entry.kind === "shop" && catalog && entry.route.kind === "shop" && <ShopList catalog={catalog} />}

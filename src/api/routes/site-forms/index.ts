@@ -24,6 +24,13 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { rateLimit } from "@/lib/redis.ts";
 import { clientIp } from "@/lib/client-ip.ts";
+import { readCampaigns } from "@/lib/landing-site.ts";
+import {
+  attributionOf,
+  type Campaign,
+  campaignPagePath,
+  selectCampaign,
+} from "../../../../landing/src/lib/campaigns.ts";
 import {
   createSiteFormSubmission,
   loadSiteForms,
@@ -43,20 +50,60 @@ export const SITE_FORM_LIMITS = {
 /** The honeypot field. People never see it; bots fill it. */
 export const HONEYPOT_FIELD = "_website";
 
-type Limiter = (name: string, opts: { limit: number; windowSeconds: number }) => Promise<{ allowed: boolean }>;
-
+type Limiter = (
+  name: string,
+  opts: { limit: number; windowSeconds: number },
+) => Promise<{ allowed: boolean }>;
 
 /** A same-site page path to send the visitor back to, or the form's own page. */
 function returnPath(raw: unknown, fallback: string): string {
   const p = typeof raw === "string" ? raw.trim() : "";
-  return p.startsWith("/") && !p.startsWith("//") && !/[\s\\]/.test(p) && p.length <= 512 ? p.split("#")[0] : fallback;
+  return p.startsWith("/") && !p.startsWith("//") && !/[\s\\]/.test(p) && p.length <= 512
+    ? p.split("#")[0]
+    : fallback;
+}
+
+/**
+ * Where the visitor came from, read from the Referer: the page URL the
+ * browser sent the form from (same-site, so the browser keeps the query).
+ * The UTM values and ad click ids, plus the landing campaign that URL
+ * selects. Also the query to keep on the way back, so a visitor without
+ * scripts returns to the same variant. Never throws.
+ */
+export function siteFormAttribution(
+  referer: string | undefined,
+  back: string,
+  campaigns: Campaign[],
+): { attribution: Record<string, string>; backQuery: string } {
+  let url: URL;
+  try {
+    url = new URL(referer ?? "");
+  } catch {
+    return { attribution: {}, backQuery: "" };
+  }
+  // camelCase keys (utm_source -> utmSource): the CamelCasePlugin renames
+  // nested JSONB keys on read, so this is how the row reads back.
+  const attribution: Record<string, string> = {};
+  for (const [k, v] of Object.entries(attributionOf(url.searchParams))) {
+    attribution[k.replace(/_([a-z])/g, (_, ch: string) => ch.toUpperCase())] = v;
+  }
+  const campaign = selectCampaign(campaigns, url.pathname, url.searchParams);
+  if (campaign) {
+    attribution.landingCampaign = campaign.id;
+    attribution.landingCampaignName = campaign.name;
+  }
+  const samePage = campaignPagePath(url.pathname) === campaignPagePath(back.split("?")[0]);
+  const backQuery = samePage && !back.includes("?") && url.search.length <= 1024 ? url.search : "";
+  return { attribution, backQuery };
 }
 
 async function readBody(c: Context): Promise<{ isForm: boolean; data: RawSubmission | null }> {
   const type = c.req.header("content-type") ?? "";
   if (type.includes("application/json")) {
     const json = await c.req.json().catch(() => null);
-    if (!json || typeof json !== "object" || Array.isArray(json)) return { isForm: false, data: null };
+    if (!json || typeof json !== "object" || Array.isArray(json)) {
+      return { isForm: false, data: null };
+    }
     const data: RawSubmission = {};
     for (const [k, v] of Object.entries(json as Record<string, unknown>)) {
       if (typeof v === "string") data[k] = v;
@@ -82,6 +129,8 @@ export interface SiteFormsRouteOptions {
   limiter?: Limiter;
   /** Default: LEAD_NOTIFICATION_EMAIL, else the first owner account. */
   recipients?: () => Promise<string[]>;
+  /** The landing campaigns, for attribution. Default: read once from landing/src/content/campaigns/. */
+  campaigns?: () => Campaign[];
 }
 
 export function createSiteFormsRoutes(options: SiteFormsRouteOptions = {}): Hono {
@@ -89,14 +138,24 @@ export function createSiteFormsRoutes(options: SiteFormsRouteOptions = {}): Hono
   const forms = options.forms ?? (() => (cached ??= loadSiteForms()));
   const limiter: Limiter = options.limiter ?? rateLimit;
   const recipients = options.recipients ?? siteFormRecipients;
+  let cachedCampaigns: Campaign[] | null = null;
+  const campaigns = options.campaigns ?? (() => (cachedCampaigns ??= readCampaigns()));
 
   const routes = new Hono();
   routes.post("/:name", bodyLimit({ maxSize: 32 * 1024 }), async (c) => {
     const entry = forms().get(c.req.param("name"));
-    if (!entry) return c.json({ error: "No form with that name on this site.", code: "NOT_FOUND" }, 404);
+    if (!entry) {
+      return c.json({ error: "No form with that name on this site.", code: "NOT_FOUND" }, 404);
+    }
 
     const { isForm, data } = await readBody(c);
-    const back = returnPath(data?._page, entry.pagePath);
+    const page = returnPath(data?._page, entry.pagePath);
+    const { attribution, backQuery } = siteFormAttribution(
+      c.req.header("referer"),
+      page,
+      campaigns(),
+    );
+    const back = `${page}${backQuery}`;
     const answer = (
       status: SiteFormStatus,
       httpStatus: 201 | 400 | 429,
@@ -106,20 +165,34 @@ export function createSiteFormsRoutes(options: SiteFormsRouteOptions = {}): Hono
         ? c.redirect(`${back}#form-${entry.form.name}-${status}`, 303)
         : httpStatus === 201
         ? c.json({ data: { status } }, 201)
-        : c.json({ error: extra.error, code: status === "limited" ? "RATE_LIMITED" : "VALIDATION_ERROR", ...extra }, httpStatus);
+        : c.json({
+          error: extra.error,
+          code: status === "limited" ? "RATE_LIMITED" : "VALIDATION_ERROR",
+          ...extra,
+        }, httpStatus);
 
     if (!data) return answer("invalid", 400, { error: "The form data could not be read." });
-    if (typeof data[HONEYPOT_FIELD] === "string" && data[HONEYPOT_FIELD]!.trim() !== "") return answer("sent", 201);
+    if (typeof data[HONEYPOT_FIELD] === "string" && data[HONEYPOT_FIELD]!.trim() !== "") {
+      return answer("sent", 201);
+    }
 
-    const perIp = await limiter(`site-forms:ip:${clientIp(c.req) ?? "unknown"}`, SITE_FORM_LIMITS.perIp);
+    const perIp = await limiter(
+      `site-forms:ip:${clientIp(c.req) ?? "unknown"}`,
+      SITE_FORM_LIMITS.perIp,
+    );
     const site = await limiter("site-forms:site", SITE_FORM_LIMITS.site);
     if (!perIp.allowed || !site.allowed) {
-      return answer("limited", 429, { error: "Too many messages. Please try again in a few minutes." });
+      return answer("limited", 429, {
+        error: "Too many messages. Please try again in a few minutes.",
+      });
     }
 
     const result = validateSubmission(entry.form, data);
     if (!result.ok) {
-      return answer("invalid", 400, { error: "Some fields need another look.", fields: result.errors });
+      return answer("invalid", 400, {
+        error: "Some fields need another look.",
+        fields: result.errors,
+      });
     }
 
     await createSiteFormSubmission({
@@ -127,6 +200,7 @@ export function createSiteFormsRoutes(options: SiteFormsRouteOptions = {}): Hono
       values: result.values,
       userAgent: c.req.header("user-agent") ?? null,
       recipients: await recipients(),
+      attribution,
     });
     return answer("sent", 201);
   });

@@ -35,6 +35,16 @@ In the Builder it runs as a second preview app named "Landing site".
   printed in the head or before `</body>` of every landing page.
 - **Redirects:** `../chipp/redirects.json`, validated by the build and served
   by the app (and by `npm run dev`).
+- **Campaigns (dynamic targeting):** one JSON file per campaign in
+  `src/content/campaigns/<id>.json`. It names a page (`"/"` or a composed
+  page), the URL values that select it (`"match": { "utm_campaign":
+  ["dentists-*"] }`, case-insensitive, `*` is a wildcard) and the words that
+  change: `hero` (`headline`, `subhead`, `eyebrow`, `cta`), `title` and
+  `description`. The build writes a noindex page per campaign at
+  `/_campaign/<id>/`; the app serves it at the base page's URL when the URL
+  selects it, so nothing flickers. `?campaign=<id>` always selects it.
+  Form leads record the UTM values and the campaign. Shapes and rules:
+  `src/lib/campaigns.ts`.
 - **Layout:** `src/layouts/Layout.astro` (header, nav, main, footer, dates, JSON-LD).
 - **Look:** colors, fonts, corners and shadows are read from
   `../web/src/design/design.json` at build time, so the site matches the app.

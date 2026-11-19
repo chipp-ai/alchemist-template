@@ -6,8 +6,25 @@
 import Layout from "../../layouts/Layout.astro";
 import { homeFaq, homeHero, site } from "../../lib/site";
 import { agentSetup, alternatives, categoryStatement, useCases, useCasesIntro } from "../../lib/agent-facts";
+import type { Campaign } from "../../lib/campaigns";
+import { campaignSeo } from "../../lib/campaign-pages";
 
-const hero = homeHero();
+interface Props {
+  /** Build this home page as a campaign's page (lib/campaigns.ts). */
+  campaign?: Campaign;
+}
+const { campaign } = Astro.props;
+const baseHero = homeHero();
+const hero = campaign
+  ? {
+    ...baseHero,
+    eyebrow: campaign.hero.eyebrow ?? baseHero.eyebrow,
+    headline: campaign.hero.headline ?? baseHero.headline,
+    subhead: campaign.hero.subhead ?? baseHero.subhead,
+  }
+  : baseHero;
+// The main call to action: the campaign's, else site.json's.
+const cta = campaign?.hero.cta ?? site.cta;
 const faq = homeFaq();
 const features = site.features ?? [];
 const steps = (site.steps ?? []).slice(0, 4);
@@ -34,7 +51,14 @@ const sketchLabels = features.map((f) => f.title).slice(0, 4);
 const sketchNav = sketchLabels.length > 0 ? sketchLabels : ['', '', '', ''];
 const sketchCols = [0, 1, 2].map((i) => sketchLabels[i] ?? '');
 ---
-<Layout title={title} description={site.description} path="/" faq={faq}>
+<Layout
+  title={campaign?.title ?? title}
+  description={campaign?.description ?? site.description}
+  path="/"
+  faq={faq}
+  seo={campaign ? campaignSeo(campaign, undefined, "/") : undefined}
+  campaign={campaign?.id}
+>
   <section class="hero" aria-labelledby="hero-title">
     <div class="wrap hero-copy">
       <p class="kicker">{hero.eyebrow}</p>
@@ -42,7 +66,7 @@ const sketchCols = [0, 1, 2].map((i) => sketchLabels[i] ?? '');
       {category && <p class="category-line" data-testid="landing-hero-category">{category}</p>}
       <p class="subhead">{hero.subhead}</p>
       <div class="actions">
-        <a class="button" href={site.cta.href}>{site.cta.label}</a>
+        <a class="button" href={cta.href}>{cta.label}</a>
         {hero.secondaryCta
           ? <a class="button secondary" href={hero.secondaryCta.href}>{hero.secondaryCta.label}</a>
           : steps.length > 0
@@ -293,7 +317,7 @@ const sketchCols = [0, 1, 2].map((i) => sketchLabels[i] ?? '');
         <h2 id="closing">Start with {site.name}</h2>
         <p>{site.definition.who}</p>
       </div>
-      <a class="button inverse" href={site.cta.href}>{site.cta.label}</a>
+      <a class="button inverse" href={cta.href}>{cta.label}</a>
     </div>
   </section>
   {agent && (

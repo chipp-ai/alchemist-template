@@ -36,9 +36,15 @@ interface Props {
    * the AEO check reports the content-shape rules as warnings.
    */
   aeo?: "relaxed";
+  /**
+   * The campaign id on a campaign's page (lib/campaigns.ts). Printed as
+   * `data-campaign` on <html> and a meta tag, so an analytics snippet can
+   * read which variant the visitor saw.
+   */
+  campaign?: string;
 }
 
-const { title, description, path, faq, seo, ld: pageLd, extraLd = [], ogType, aeo } = Astro.props;
+const { title, description, path, faq, seo, ld: pageLd, extraLd = [], ogType, aeo, campaign } = Astro.props;
 const brand = loadBrand();
 const weights = [...new Set([brand.bodyWeight, 600, brand.headingWeight, 700])].sort((a, b) => a - b).join(";");
 const families = [...new Set([brand.headingFont, brand.bodyFont])]
@@ -73,13 +79,14 @@ const agents = agentSetup(site);
 const hasApiCatalog = apiCatalog(site) !== null;
 ---
 <!doctype html>
-<html lang="en">
+<html lang="en" data-campaign={campaign}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{title}</title>
     {description && <meta name="description" content={description} />}
     {seo?.noindex && <meta name="robots" content="noindex" />}
+    {campaign && <meta name="landing-campaign" content={campaign} />}
     {canonical && <link rel="canonical" href={canonical} />}
     <meta property="og:title" content={ogTitle} />
     {ogDescription && <meta property="og:description" content={ogDescription} />}

@@ -23,8 +23,10 @@ import Testimonials from "./sections/Testimonials.astro";
 
 interface Props {
   page: ComposedPage;
+  /** The campaign id when this is a campaign's page (lib/campaign-pages.ts). */
+  campaign?: string;
 }
-const { page } = Astro.props;
+const { page, campaign } = Astro.props;
 
 function headingOf(s: Section): string | undefined {
   return s.type === "html" ? undefined : s.heading;
@@ -71,6 +73,7 @@ const blocks = page.sections.map((section, i) => ({
   ld={ld}
   extraLd={carriedLd(page.seo?.jsonLd)}
   aeo={page.importedFrom ? "relaxed" : undefined}
+  campaign={campaign}
 >
   {blocks.map(({ Component, section, level, id }) => (
     <Component section={section} level={level} id={id} pagePath={page.path} />
