@@ -8,7 +8,15 @@
 
 import { assert, assertEquals, assertFalse, assertStringIncludes } from "@std/assert";
 import { Hono } from "hono";
-import { landingSiteMiddleware, readCampaigns, type SignedInCheck } from "@/lib/landing-site.ts";
+import {
+  buildLandingManifest,
+  LANDING_MANIFEST_PATH,
+  landingContentType,
+  type LandingManifest,
+  landingSiteMiddleware,
+  readCampaigns,
+  type SignedInCheck,
+} from "@/lib/landing-site.ts";
 import {
   attributionOf,
   type Campaign,
@@ -278,4 +286,67 @@ Deno.test("app-first mode serves no campaigns", async () => {
   if (landing) a.use("/*", landing);
   a.get("*", (c) => c.html("SPA SHELL"));
   assertEquals(await (await a.request("/?campaign=dentists")).text(), "SPA SHELL");
+});
+
+// ── The edge copy manifest ──
+
+Deno.test("the manifest lists every file with its type and hash, the page routes and the built campaigns", async () => {
+  const { dist, campaignsDir } = await fixture();
+  await write(`${dist}/_astro/site.css`, "body{color:red}");
+  await write(`${dist}/pricing.html`, "<p>PRICING</p>");
+  const m = await buildLandingManifest(dist, readCampaigns(campaignsDir));
+  assertEquals(m.version, 1);
+  assertEquals(m.files.map((f) => f.file), [
+    "/_astro/site.css",
+    "/_campaign/dentists/index.html",
+    "/_campaign/storm/index.html",
+    "/index.html",
+    "/pricing.html",
+    "/services/roofing/index.html",
+  ]);
+  const css = m.files.find((f) => f.file === "/_astro/site.css")!;
+  assertEquals(css.type, "text/css; charset=utf-8");
+  assertEquals(css.size, 15);
+  assertEquals(css.sha256.length, 64);
+  assertEquals(m.routes["/"], "/index.html");
+  assertEquals(m.routes["/index.html"], undefined, "/index.html is the SPA shell");
+  assertEquals(m.routes["/services/roofing/"], "/services/roofing/index.html");
+  assertEquals(m.routes["/pricing"], "/pricing.html");
+  assertEquals(m.routes["/_campaign/storm/"], "/_campaign/storm/index.html");
+  assertEquals(
+    m.campaigns.map((c) => c.id),
+    ["dentists", "storm"],
+    "a campaign with no built page is left out",
+  );
+
+  const again = await buildLandingManifest(dist, readCampaigns(campaignsDir));
+  assertEquals(again.build, m.build, "the same files give the same build id");
+  await Deno.writeTextFile(`${dist}/_astro/site.css`, "body{color:blue}");
+  assert(
+    (await buildLandingManifest(dist, [])).build !== m.build,
+    "a changed file changes the build id",
+  );
+});
+
+Deno.test("the app serves the manifest in landing mode only, never cached", async () => {
+  const { dist, campaignsDir } = await fixture();
+  const res = await app(dist, readCampaigns(campaignsDir)).request(LANDING_MANIFEST_PATH);
+  assertEquals(res.status, 200);
+  assertEquals(res.headers.get("cache-control"), "no-store");
+  const m = await res.json() as LandingManifest;
+  assertEquals(m.routes["/"], "/index.html");
+  assertEquals(m.campaigns.length, 2);
+
+  const appFirst = new Hono();
+  const landing = landingSiteMiddleware(dist, "app", () => Promise.resolve(false), []);
+  if (landing) appFirst.use("/*", landing);
+  appFirst.get("*", (c) => c.text("SPA SHELL", 404));
+  assertEquals((await appFirst.request(LANDING_MANIFEST_PATH)).status, 404);
+});
+
+Deno.test("landing content types come from the extension", () => {
+  assertEquals(landingContentType("/a/b.woff2"), "font/woff2");
+  assertEquals(landingContentType("/index.html"), "text/html; charset=utf-8");
+  assertEquals(landingContentType("/.well-known/api-catalog"), "application/linkset+json");
+  assertEquals(landingContentType("/weird.bin"), "application/octet-stream");
 });

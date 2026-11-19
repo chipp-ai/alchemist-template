@@ -48,6 +48,11 @@
  * HTML, at the visitor's own URL: the server picks, so nothing flickers,
  * and the ad's URL stays in the address bar for analytics. A URL that
  * selects no campaign gets the base page. App-first mode has no campaigns.
+ *
+ * Edge copy (2026-11-19). `/_landing/manifest.json` lists every file of the
+ * build with its hash, the page routes and the campaigns, so the platform
+ * can copy the site to the edge before the app sleeps (LANDING_MANIFEST_PATH
+ * below). Landing mode only.
  */
 
 import type { Context, MiddlewareHandler } from "hono";
@@ -149,6 +154,136 @@ export function loadCampaignPages(dir: string, campaigns: Campaign[]): Map<strin
     }
   }
   return out;
+}
+
+// ── Edge copy manifest ──
+
+/**
+ * The path of the landing manifest: everything the platform needs to keep
+ * a copy of the landing site at the edge, so a visitor to a sleeping app
+ * (Builder projects scale to zero when idle) gets the page instead of a
+ * waking screen. The platform reads it from the awake app just before the
+ * app sleeps, copies the listed files, and the Cloudflare Worker serves
+ * them, picking campaigns with the same rules (landing/src/lib/campaigns.ts).
+ * Landing mode only: in app-first mode "/" needs the app, so there is no
+ * manifest (404).
+ */
+export const LANDING_MANIFEST_PATH = "/_landing/manifest.json";
+
+/** One file of the landing build. */
+export interface LandingManifestFile {
+  /** The file's request path: "/index.html", "/_astro/site.css". */
+  file: string;
+  /** Its Content-Type. */
+  type: string;
+  size: number;
+  /** Hex SHA-256 of the bytes. */
+  sha256: string;
+}
+
+export interface LandingManifest {
+  version: 1;
+  /** Hex SHA-256 over every file's path and hash: changes when any file does. */
+  build: string;
+  files: LandingManifestFile[];
+  /** Request path -> file path for each HTML page ("/" -> "/index.html", "/about/" and "/about/index.html" -> "/about/index.html"). */
+  routes: Record<string, string>;
+  /** The campaigns whose page is in the build, in the order the server tries them. */
+  campaigns: Campaign[];
+}
+
+const CONTENT_TYPES: Record<string, string> = {
+  html: "text/html; charset=utf-8",
+  htm: "text/html; charset=utf-8",
+  css: "text/css; charset=utf-8",
+  js: "text/javascript; charset=utf-8",
+  mjs: "text/javascript; charset=utf-8",
+  json: "application/json; charset=utf-8",
+  txt: "text/plain; charset=utf-8",
+  xml: "application/xml; charset=utf-8",
+  svg: "image/svg+xml",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+  ico: "image/x-icon",
+  woff: "font/woff",
+  woff2: "font/woff2",
+  ttf: "font/ttf",
+  otf: "font/otf",
+  pdf: "application/pdf",
+  webmanifest: "application/manifest+json",
+  mp4: "video/mp4",
+  webm: "video/webm",
+};
+
+/** The Content-Type of a landing file, by request path. */
+export function landingContentType(path: string): string {
+  const known = LANDING_EXTENSIONLESS_TYPES[path];
+  if (known) return known;
+  const ext = path.split("/").pop()?.split(".").slice(1).pop()?.toLowerCase() ?? "";
+  return CONTENT_TYPES[ext] ?? "application/octet-stream";
+}
+
+async function sha256Hex(bytes: Uint8Array<ArrayBuffer> | string): Promise<string> {
+  const data = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Build the manifest of a landing build. A missing dir gives an empty one. */
+export async function buildLandingManifest(
+  dir: string,
+  campaigns: Campaign[],
+): Promise<LandingManifest> {
+  const paths: string[] = [];
+  const walk = (rel: string) => {
+    let entries: Deno.DirEntry[];
+    try {
+      entries = [...Deno.readDirSync(`${dir}${rel}`)];
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const path = `${rel}/${e.name}`;
+      if (e.isDirectory) walk(path);
+      else if (e.isFile) paths.push(path);
+    }
+  };
+  walk("");
+  paths.sort();
+  const files: LandingManifestFile[] = [];
+  const routes: Record<string, string> = {};
+  for (const path of paths) {
+    const bytes = await Deno.readFile(`${dir}${path}`);
+    files.push({
+      file: path,
+      type: landingContentType(path),
+      size: bytes.byteLength,
+      sha256: await sha256Hex(bytes),
+    });
+    if (!/\.html?$/i.test(path)) continue;
+    // "/index.html" is the SPA shell (isLandingPath), never a landing route.
+    if (path !== "/index.html") routes[path] = path;
+    const name = path.split("/").pop() ?? "";
+    if (/^index\.html?$/i.test(name)) {
+      const rel = path.slice(0, -name.length);
+      routes[rel] = path;
+    } else {
+      routes[path.replace(/\.html?$/i, "")] = path;
+    }
+  }
+  const build = await sha256Hex(files.map((f) => `${f.file}:${f.sha256}`).join("\n"));
+  const built = new Set(files.map((f) => f.file));
+  return {
+    version: 1,
+    build,
+    files,
+    routes,
+    campaigns: campaigns.filter((c) => built.has(`${campaignPath(c.id)}index.html`)),
+  };
 }
 
 /** True when the landing site is built: `<dir>/index.html` exists. */
@@ -265,12 +400,18 @@ export function landingSiteMiddleware(
     };
   }
   const campaignPages = loadCampaignPages(dir, campaignList);
+  let manifest: Promise<LandingManifest> | null = null;
   const campaigns = campaignList.filter((c) => campaignPages.has(c.id));
   const campaignPaths = new Set(campaigns.map((c) => c.page));
   return async (c, next) => {
     const path = c.req.path;
     if (!isLandingPath(path)) return await next();
     const read = c.req.method === "GET" || c.req.method === "HEAD";
+    if (path === LANDING_MANIFEST_PATH && read) {
+      manifest ??= buildLandingManifest(dir, campaignList);
+      c.header("Cache-Control", "no-store");
+      return c.json(await manifest);
+    }
     if (path === "/" && read) {
       // The answer depends on the session cookie: never share it in a cache.
       c.header("Vary", "Cookie");
