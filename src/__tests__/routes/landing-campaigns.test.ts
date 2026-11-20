@@ -202,7 +202,7 @@ function app(
 ): Hono {
   const a = new Hono();
   a.get("/api/thing", (c) => c.json({ ok: true }));
-  const landing = landingSiteMiddleware(dist, "landing", signedIn, campaigns);
+  const landing = landingSiteMiddleware(dist, "landing", signedIn, campaigns, true);
   if (landing) a.use("/*", landing);
   a.get("*", (c) => c.html("SPA SHELL"));
   return a;
@@ -267,7 +267,7 @@ Deno.test("a HEAD gets the variant too; a POST never does", async () => {
   assertEquals(post.headers.get("x-landing-campaign"), null);
 });
 
-Deno.test("a signed-in visitor still goes to the app, campaign URL or not", async () => {
+Deno.test("with the redirect on, a signed-in visitor still goes to the app, campaign URL or not", async () => {
   const { dist, campaignsDir } = await fixture();
   const a = app(dist, readCampaigns(campaignsDir), () => Promise.resolve(true));
   const res = await a.request("/?campaign=dentists");

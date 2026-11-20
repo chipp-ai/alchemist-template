@@ -29,11 +29,13 @@
  * the mode is one line in site.json and a browser caches a 301 forever. The
  * sitemap lists only "/" in this mode (landing/src/lib/pages.ts).
  *
- * Signed-in visitors skip the landing page (2026-11-12). In landing mode a
- * GET or HEAD of "/" from someone with a valid session answers a 302 to the
- * app home (`appPath("/#/")`), so a member who opens the bare domain, or
- * follows a link to it, lands in the app. The landing page shows only to
- * signed-out visitors and crawlers. A platform verification session is not
+ * Signed-in visitors can skip the landing page (2026-11-12, opt-in since
+ * 2026-11-19). When site.json sets `"signedInRedirect": true` AND the app
+ * area is built (`web/dist/index.html`), a GET or HEAD of "/" from someone
+ * with a valid session answers a 302 to the app home (`appPath("/#/")`).
+ * It is off by default: a project that is a website (a guide, a brochure)
+ * showed its owner an empty dashboard at "/" whenever they were signed in
+ * (Slotline, 2026-11-19). A platform verification session is not
  * redirected: the verifier checks the landing page as a visitor sees it.
  * Only "/" redirects; the other marketing pages stay readable signed in.
  * The check reads the session cookie and touches the database only when a
@@ -79,6 +81,35 @@ export const LANDING_CAMPAIGNS_DIR = "./landing/src/content/campaigns";
 
 /** What "/" serves: the landing site (default) or the app. */
 export type HomepageMode = "landing" | "app";
+
+/** Where the SPA build lives. Its index.html means the project has an app area. */
+export const APP_DIST_DIR = "./web/dist";
+
+/**
+ * Read `signedInRedirect` from site.json. Only `true` turns the redirect on;
+ * a missing file or field, or any other value, leaves it off.
+ */
+export function readSignedInRedirect(file: string = LANDING_SITE_JSON): boolean {
+  try {
+    return JSON.parse(Deno.readTextFileSync(file))?.signedInRedirect === true;
+  } catch {
+    return false;
+  }
+}
+
+/** True when the app area is built: `<dir>/index.html` exists. */
+export function appAreaBuilt(dir: string = APP_DIST_DIR): boolean {
+  try {
+    return Deno.statSync(`${dir}/index.html`).isFile;
+  } catch {
+    return false;
+  }
+}
+
+/** The owner opted in and there is an app to send a signed-in visitor to. */
+export function signedInRedirectEnabled(file: string = LANDING_SITE_JSON, appDir: string = APP_DIST_DIR): boolean {
+  return readSignedInRedirect(file) && appAreaBuilt(appDir);
+}
 
 /**
  * Read `homepage` from site.json. "app" means app-first; a missing file or
@@ -386,6 +417,7 @@ export function landingSiteMiddleware(
   mode: HomepageMode = readHomepageMode(),
   signedIn: SignedInCheck = isSignedInMember,
   campaignList: Campaign[] = readCampaigns(),
+  redirectSignedIn: boolean = signedInRedirectEnabled(),
 ): MiddlewareHandler | null {
   if (!landingSiteBuilt(dir)) return null;
   const serve = serveStatic({ root: dir, onFound: setLandingContentType });
@@ -412,7 +444,7 @@ export function landingSiteMiddleware(
       c.header("Cache-Control", "no-store");
       return c.json(await manifest);
     }
-    if (path === "/" && read) {
+    if (path === "/" && read && redirectSignedIn) {
       // The answer depends on the session cookie: never share it in a cache.
       c.header("Vary", "Cookie");
       if (await signedIn(c)) {

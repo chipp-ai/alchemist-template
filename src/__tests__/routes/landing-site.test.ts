@@ -11,7 +11,10 @@ import {
   isLandingPath,
   landingSiteBuilt,
   landingSiteMiddleware,
+  appAreaBuilt,
   readHomepageMode,
+  readSignedInRedirect,
+  signedInRedirectEnabled,
   scanLandingDist,
   SIGNED_IN_HOME,
   type SignedInCheck,
@@ -48,13 +51,14 @@ function buildApp(
   landingDir: string,
   mode: HomepageMode = "landing",
   signedIn?: SignedInCheck,
+  redirectSignedIn = false,
 ): Hono {
   const app = new Hono();
   app.get("/health", (c) => c.json({ status: "ok" }));
   app.get("/api/thing", (c) => c.json({ ok: true }));
   app.get(APP_BASE_PATH, (c) => c.html(SPA_HTML));
   app.get(`${APP_BASE_PATH}/*`, (c) => c.html(SPA_HTML));
-  const landing = landingSiteMiddleware(landingDir, mode, signedIn);
+  const landing = landingSiteMiddleware(landingDir, mode, signedIn, [], redirectSignedIn);
   if (landing) app.use("/*", landing);
   app.use("/*", async (c, next) => {
     if (c.req.path.startsWith("/api/")) return await next();
@@ -320,10 +324,56 @@ const fakeSignedIn: SignedInCheck = (c) =>
   Promise.resolve((c.req.header("Cookie") ?? "").includes("session_id=member"));
 const MEMBER = { headers: { Cookie: "session_id=member" } };
 
-Deno.test("landing mode: a signed-in member who opens / goes to the app home; signed out sees the landing page", async () => {
+Deno.test("the redirect is off unless site.json opts in AND the app area is built", async () => {
+  const root = await Deno.makeTempDir();
+  try {
+    const site = `${root}/site.json`;
+    const appDir = `${root}/web-dist`;
+    await Deno.writeTextFile(site, JSON.stringify({ name: "X" }));
+    assertEquals(readSignedInRedirect(site), false, "missing field");
+    assertEquals(readSignedInRedirect(`${root}/nope.json`), false, "missing file");
+    await Deno.writeTextFile(site, JSON.stringify({ signedInRedirect: "yes" }));
+    assertEquals(readSignedInRedirect(site), false, "only true counts");
+    await Deno.writeTextFile(site, JSON.stringify({ signedInRedirect: true }));
+    assertEquals(readSignedInRedirect(site), true);
+    assertEquals(signedInRedirectEnabled(site, appDir), false, "no app area built");
+    await Deno.mkdir(appDir);
+    await Deno.writeTextFile(`${appDir}/index.html`, SPA_HTML);
+    assertEquals(appAreaBuilt(appDir), true);
+    assertEquals(signedInRedirectEnabled(site, appDir), true);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("the template ships with the signed-in redirect off", () => {
+  assertEquals(
+    readSignedInRedirect(new URL("../../../landing/src/content/site.json", import.meta.url).pathname),
+    false,
+  );
+});
+
+Deno.test("landing mode, redirect off (the default): a signed-in member who opens / sees the landing page", async () => {
   const dir = await landingBuild();
   try {
-    const app = buildApp(dir, "landing", fakeSignedIn);
+    const seen: string[] = [];
+    const app = buildApp(dir, "landing", (c) => {
+      seen.push(c.req.path);
+      return Promise.resolve(true);
+    });
+    const member = await app.request("/", MEMBER);
+    assertEquals(member.status, 200);
+    assertStringIncludes(await member.text(), "LANDING HOME");
+    assertEquals(seen, [], "no session lookup when the redirect is off");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("landing mode, redirect on: a signed-in member who opens / goes to the app home; signed out sees the landing page", async () => {
+  const dir = await landingBuild();
+  try {
+    const app = buildApp(dir, "landing", fakeSignedIn, true);
     assertEquals(SIGNED_IN_HOME, `${APP_BASE_PATH}/#/`);
 
     const member = await app.request("/", MEMBER);
@@ -356,7 +406,7 @@ Deno.test("landing mode: the session check runs only for GET and HEAD of /", asy
     const app = buildApp(dir, "landing", (c) => {
       seen.push(`${c.req.method} ${c.req.path}`);
       return Promise.resolve(true);
-    });
+    }, true);
     await app.request("/pricing/");
     await app.request("/robots.txt");
     await app.request("/app/");
@@ -372,7 +422,7 @@ Deno.test("landing mode: the session check runs only for GET and HEAD of /", asy
 Deno.test("app-first mode: / is the SPA for members and visitors alike (no redirect)", async () => {
   const dir = await landingBuild();
   try {
-    const app = buildApp(dir, "app", fakeSignedIn);
+    const app = buildApp(dir, "app", fakeSignedIn, true);
     const member = await app.request("/", MEMBER);
     assertEquals(member.status, 200);
     assertEquals(await member.text(), SPA_HTML);
@@ -384,7 +434,7 @@ Deno.test("app-first mode: / is the SPA for members and visitors alike (no redir
 Deno.test("the default session check: no cookie, a foreign cookie or a garbage cookie is signed out", async () => {
   const dir = await landingBuild();
   try {
-    const app = buildApp(dir, "landing");
+    const app = buildApp(dir, "landing", undefined, true);
     for (const cookie of [undefined, "session_id=not-a-jwt", "other=1"]) {
       const res = await app.request("/", cookie ? { headers: { Cookie: cookie } } : undefined);
       assertEquals(res.status, 200, `cookie ${cookie}`);

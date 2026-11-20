@@ -20,6 +20,12 @@ placeholder landing at `/` and put the real homepage at `/app/#/`.
   `llms.txt`, `llms-full.txt`, `robots.txt`, `sitemap.xml`, the favicon and
   other static files are still served from `landing/`, so keep them there;
   the sitemap then lists only `/`. Never redirect `/` to `/app/`.
+- **Signed-in visitors see the landing page at `/` too, by default.** Only
+  when the owner asks that members skip it, set `"signedInRedirect": true`
+  in `landing/src/content/site.json`. Then a signed-in visitor who opens
+  `/` goes to the app home, but only when the project has an app area
+  (`web/dist/index.html` is built). Never turn it on for a project that is
+  a website.
 - **Build only in `web/` or `landing/`.** The image builds and serves only
   those two. A new top-level app folder is never deployed.
 - **Verify with a production build and a screenshot of `/`,** not of
