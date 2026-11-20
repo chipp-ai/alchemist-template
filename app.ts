@@ -64,6 +64,7 @@ import { landingSiteMiddleware } from "@/lib/landing-site.ts";
 import { siteRedirectsMiddleware } from "@/lib/site-redirects.ts";
 import { siteFormsRoutes } from "@/api/routes/site-forms/index.ts";
 import { serveSpaShell } from "@/lib/spa-shell.ts";
+import { spaFallbackMiddleware } from "@/lib/spa-fallback.ts";
 import { APP_BASE_PATH } from "@/config/site.ts";
 import { isAllowedCorsOrigin } from "@/services/app-links.ts";
 
@@ -416,16 +417,9 @@ if (siteRedirects) app.use("/*", siteRedirects);
 // handlers. The first-line bare-asset serveStatic is already path-
 // scoped (only matches when web/dist/<path> exists), so it's safe.
 app.use("/*", serveStatic({ root: "./web/dist" }));
-app.use("/*", async (c, next) => {
-  // /api/* requests must NOT receive the SPA shell — they need to
-  // surface real 4xx/5xx + JSON bodies to the SPA fetch caller.
-  if (c.req.path.startsWith("/api/")) return next();
-  // Marks the catch-all answer: no page exists at this path. The old-URL
-  // gate (scripts/check-old-urls.ts) counts it as a missing page. "/" is
-  // never missing: without a landing site it IS the app.
-  if (c.req.path !== "/") c.header("X-Spa-Fallback", "1");
-  return serveStatic({ path: "./web/dist/index.html" })(c, next);
-});
+// A missing hashed build file (/assets/*, /_astro/*) is a 404 with no-store,
+// never the shell: see src/lib/spa-fallback.ts.
+app.use("/*", spaFallbackMiddleware());
 
 // ── Global error handler ──
 
