@@ -149,7 +149,28 @@ curl -sS -X POST -H 'Content-Type: application/json' \
 ### Production safety
 
 The whole dev router is wrapped in a guard middleware that throws
-`NotFoundError` when `NODE_ENV === "production"`. The deployed
-customer pod always has `NODE_ENV=production` (set by the rollout
-controller) so the routes return 404 the same as if they had never
-been registered. Don't remove this guard — the routes bypass auth.
+`NotFoundError` unless `ALCHEMIST_DEV_ROUTES` is `1` or `true`
+(`src/lib/dev-mode.ts`, fail closed). Only `deno task dev` and the
+sandbox preview script (`.alchemist/dev-preview.sh`) set it; the deploy
+image never does, so a published app answers 404 the same as if the
+routes had never been registered. Don't remove this guard: the routes
+bypass auth. `src/__tests__/routes/builder-preview-sign-in.test.ts`
+pins it.
+
+### The Builder preview signs the builder in
+
+The builder never sees this app's sign-in page in the Chipp Builder
+preview. On the builder's own page loads, the Chipp edge calls
+`GET /api/auth/me`. On a 401 it calls `POST /api/dev/login` as
+`dev@example.com` and sends that session cookie with the page, so the
+app boots signed in on the route that was asked for. A share link never
+signs in, and neither does a published app (the dev routes 404 there).
+Existing projects get this with no change: it uses only these two
+routes. Keep them as they are:
+
+- `GET /api/auth/me` answers 401 to a signed-out caller. Do not make it
+  answer 200 with no user (that is what `/api/auth/session` is for).
+- `POST /api/dev/login` stays behind the dev-surface gate above.
+
+The Login page's `?autodev=1` branch still works for links that carry
+it; the edge makes it rarely needed.
