@@ -76,6 +76,7 @@
  *     the next trigger retries.
  */
 
+import { type CircuitBreaker, createCircuitBreaker, isBreakerFailureError } from "./circuit-breaker.ts";
 import { defineStore } from "./devpanel/store.svelte";
 
 interface QueryState<T> {
@@ -99,6 +100,8 @@ interface QueryEntry<T> {
    *  discards its result so a previous tenant's response can never land. */
   gen: number;
   intervalTimer: ReturnType<typeof setInterval> | null;
+  /** Gates interval ticks only: a dead server is not polled forever. */
+  breaker: CircuitBreaker;
   handle: Query<T>;
 }
 
@@ -140,9 +143,14 @@ function revalidate<T>(entry: QueryEntry<T>): Promise<void> {
       entry.state.data = data;
       entry.state.error = null;
       entry.state.updatedAt = Date.now();
+      entry.breaker.recordSuccess();
     })
     .catch((err) => {
       if (gen !== entry.gen) return;
+      // Server gone (network error, 404/410/502/503) counts against the
+      // breaker; any other error means the server answered.
+      if (isBreakerFailureError(err)) entry.breaker.recordFailure();
+      else entry.breaker.recordSuccess();
       // Keep last good data; surface the error. Next trigger retries.
       entry.state.error = err instanceof Error ? err.message : String(err);
     })
@@ -154,9 +162,15 @@ function revalidate<T>(entry: QueryEntry<T>): Promise<void> {
   return entry.inFlight;
 }
 
-/** Revalidate when stale; cheap no-op otherwise. */
+/**
+ * Revalidate when stale; cheap no-op otherwise. A failed fetch re-renders the
+ * page, the page reads `.data` again, and a stale read fetches again: without
+ * the breaker a dead server (404 on every call) is hit in a tight loop.
+ */
 function ensureFresh(entry: QueryEntry<unknown>): void {
-  if (isStale(entry)) void revalidate(entry);
+  if (!isStale(entry) || entry.inFlight) return;
+  if (!entry.breaker.tryAttempt()) return;
+  void revalidate(entry);
 }
 
 function armInterval(entry: QueryEntry<unknown>): void {
@@ -165,6 +179,9 @@ function armInterval(entry: QueryEntry<unknown>): void {
     // Only while someone is actually looking: active + visible tab.
     if (!isActive(entry)) return;
     if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    // Backing off or stopped after repeated failures (lib/circuit-breaker.ts).
+    // invalidateQueries() and refetch() still fetch: a person asked.
+    if (entry.inFlight || !entry.breaker.tryAttempt()) return;
     void revalidate(entry);
   }, entry.refetchInterval);
 }
@@ -202,6 +219,7 @@ export function createQuery<T>(opts: {
     inFlight: null,
     gen: 0,
     intervalTimer: null,
+    breaker: createCircuitBreaker(),
     handle: null as unknown as Query<T>,
   };
 
@@ -293,6 +311,7 @@ export function resetQueries(): void {
     entry.state.error = null;
     entry.state.updatedAt = 0;
     entry.state.isFetching = false;
+    entry.breaker.recordSuccess();
   }
 }
 
@@ -300,13 +319,20 @@ export function resetQueries(): void {
 if (typeof window !== "undefined") {
   const onFocus = () => {
     for (const entry of CACHE.values()) {
-      if (entry.refetchOnWindowFocus && isActive(entry) && isStale(entry)) {
-        void revalidate(entry);
-      }
+      if (entry.refetchOnWindowFocus && isActive(entry)) ensureFresh(entry);
     }
   };
+  // A page that comes back (visible again, or a new hash route) gets one
+  // more try from every stopped breaker (lib/circuit-breaker.ts).
+  const wakeAll = () => {
+    for (const entry of CACHE.values()) entry.breaker.wake();
+  };
   window.addEventListener("focus", onFocus);
+  window.addEventListener("hashchange", wakeAll);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") onFocus();
+    if (document.visibilityState === "visible") {
+      wakeAll();
+      onFocus();
+    }
   });
 }

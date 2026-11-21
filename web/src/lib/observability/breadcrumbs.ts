@@ -24,12 +24,31 @@
  * with a `__obs:` prefix that the console hook can filter out to
  * prevent infinite loops).
  *
+ * Dead collector (a paused Builder sandbox): every flush goes through a
+ * circuit breaker (lib/circuit-breaker.ts). After 3 failed flushes in a row
+ * it backs off (5s, 10s, 20s ... 5 min); after 10 it stops, and the DOM
+ * snapshot timer stops with it, until the page is visible again or the
+ * hash changes. A failed flush never records a breadcrumb (it uses the
+ * original fetch and console), so it can never queue another flush. The
+ * dev panel's own heartbeat POST is not instrumented either, for the same
+ * reason. A paused preview once sent ~2,769 404s an hour.
+ *
  * Production: this whole module is no-op'd when import.meta.env.PROD
  * is true. The analytics product will replace the collector POST
  * with a remote ingest call when it lands.
  */
 
+import { createCircuitBreaker, wakeOnPageReturn } from "../circuit-breaker.ts";
+
 const COLLECTOR_PATH = "/api/_observability/breadcrumb";
+/**
+ * Dev tooling requests the fetch hook does not record: the collector itself
+ * and the dev panel heartbeat (DEV_APP_STATE_PATH in devpanel/push.svelte.ts).
+ * Recording them would turn each failed poll into a breadcrumb and a flush.
+ */
+const UNINSTRUMENTED_PATHS = [COLLECTOR_PATH, "/api/dev/app-state"];
+/** While the collector is unreachable, keep at most this many queued events. */
+const QUEUE_CAP_WHILE_BLOCKED = 200;
 const BATCH_FLUSH_MS = 1000;
 const BATCH_SIZE_CAP = 50;
 const FETCH_BODY_PREVIEW_CAP = 4 * 1024; // 4 KB
@@ -57,6 +76,9 @@ const SID = newSid();
 let queue: ObsEvent[] = [];
 let flushTimer: number | null = null;
 
+/** Collector breaker. Exported for tests and the dev panel. */
+export const collectorBreaker = createCircuitBreaker();
+
 function record(kind: string, data: Record<string, unknown>): void {
   queue.push({
     ts: new Date().toISOString(),
@@ -78,6 +100,13 @@ function flush(): void {
     flushTimer = null;
   }
   if (queue.length === 0) return;
+  if (!collectorBreaker.tryAttempt()) {
+    // Backing off or stopped: send nothing. Keep the newest events so the
+    // next allowed flush still carries recent context, bounded so a long
+    // outage cannot grow the queue without limit.
+    if (queue.length > QUEUE_CAP_WHILE_BLOCKED) queue = queue.slice(-QUEUE_CAP_WHILE_BLOCKED);
+    return;
+  }
   const batch = queue;
   queue = [];
   const payload = JSON.stringify({ events: batch });
@@ -92,16 +121,24 @@ function flush(): void {
       body: payload,
       keepalive: true,
       credentials: "same-origin",
-    }).catch((e) => {
-      originalConsole.warn.call(console, CONSOLE_OBS_PREFIX, "flush failed:", e);
+    }).then((res) => {
+      collectorBreaker.recordResponse(res.status);
+    }, (e) => {
+      collectorBreaker.recordFailure();
+      // Only the first failure in a row, so a dead collector stays quiet.
+      if (collectorBreaker.failures === 1) {
+        originalConsole.warn.call(console, CONSOLE_OBS_PREFIX, "flush failed:", e);
+      }
     });
   } catch (e) {
+    collectorBreaker.recordFailure();
     originalConsole.warn.call(console, CONSOLE_OBS_PREFIX, "flush threw:", e);
   }
 }
 
 function flushSync(): void {
   if (queue.length === 0) return;
+  if (!collectorBreaker.tryAttempt()) return;
   const batch = queue;
   queue = [];
   // sendBeacon survives the page unload path. Subject to a 64 KB
@@ -173,6 +210,11 @@ function installErrorHooks(): void {
   });
 }
 
+function isUninstrumented(url: string): boolean {
+  const path = url.split(/[?#]/)[0];
+  return UNINSTRUMENTED_PATHS.some((p) => path.endsWith(p));
+}
+
 function installFetchHook(): void {
   window.fetch = async function (
     input: RequestInfo | URL,
@@ -185,8 +227,8 @@ function installFetchHook(): void {
       : input instanceof URL
         ? input.toString()
         : input.url;
-    // Don't instrument our own collector posts.
-    if (url.endsWith(COLLECTOR_PATH)) {
+    // Don't instrument dev tooling posts (see UNINSTRUMENTED_PATHS).
+    if (isUninstrumented(url)) {
       return originalFetch.call(window, input, init);
     }
     const reqBodyPreview = previewBody(init?.body);
@@ -552,6 +594,8 @@ function installDomSnapshotHook(): void {
 
   const maybeEmit = (reason: string) => {
     if (document.hidden) return;
+    // Collector stopped: a snapshot would only sit in the queue.
+    if (collectorBreaker.stopped && !collectorBreaker.canAttempt()) return;
     const now = Date.now();
     if (now - lastEmit < THROTTLE_MS) return;
     lastEmit = now;
@@ -793,6 +837,7 @@ export function installBreadcrumbs(): void {
   // overhead of the wrappers.
   if (import.meta.env && import.meta.env.PROD) return;
   try {
+    wakeOnPageReturn(collectorBreaker);
     installConsoleHook();
     installErrorHooks();
     installFetchHook();

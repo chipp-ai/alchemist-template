@@ -26,17 +26,29 @@
  *   - 5s heartbeat is the safety net: any change is visible to the
  *     dev panel within 5s even when the rule is broken.
  *   - Cost: one fetch per 5s during dev = trivial.
+ *
+ * Dead server (a paused Builder sandbox): the push goes through a circuit
+ * breaker (lib/circuit-breaker.ts). After 3 failed pushes in a row it backs
+ * off (5s, 10s, 20s ... 5 min); after 10 it stops until the page is visible
+ * again or the hash changes. A paused preview once sent ~2,769 404s an hour.
  */
 
 import { subscribeAll } from "./store.svelte";
 import { collectClientSnapshot, formatSnapshotAsMarkdown } from "./snapshot";
+import { createCircuitBreaker, wakeOnPageReturn } from "../circuit-breaker.ts";
 
 const DEBOUNCE_MS = 1000;
+/** Also skipped by the breadcrumb fetch hook, so a failing push never queues a breadcrumb flush. */
+export const DEV_APP_STATE_PATH = "/api/dev/app-state";
 const HEARTBEAT_MS = 5000;
 
 let debounceTimer: number | null = null;
 let heartbeatInterval: number | null = null;
 let unsubscribeFromStores: (() => void) | null = null;
+let stopWakeListeners: (() => void) | null = null;
+
+/** Push breaker. Exported for the dev panel and tests. */
+export const pushBreaker = createCircuitBreaker();
 
 /**
  * Schedule a push, debounced so a burst of store writes coalesces
@@ -58,6 +70,7 @@ export function schedulePush(): void {
 export async function pushNow(): Promise<void> {
   if (import.meta.env.PROD) return;
   if (typeof fetch === "undefined") return;
+  if (!pushBreaker.tryAttempt()) return;
 
   try {
     const snapshot = collectClientSnapshot();
@@ -71,17 +84,17 @@ export async function pushNow(): Promise<void> {
     // debounce + 5s heartbeat already cap wasted bandwidth; computing a
     // content-aware hash on every snapshot would re-stringify the entire
     // store graph just to compare strings. Drop the dedup, always send.
-    await fetch("/api/dev/app-state", {
+    const res = await fetch(DEV_APP_STATE_PATH, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ snapshot, markdown }),
     });
+    pushBreaker.recordResponse(res.status);
   } catch {
-    // Silently swallow — this is dev tooling. The endpoint 404s in
-    // prod (defense-in-depth on top of the import.meta.env.PROD
-    // early-return), and a network blip on a single push is recoverable
-    // by the next heartbeat or store change.
+    // Dev tooling: no console noise. A network error counts against the
+    // breaker, so a dead server is not polled forever.
+    pushBreaker.recordFailure();
   }
 }
 
@@ -99,6 +112,7 @@ export function startDevPanelPush(): void {
   if (unsubscribeFromStores !== null) return; // already started
 
   unsubscribeFromStores = subscribeAll(schedulePush);
+  stopWakeListeners = wakeOnPageReturn(pushBreaker);
 
   window.addEventListener("hashchange", schedulePush);
   window.addEventListener("resize", schedulePush);
@@ -127,6 +141,10 @@ export function stopDevPanelPush(): void {
   if (unsubscribeFromStores !== null) {
     unsubscribeFromStores();
     unsubscribeFromStores = null;
+  }
+  if (stopWakeListeners !== null) {
+    stopWakeListeners();
+    stopWakeListeners = null;
   }
   if (typeof window !== "undefined") {
     window.removeEventListener("hashchange", schedulePush);
