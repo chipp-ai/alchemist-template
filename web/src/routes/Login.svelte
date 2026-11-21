@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { push, querystring } from "svelte-spa-router";
+  import { push, querystring, replace } from "svelte-spa-router";
   import { authStore } from "../stores/auth.svelte";
   import { api } from "../lib/api";
   import { oauthStartUrl, takeReturnTo } from "../lib/return-to";
@@ -30,6 +30,28 @@
   // `providers` ($state), and inside an $effect that write would
   // attribute itself as a dep, looping the fetch.
   onMount(() => {
+    // Already signed in: go on to the page that sent us here, or the app
+    // home. App.svelte mounts this page only after the session check, so
+    // this is a real answer. It happens when a page reloads on #/login
+    // after a session came back: the Chipp Builder preview signs the
+    // builder in at the edge on every page load (docs/conventions/
+    // dev-affordances.md), and a builder must never see this page there.
+    //
+    // The server must agree. The API client sends a 401 here without
+    // clearing the store, so the store alone could bounce a dead session
+    // between this page and the app forever. And at most once per 10s per
+    // tab: an endpoint that answers 401 for another reason must not loop.
+    if (authStore.isAuthenticated && takeSignedInBounce()) {
+      void fetch("/api/auth/session", { credentials: "same-origin" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body: { user?: unknown } | null) => {
+          if (body?.user) replace(takeReturnTo() ?? "/");
+        })
+        .catch(() => {
+          // Offline or a restarting server: stay on the sign-in page.
+        });
+    }
+
     api.get<{
       otpEnabled: boolean;
       providers: OAuthProviderConfig[];
@@ -38,14 +60,29 @@
       providers = data.providers ?? [];
     }).catch(() => {});
 
-    // ?autodev=1 → fire dev-login automatically. Used by alchemist-ai's
-    // "Live preview" button so a fresh workspace lands the user signed
-    // in without an extra click. Gated on import.meta.env.DEV (set
-    // below) so a prod-built SPA ignores the param.
+    // ?autodev=1 → fire dev-login automatically. Older Chipp preview
+    // links carry it; the Builder preview now signs in at the edge before
+    // the page loads, so this rarely runs. Gated on import.meta.env.DEV
+    // so a prod-built SPA ignores the param.
     if (import.meta.env.DEV && new URLSearchParams(location.search).get("autodev") === "1") {
       void handleDevLogin();
     }
   });
+
+  const BOUNCE_KEY = "app:login-signed-in-bounce";
+  const BOUNCE_GAP_MS = 10_000;
+
+  /** True at most once per BOUNCE_GAP_MS in this tab. Storage blocked: true. */
+  function takeSignedInBounce(): boolean {
+    try {
+      const last = Number(sessionStorage.getItem(BOUNCE_KEY) ?? 0);
+      if (Date.now() - last < BOUNCE_GAP_MS) return false;
+      sessionStorage.setItem(BOUNCE_KEY, String(Date.now()));
+    } catch {
+      // A sandboxed frame can throw on storage; the server check still guards.
+    }
+    return true;
+  }
 
   async function handleSendOtp(e: Event) {
     e.preventDefault();
@@ -280,8 +317,8 @@
           Local-only escape hatch: there's no SMTP harness in dev, so the
           OTP code never reaches an inbox. This calls
           <code>POST /api/dev/login</code> directly. The endpoint 404s
-          when <code>NODE_ENV=production</code>, and this button is
-          stripped from production SPA builds.
+          unless the dev routes are on (never in a published app), and
+          this button is stripped from production SPA builds.
         </p>
       </div>
     {/if}

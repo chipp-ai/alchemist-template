@@ -79,3 +79,11 @@ deno("only the dev tasks turn the dev surface on, never the deploy image", async
   const dockerfile = await Deno.readTextFile(new URL("../../../Dockerfile", import.meta.url));
   assert(!dockerfile.includes("ALCHEMIST_DEV_ROUTES"), "the deploy image must never set the dev flag");
 });
+
+deno("the sign-in page moves a signed-in user on, only when the server agrees, at most once per 10s", async () => {
+  const login = await Deno.readTextFile(new URL("../../../web/src/routes/Login.svelte", import.meta.url));
+  assert(login.includes("if (authStore.isAuthenticated && takeSignedInBounce())"));
+  assert(login.includes(`fetch("/api/auth/session"`), "the server's answer, not the store's: the API client's 401 leaves the store signed in");
+  assert(login.includes("if (body?.user) replace(takeReturnTo() ?? \"/\");"));
+  assert(login.includes("const BOUNCE_GAP_MS = 10_000;"));
+});
