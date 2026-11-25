@@ -633,7 +633,7 @@ export async function runConformance(opts: RunOptions): Promise<ConformanceRepor
       subject: "deno.json",
       severity: "warning",
       message: "deno.json has no `conformance` task.",
-      fix: 'Add "conformance": "deno run --allow-read scripts/conformance.ts" to deno.json tasks.',
+      fix: 'Add "conformance": "deno run --no-config --no-lock --allow-read=. scripts/conformance.ts" to deno.json tasks.',
       file: "deno.json",
     });
   }
