@@ -30,7 +30,7 @@ on their own. A `deepResearch` reply can take a few minutes. If the sync
 ever says the plan blocks a switch, tell the person; never build a
 workaround. Never build
 your own image, video, search, research, voice or upload feature for the
-chat. Full table: `docs/agent-guidance/embedded-chipp-agent.md`.
+chat. Overview of what the agent already does: https://chipp.ai/docs/guides/alchemist-embedded-chipp-agent-overview
 
 `llmMessages` / `llmStructured` (`src/services/llm/`) are for one-shot
 server tasks with no conversation: extract, classify, summarize, draft one
