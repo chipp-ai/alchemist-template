@@ -14,7 +14,7 @@ query. When they conflict with your training-data defaults, these win.
 
 ## Available Postgres extensions
 
-Every Alchemist customer app runs against Postgres with the SAME extension
+Every Chipp-hosted app runs against Postgres with the SAME extension
 set across local dev, CI, and production. Don't ask "is this available
 here" — the answer is yes everywhere.
 

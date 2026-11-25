@@ -2,7 +2,7 @@
 
 ## HIPAA mode — env-var-gated, no schema changes
 
-The template ships every building block for HIPAA-compliant session handling. Activation is binary, sourced from a single env var the Alchemist platform sets on the customer pod when the project was opted into HIPAA during onboarding (and the BAA was signed):
+The template ships every building block for HIPAA-compliant session handling. Activation is binary, sourced from a single env var the Chipp platform sets on the customer pod when the project was opted into HIPAA during onboarding (and the BAA was signed):
 
 ```
 HIPAA_ENABLED=true
@@ -18,6 +18,6 @@ When set:
 When unset/false:
 - 30-day default sessions, no activity tracking, no warning modal. The `sessionTimeoutStore` stays inert (`active: false`).
 
-There is **no per-user / per-org HIPAA toggle inside this template**. The whole deployed app is HIPAA-bound or it isn't — that's a project-scope decision the alchemist platform records and propagates via the env var. Don't add a `hipaa_enabled` column on `organizations`; the platform's onboarding flow + customer-pod env is the only source of truth.
+There is **no per-user / per-org HIPAA toggle inside this template**. The whole deployed app is HIPAA-bound or it isn't. That is a project-scope decision the Chipp platform records and propagates via the env var. Don't add a `hipaa_enabled` column on `organizations`; the platform's onboarding flow + customer-pod env is the only source of truth.
 
 The `POST /auth/touch` endpoint re-issues a JWT with a fresh `exp` claim and resets the cookie. It calls `requireAuth`, so a session that already lapsed gets 401 → SPA force-logout. The store throttles outgoing `/touch` calls to once per 5 minutes regardless of how active the user is.

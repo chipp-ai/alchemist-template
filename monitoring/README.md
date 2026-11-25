@@ -1,6 +1,6 @@
 # Monitoring Stack
 
-Self-healing observability for Alchemist AI tenant applications. Errors flow from customer apps through Loki to Grafana, which fires webhooks to the Alchemist platform dispatcher. The dispatcher creates bug tickets that Claude Code autonomously fixes and ships as PRs.
+Self-healing observability for apps hosted on Chipp. Errors flow from the app through Loki to Grafana, which fires webhooks to Chipp. Chipp opens a fix ticket, and a Chipp agent fixes it and ships the change.
 
 ## The Self-Healing Loop
 

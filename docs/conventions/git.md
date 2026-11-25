@@ -24,3 +24,10 @@ git push
 ```
 
 Trust CI to catch broken intermediate states. If a partial refactor genuinely shouldn't deploy, **revert the offending lines as a follow-up commit**, don't stash them. If a commit message ends up bundling more files than the message describes, that's fine — the message is an approximation of "what shipped in this push," not a strict scope contract.
+
+## Publishing
+
+A push to `staging` builds the app on Chipp. From your own AI tool, `publish`
+(Chipp MCP) then releases the build to the live URL. Run
+`deno task conformance` before the push: an error fails the build. Inside a
+Chipp sandbox the platform releases the work. See `publishing.md`.

@@ -70,6 +70,12 @@ jobs:
       - name: Lint
         run: deno lint
 
+      # Still on the template stack? Same script the Chipp build runs
+      # (docs/conventions/stack-and-conformance.md). Direct deno run, so the
+      # step installs no npm packages.
+      - name: Template conformance
+        run: deno run --no-config --no-lock --allow-read=. scripts/conformance.ts
+
   landing:
     # The landing site (landing/): unit tests for the AEO check, then the
     # Astro build, which runs scripts/aeo-check.mjs on every page.

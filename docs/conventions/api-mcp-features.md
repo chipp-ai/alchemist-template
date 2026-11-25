@@ -14,7 +14,7 @@ system, OAuth server or MCP endpoint.**
 | API | `ALCHEMIST_FEATURE_API=1` | `/api/api-keys` (api_sk_ keys) and `/api/v1/*` (add routes in `src/services/headless-api/v1.ts`), paid via `chargeCredits` / `requirePurchase` / `mppPaid` | `docs/agent-guidance/headless-api-surface.md` |
 | MCP | `ALCHEMIST_FEATURE_MCP=1` | `/api/mcp`, OAuth 2.1 + PKCE + dynamic client registration under `/api/mcp/oauth`, `/.well-known/oauth-*`, `/api/mcp/api-keys` (mcp_sk_ keys); tools in `src/mcp/tools/` | `docs/agent-guidance/mcp-protocol-surface.md` |
 
-- **Turning one on:** on the Alchemist platform, the builder or the agent
+- **Turning one on:** on the Chipp platform, the builder or the agent
   calls the `set_project_feature` tool (`feature: "api"` or `"mcp"`,
   `enabled: true`); the platform sets the env var and redeploys. Locally,
   put the var in `.env` and restart. Both can be on at once.

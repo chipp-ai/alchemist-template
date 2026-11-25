@@ -22,7 +22,7 @@ set -euo pipefail
 #   - ALCHEMIST_TENANT_ID / ALCHEMIST_APP_SLUG / ALCHEMIST_DISPATCHER_URL env vars
 #   - Promtail sidecar K8s manifest (monitoring/k8s/promtail-sidecar.yml)
 #   - Grafana contact point for the Alchemist dispatcher
-#   - "Powered by Alchemist AI" branding in CLAUDE.md
+#   - The Chipp branding line in CLAUDE.md ("Built on the Chipp app template", or the older "Powered by Alchemist AI")
 #
 # This script does NOT drop the platform-side schema or billing record.
 # Run deprovision.sh separately once the grace period has passed.
@@ -318,7 +318,7 @@ else
   if [[ "$DRY_RUN" == true ]]; then
     log_step "[DRY RUN] Would clone github.com/${REPO_NAME} -> ${WORK_DIR}/${APP_SLUG}"
     log_step "[DRY RUN] Would commit the following changes:"
-    echo "  - CLAUDE.md: remove 'Powered by Alchemist AI' line"
+    echo "  - CLAUDE.md: remove the Chipp branding line"
     echo "  - .env.example: remove ALCHEMIST_TENANT_ID, ALCHEMIST_APP_SLUG, ALCHEMIST_DISPATCHER_URL"
     echo "  - monitoring/k8s/promtail-sidecar.yml: delete file"
     echo "  - monitoring/grafana/contact-points/alchemist-dispatcher.yml: delete file"
@@ -351,10 +351,10 @@ else
 
     if [[ -f "CLAUDE.md" ]]; then
       log_info "  Cleaning CLAUDE.md..."
-      # Remove the "Powered by Alchemist AI" branding line and any trailing blank line after it
-      sed -i.bak '/^\*\*Powered by Alchemist AI\*\*.*/d' CLAUDE.md
+      # Remove the Chipp branding line (current and older wording)
+      sed -i.bak -e '/^\*\*Built on the Chipp app template\.\*\*.*/d' -e '/^\*\*Powered by Alchemist AI\*\*.*/d' CLAUDE.md
       rm -f CLAUDE.md.bak
-      log_ok "  CLAUDE.md: Alchemist branding removed"
+      log_ok "  CLAUDE.md: Chipp branding removed"
     else
       log_warn "  CLAUDE.md not found -- skipping"
     fi
@@ -447,7 +447,7 @@ else
     cat > SELF_HOSTING.md <<GUIDE
 # Self-Hosting Guide
 
-This project was ejected from Alchemist AI on ${EJECTED_AT}.
+This project was ejected from Chipp on ${EJECTED_AT}.
 It is a standard Deno + Hono + Svelte 5 SPA that runs anywhere.
 
 ## What Changed During Eject
@@ -456,7 +456,7 @@ It is a standard Deno + Hono + Svelte 5 SPA that runs anywhere.
 - Removed Promtail sidecar (was shipping logs to Alchemist's shared Loki instance)
 - Removed Grafana contact point (was routing alerts to Alchemist's ticket dispatcher)
 - Grafana alert rules moved to \`monitoring/grafana/alert-examples/\` for reference
-- Removed "Powered by Alchemist AI" from CLAUDE.md
+- Removed the Chipp branding line from CLAUDE.md
 
 ## Prerequisites
 
@@ -572,7 +572,7 @@ structure, conventions, and critical rules.
 
 ---
 
-*Ejected from Alchemist AI on ${EJECTED_AT}*
+*Ejected from Chipp on ${EJECTED_AT}*
 GUIDE
 
     log_ok "  SELF_HOSTING.md written"
@@ -582,14 +582,14 @@ GUIDE
     log_info "  Committing cleanup..."
     git add -A
     git diff --cached --quiet && { log_warn "  Nothing to commit -- repo already clean"; } || {
-      git commit -m "chore: eject from Alchemist AI
+      git commit -m "chore: eject from Chipp
 
 Remove Alchemist platform dependencies:
 - ALCHEMIST_* env vars removed from .env.example
 - Promtail sidecar manifest removed (monitoring/k8s/)
 - Grafana dispatcher contact point removed
 - Grafana alert rules archived to monitoring/grafana/alert-examples/ for reference
-- 'Powered by Alchemist AI' branding removed from CLAUDE.md
+- Chipp branding line removed from CLAUDE.md
 - SELF_HOSTING.md added with self-hosting instructions
 
 The app is now a standalone Deno + Hono + Svelte 5 project.
@@ -716,7 +716,7 @@ else
   cat > "$GUIDE_PATH" <<GUIDE
 # ${APP_SLUG} — Self-Hosting Guide
 
-Your project was ejected from Alchemist AI on ${EJECTED_AT}.
+Your project was ejected from Chipp on ${EJECTED_AT}.
 
 ## What You Received
 
@@ -770,7 +770,7 @@ your project. Just run \`claude\` in the project directory.
 
 ---
 
-*Ejected from Alchemist AI on ${EJECTED_AT}*
+*Ejected from Chipp on ${EJECTED_AT}*
 *Tenant ID: ${TENANT_ID} (keep for billing/support reference)*
 GUIDE
 

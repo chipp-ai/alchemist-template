@@ -172,7 +172,7 @@ Deno.test("demoLandingRoute: renders a read-only landing page when DEMO_MODE=1",
     assertEquals(res.status, 200);
     assertMatch(res.headers.get("content-type") ?? "", /text\/html/);
     const body = await res.text();
-    assertStringIncludes(body, "Alchemist SaaS Starter");
+    assertStringIncludes(body, "Chipp App Starter");
     assertStringIncludes(body, "/index.html#/login");
     assertStringIncludes(body, "github.com/chipp-ai/alchemist-template");
     assertStringIncludes(body, "all content is fictional");
@@ -206,6 +206,6 @@ Deno.test("demoLandingRoute + demoBannerMiddleware compose: landing page also ca
     const res = await app.request("/");
     const body = await res.text();
     assertStringIncludes(body, "alchemist-demo-banner");
-    assertStringIncludes(body, "Alchemist SaaS Starter");
+    assertStringIncludes(body, "Chipp App Starter");
   });
 });

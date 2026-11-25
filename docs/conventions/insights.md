@@ -2,7 +2,7 @@
 
 ## Chipp Insights — first-party analytics beacon
 
-A tiny beacon (`https://build.chipp.ai/i/beacon.js`) that Alchemist activates
+A tiny beacon (`https://build.chipp.ai/i/beacon.js`) that Chipp activates
 by committing `chipp-insights.json` to the repo root at generation time,
 shaped `{"telemetryPublicKey": "tk_pub_..."}`. Present = active, absent (or
 unreadable/malformed) = completely inert — nothing here ever throws or blocks

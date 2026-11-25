@@ -103,11 +103,11 @@ function renderLandingPage(): string {
 </head>
 <body>
 <main>
-  <h1>Alchemist SaaS Starter</h1>
+  <h1>Chipp App Starter</h1>
   <p class="lede">
-    This is a live, fictional demo of the production-grade SaaS template that
-    <a href="https://adaas.dev">Alchemist AI</a> ships to every new customer
-    project. Nothing on this deployment is real -- no real users, no real
+    This is a live, fictional demo of the production-grade app template that
+    <a href="https://chipp.ai">Chipp</a>, the software factory, starts every new
+    app from. Nothing on this deployment is real -- no real users, no real
     payments, no real email.
   </p>
 

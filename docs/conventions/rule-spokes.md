@@ -22,7 +22,7 @@ when you work in its area, so the hub stays focused.
 | `security.md` | `src/api/**`, `src/auth/**`, `src/services/**`, `app.ts` | Tenant scoping, route authorization, redirects, SSRF, injection, secrets and codes out of logs, uploads and decompression, CSV and link safety, CORS, member text in prompts |
 | `ssr.md` | `src/services/ssr/**`, `src/services/storefront/**`, `web/src/islands/**`, `optional-session.ts`, `spa-shell.ts` | Server-rendered public pages: route-module discovery, escaping, JSON-LD, design tokens, `optionalSession`, caching, Svelte islands |
 
-In Claude Code these load when you read a matching file. The Alchemist
+In Claude Code these load when you read a matching file. The Chipp
 build agent injects them when a tool call touches a matching path (and
 exposes them via the `load_skill` tool). Add a new spoke by dropping a
 `.claude/rules/<name>.md` with a `description:` and `paths:` frontmatter.

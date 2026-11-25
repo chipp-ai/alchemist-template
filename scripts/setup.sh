@@ -16,7 +16,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo ""
 echo "============================================"
-echo "  Alchemist Template — First-Time Setup"
+echo "  Chipp app template: first-time setup"
 echo "============================================"
 echo ""
 

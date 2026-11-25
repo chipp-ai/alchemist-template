@@ -6,7 +6,7 @@ When a ticket asks to log into a third-party web portal, scrape data from
 it, submit data to it, or schedule a recurring pull (or names
 playwright/puppeteer/selenium), **never add browser automation to this
 repo**. No playwright, no puppeteer, no chromium download, no cookie-jar
-login clients. The Alchemist platform operates a hardened browser lane:
+login clients. The Chipp platform operates a hardened browser lane:
 headless Chromium in a sandbox, postback-safe interaction primitives,
 encrypted credential + session storage (secret values never enter code or
 LLM context), human SSO/MFA handoff for portals behind SSO, and a

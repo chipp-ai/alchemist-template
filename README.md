@@ -1,9 +1,9 @@
 <div align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
-    <img src="docs/logo-light.svg" alt="Alchemist Template" width="520">
+    <img src="docs/logo-light.svg" alt="Chipp app template" width="520">
   </picture>
-  <p><strong>A production-grade SaaS template, built so AI agents can extend it without breaking it.</strong></p>
+  <p><strong>The Chipp app template: a production-grade full-stack app, built so AI agents can extend it without breaking it.</strong></p>
   <p>
     <a href="#quick-start">Quick Start</a> &#8226;
     <a href="#whats-in-the-box">What's in the Box</a> &#8226;
@@ -16,9 +16,11 @@
 
 ---
 
-Alchemist Template is a SaaS starter built on Deno 2, Hono 4, Svelte 5, and PostgreSQL. It ships with auth, billing, RBAC, structured logging, and an idiomatic Kysely + services layout, plus a `CLAUDE.md` authored so AI agents (Claude Code, Cursor, or the [Alchemist AI](https://adaas.dev) platform itself) can navigate and extend it without fighting the conventions. Fork it as the starting point for any new product.
+The Chipp app template is a full-stack starter built on Deno 2, Hono 4, Svelte 5, PostgreSQL and Redis. It ships with auth, billing, RBAC, structured logging, analytics, and an idiomatic Kysely + services layout, plus a `CLAUDE.md` and an `AGENTS.md` written so coding agents (Claude Code, Codex, Cursor, Hermes, or Chipp's own agents) can extend it without fighting the conventions.
 
-It is also the seed repo every customer project on the [Alchemist AI](https://adaas.dev) platform is cloned from. The conventions here are the ones autonomous agents are trained against -- using this template means agents work with you, not around you.
+It is the template every app on [Chipp](https://chipp.ai), the software factory, starts from. Chipp hosts it: Postgres, Redis, Kubernetes scaling, error detection and self-healing are built around this stack, so the stack is fixed (see [the stack and the conformance check](docs/conventions/stack-and-conformance.md)).
+
+**Build it in your own AI tool and publish it on Chipp:** connect the Chipp MCP server (`https://mcp.chipp.ai/mcp/build`), ask your agent to call `start_project`, and follow [publishing](docs/conventions/publishing.md).
 
 ## What's in the box
 
@@ -134,7 +136,7 @@ This template is intentionally generic. The path from clone to "your product" is
 
 1. **Rewrite `CLAUDE.md`.** Replace the `[Project Name]` header and `[Brief description...]` paragraph with what you're actually building. This is the file every AI agent reads first -- get it right and agents need almost no orientation. See [working with AI agents](#working-with-ai-agents) below.
 2. **Update `web/index.html`.** Change the `<title>` and any meta tags.
-3. **Centralize brand in `src/config/brand.ts`.** App name, logo, colors, marketing copy -- the template reads from one place so there are no string-literal leaks of "Alchemist" anywhere in your fork.
+3. **Centralize brand in `src/config/brand.ts`.** App name, logo, colors, marketing copy -- the template reads from one place so there are no string-literal leaks of the template name anywhere in your fork.
 4. **Add your schema.** Create migration files in `db/migrations/` following the `NNN_description.sql` convention. The runner applies them in order on startup. Update `src/db/schema.ts` with matching TypeScript types -- the `CamelCasePlugin` handles the case conversion at the DB boundary.
 5. **Add routes + services.** Drop new files into `src/api/routes/` and mount them in `src/api/index.ts`. Put the logic in `src/services/`. Keep routes thin.
 6. **Add pages.** Create components in `web/src/routes/` and register them with the hash router.
@@ -143,7 +145,7 @@ The template ships with the foundation you'd otherwise build yourself: organizat
 
 ## Working with AI agents
 
-This template was authored so AI agents (Claude Code, Cursor, the [Alchemist AI](https://adaas.dev) platform) can extend it without ramp-up. Two things make that work:
+This template was authored so AI agents (Claude Code, Codex, Cursor, Hermes, and Chipp's own agents) can extend it without ramp-up. Three things make that work:
 
 **`CLAUDE.md` at the root** is a short index: the hard rules, the commands, and one line per topic. Each topic (stack, layout, conventions, dev login flow, gotchas) lives in `docs/conventions/<topic>.md`, which an agent reads when it works in that area. Claude Code auto-loads the index on every session, so it stays under a 16,000-character budget (`src/__tests__/claude-md-budget.test.ts`). When you fork:
 
@@ -151,9 +153,11 @@ This template was authored so AI agents (Claude Code, Cursor, the [Alchemist AI]
 - Put anything domain-specific (e.g. "events always carry a UTC timestamp", "we never delete records -- soft-delete via `archived_at`") in the matching `docs/conventions/` file, or a new one with a line in the index.
 - Keep only hard rules in `CLAUDE.md` itself.
 
-**Predictable layout.** Routes are thin orchestration; business logic lives in services; DB types come from `src/db/schema.ts`. Agents that know the pattern can add a new feature without searching for the right file. The Alchemist AI platform's agents are trained against exactly this shape.
+**Predictable layout.** Routes are thin orchestration; business logic lives in services; DB types come from `src/db/schema.ts`. Agents that know the pattern can add a new feature without searching for the right file. Chipp's software factory agents work in exactly this shape.
 
-If you also want autonomous error remediation, mission orchestration, and a kanban for agent work on top of this template, see [chipp-ai/dispatch](https://github.com/chipp-ai/dispatch).
+**`AGENTS.md`** is the guide for coding agents outside Chipp: the stack rules, how to run locally, the logger, error and analytics conventions, and how to publish with the Chipp MCP tools. `deno task conformance` tells an agent before it pushes whether the app is still on the template stack.
+
+On Chipp, the same project gets [self-healing](https://chipp.ai/docs/guides/alchemist-self-healing) (Chipp watches the app's errors and ships fixes) and [autonomous tickets](https://chipp.ai/docs/guides/alchemist-tickets) (describe a change; a Chipp agent builds and ships it).
 
 ## Development
 
@@ -164,6 +168,7 @@ deno task test:fast    # Route + service tests
 deno task test         # Full test suite
 deno task fmt          # Format
 deno task lint         # Lint
+deno task conformance  # Still on the template stack? Run before every push
 deno task db:migrate   # Apply pending migrations explicitly
 ```
 
@@ -175,9 +180,9 @@ deno test --env --no-check --allow-all src/__tests__/services/my_test.ts
 
 ## Deployment
 
-### Alchemist AI (autonomous)
+### Chipp (hosted)
 
-Push to your fork's default branch. The Alchemist AI platform builds, migrates, and rolls out via its build orchestrator and rollout controller. No CI to configure -- the platform's own agents handle deploys.
+Push to `staging` on your project's Chipp git remote, then publish (the `publish` tool of the Chipp MCP server, or Publish in the Chipp Builder). Chipp builds, migrates, and rolls out the app to `https://<project>.on.chipp.ai`, with Postgres, Redis and scaling managed for you. No CI to configure. See [publishing](docs/conventions/publishing.md).
 
 ### Self-host on Kubernetes
 

@@ -3,8 +3,8 @@
 ## Brand identity — `src/config/brand.ts` is the only source of truth
 
 The deployed product has a customer-facing name that is **not**
-"Alchemist" — Alchemist is the platform that built this app, not
-the product the end-user sees. The platform sets two env vars on
+the template or platform name. Chipp is the platform that built and
+hosts this app, not the product the end user sees. The platform sets two env vars on
 the customer pod:
 
 - `APP_NAME` — the user-facing product name (e.g. "Pinterest

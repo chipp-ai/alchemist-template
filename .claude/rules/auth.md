@@ -192,7 +192,7 @@ the session cookie. Scope segregation is enforced both ways — see the
 
 ## Platform verification sessions (read-only, platform-signed)
 
-The Alchemist platform verifies deployed changes in a real browser. Login
+The Chipp platform verifies deployed changes in a real browser. Login
 here is by emailed code, which an automated verifier cannot receive, so the
 platform signs a short-lived token and trades it at
 `POST /api/auth/verification-session` for a session on a dedicated

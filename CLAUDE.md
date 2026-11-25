@@ -2,7 +2,7 @@
 
 [Brief description of what this SaaS product does -- CUSTOMIZE THIS for your product]
 
-**Powered by Alchemist AI** -- Autonomous development platform.
+**Built on the Chipp app template.** Hosted on Chipp (chipp.ai), the software factory. Coding agents outside Chipp: read `AGENTS.md` too.
 
 ## How this file works
 
@@ -75,6 +75,7 @@ deno task check:tests                                     # type-check src/__tes
 deno task check:touched <file> [more files]               # the files you changed (up to 20)
 deno task lint && deno task fmt
 deno task db:migrate
+deno task conformance                                     # still on the template stack? run before every push
 ```
 
 Capture test output to `.scratch/test-output.txt` and grep the file instead of
@@ -85,6 +86,8 @@ sandbox runs `deno` under a memory guard: see `docs/conventions/testing.md`.
 
 - **`staging` IS production.** The `staging` branch serves real users. PRs target `staging`, never `main`.
 - Never make things up. Ask if unsure. No emojis unless necessary.
+- **The stack is fixed.** Hono, Svelte 5, Kysely on Postgres, `src/lib/redis.ts`, the logger in `src/lib/logger.ts`, `AppError` + `app.onError`, Chipp Insights. Never add another framework, ORM, database client, logger, error tracker or analytics SDK. `deno task conformance` errors block publish (`docs/conventions/stack-and-conformance.md`).
+- **Log with `log` from `src/lib/logger.ts`, never `console.*` in server code.** Chipp self-healing reads only the logger's lines.
 - Use `.scratch/` for ephemeral files (test scripts, debug logs, scratch data).
 - **Run `deno task check:tests` after touching ANY test file.** CI type-checks `src/__tests__/`; local runs use `--no-check`, so a type error in a test passes locally and reds CI.
 - **Type-check the files you changed** with `deno task check:touched <file> [more files]` before you finish. Outside a Chipp sandbox, `deno task check` checks the whole app.
@@ -120,7 +123,7 @@ Read the file before you work in that area.
 | `testing.md` | write or run tests, type checks, or read env in code or tests |
 | `verification.md` | finish a change: the checklist, the evidence to cite, the verification tools |
 | `dev-affordances.md` | need dev login, seed, reset or introspection routes |
-| `observability.md` | debug locally (`.scratch/logs/observability.jsonl`) or a deployed app (MCP tools) |
+| `observability.md` | debug locally (`.scratch/logs/observability.jsonl`) or a deployed app (Chipp MCP tools) |
 | `frontend.md` | touch Svelte pages, routing, modals, stores, `createQuery`, or the Mobile and touch rules (tokens and motion: `web/DESIGN.md`) |
 | `brand-and-design.md` | change the brand, `design.json`, or start a new project's look |
 | `built-in-sections.md` | switch a built-in section in `web/src/chipp-app.json`, or `DEMO_MODE` |
@@ -140,4 +143,6 @@ Read the file before you work in that area.
 | `library-idioms.md` | write Deno 2, Hono 4, Arctic 2, date-fns 3 or Stripe 17 code |
 | `insights.md` | touch analytics or the Chipp Insights beacon |
 | `git.md` | commit (always `git add -A`; never stash) |
+| `stack-and-conformance.md` | add a dependency, or `deno task conformance` reports a finding |
+| `publishing.md` | publish to a live URL on Chipp from your own AI tool (Chipp MCP `build` tools) |
 | `pitfalls.md` | want the list of mistakes that already happened here |
