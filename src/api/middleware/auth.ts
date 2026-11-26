@@ -371,9 +371,23 @@ export const authMiddleware = createMiddleware(async (c, next) => {
 });
 
 /**
+ * Context key requireAuth sets after it verified the session on THIS request.
+ * apiAuthByDefault (route-access.ts) runs requireAuth for every app route,
+ * and many routes list requireAuth too; the second run sees the key and
+ * skips the token check and the user lookup. Only requireAuth sets it, so
+ * another middleware that puts a "user" on the context (an agent token, an
+ * optional session) can never make requireAuth skip.
+ */
+const SESSION_VERIFIED_KEY = "requireAuthVerified";
+
+/**
  * Strict auth middleware. Throws 401 if not authenticated.
  */
 export const requireAuth = createMiddleware(async (c, next) => {
+  if (c.get(SESSION_VERIFIED_KEY) === true && c.get("user")) {
+    await next();
+    return;
+  }
   const candidates = getSessionTokenCandidates(c);
   if (candidates.length === 0) {
     throw new UnauthorizedError("Authentication required");
@@ -391,6 +405,7 @@ export const requireAuth = createMiddleware(async (c, next) => {
 
   c.set("user", user);
   c.set("organizationId", user.organizationId);
+  c.set(SESSION_VERIFIED_KEY, true);
   await next();
 });
 

@@ -20,6 +20,11 @@
  *             raw SQL clients outside src/db/, a stack SDK as a dev-only
  *             dependency, missing agent guides. Publish goes ahead and the
  *             warnings come back in the publish result.
+ *   ROUTE ACCESS = an API route that reads or writes data must be behind the
+ *             template auth or role middleware, or be marked public with a
+ *             reason, and a public route must not return personal fields.
+ *             A NEW or CHANGED violation is an error; a case the check cannot
+ *             decide is a warning. See "Route access" below.
  *
  * The rules target the stack, not dependencies in general: a PDF library or a
  * date library is fine. The full rule table and how to fix each finding are
@@ -48,6 +53,8 @@
  */
 
 const REPORT_VERSION = 1;
+/** Rule families in this version: "stack" (sections 1-5), "route-auth" (section 6). */
+const CHECKS = ["stack", "route-auth"] as const;
 const DOCS_URL =
   "https://github.com/chipp-ai/alchemist-template/blob/staging/docs/conventions/stack-and-conformance.md";
 
@@ -75,6 +82,12 @@ export interface ConformanceReport {
   blocking: string[];
   /** Keys of errors that were live before the check and do not block. */
   grandfathered: string[];
+  /** Which rule families ran. The platform baseline grandfathers a family a
+   *  project's newest stored report did not have yet. */
+  checks: string[];
+  /** GET routes the platform's live exposure probe may call without a
+   *  session (see `livenessProbeTargets`). Paths only. */
+  probeTargets: string[];
   filesScanned: number;
   docs: string;
 }
@@ -316,6 +329,695 @@ function lineOf(text: string, index: number): number {
 
 const IMPORT_RE =
   /(?:^|[\s;])(?:import|export)\s[^"'`;]*?from\s*["']([^"']+)["']|(?:^|[\s;(])import\s*\(\s*["']([^"']+)["']\s*\)|(?:^|[\s;])import\s+["']([^"']+)["']|\brequire\(\s*["']([^"']+)["']\s*\)/gm;
+
+// ── Route access ────────────────────────────────────────────────────────────
+//
+// Rule (Hunter, 2026-11-26): every API route that reads or writes data goes
+// through the template's auth or role middleware, or is marked public with a
+// reason, and a public route returns no personal data. Why: in a scan of
+// 159,041 Lovable apps about 30% leaked their users' email addresses. Chipp
+// apps never hand the browser a database key, but the coding agent still
+// writes each app's API routes, and one GET route without an auth check leaks
+// the same way. This is a deterministic source check, so it runs on every
+// publish (the build's conformance step), not only on tickets.
+//
+// A route counts as GUARDED when any of these is true:
+//   - its own registration lists an auth middleware: requireAuth,
+//     requireCapability(...), requireRole(...), any `require<Auth word>`
+//     middleware, or a credential middleware (a name with Auth, Token,
+//     Signature, Hmac, ApiKey, Bearer or Secret in it, or verify...);
+//   - the same kind of middleware is registered with `<router>.use(...)`
+//     BEFORE the route, on its own router or on a parent router before the
+//     `.route()` mount, with a path that covers the route (Hono runs
+//     middleware in registration order, so a later `use` does not count);
+//   - an inline `use` middleware or the handler itself rejects callers: it
+//     calls getUser(c), throws UnauthorizedError or ForbiddenError, returns a
+//     401 or 403, or verifies a token or signature.
+// Optional middleware (authMiddleware, optionalSession, optional*) only reads
+// a session and never counts.
+//
+// A route is PUBLIC when its registration lists `publicRoute("<reason>")`
+// (src/api/middleware/route-access.ts) or the line above it is a
+// `// chipp:public <reason>` comment. A public route must give a reason and
+// must not select or return personal fields (email, phone, address, names,
+// date of birth, tokens, passwords, keys; `selectAll()` counts).
+//
+// Findings (keys carry a short hash of the route's source, so CHANGING an old
+// unguarded route makes a new key and is checked again):
+//   ERROR   route-auth.unguarded       an API route that touches data, with no guard
+//   ERROR   route-auth.public-reason   publicRoute() / chipp:public with no reason
+//   ERROR   route-auth.public-personal a public route that returns personal fields
+//   WARNING route-auth.uncertain       the check could not tell (router not mounted
+//                                      from app.ts, a path built at runtime, a handler
+//                                      defined in another file)
+// Routes in the template's own files (TEMPLATE_ROUTE_FILES) are Chipp's code,
+// reviewed in the template repo, and are listed but never flagged.
+
+/** Template-owned route code: Chipp reviews it in the template repo itself. */
+const TEMPLATE_ROUTE_FILES = [
+  "app.ts",
+  "src/api/routes/agent-mcp/",
+  "src/api/routes/api-keys/",
+  "src/api/routes/assistants/",
+  "src/api/routes/auth/",
+  "src/api/routes/billing/",
+  "src/api/routes/chipp-payments/",
+  "src/api/routes/demo-landing.ts",
+  "src/api/routes/dev/",
+  "src/api/routes/docs/",
+  "src/api/routes/email/",
+  "src/api/routes/email-feedback/",
+  "src/api/routes/events/",
+  "src/api/routes/files/",
+  "src/api/routes/health/",
+  "src/api/routes/imports/",
+  "src/api/routes/inbound-emails/",
+  "src/api/routes/ingest-email/",
+  "src/api/routes/invite/",
+  "src/api/routes/mailing/",
+  "src/api/routes/mcp/",
+  "src/api/routes/observability/",
+  "src/api/routes/org/",
+  "src/api/routes/platform/",
+  "src/api/routes/portal/",
+  "src/api/routes/realtime/",
+  "src/api/routes/site-forms/",
+  "src/api/routes/storage-local/",
+  "src/api/routes/unsubscribe/",
+  "src/api/routes/well-known.ts",
+  "src/services/headless-api/",
+  "src/services/mcp-protocol/",
+  "src/services/mcp-oauth/",
+  "src/services/embedded-agent/",
+];
+
+const ROUTE_METHODS = new Set(["get", "post", "put", "patch", "delete", "all", "on"]);
+const IDENT = "[A-Za-z_$][\\w$]*";
+
+/** A middleware or handler name that authenticates the caller. */
+const AUTH_WORDS =
+  "Auth|Session|User|Login|Role|Capability|Permission|Admin|Owner|Staff|Member|Org|Team|Portal|Platform|" +
+  "Super|Operator|Signed|Plan|Entitlement|Scope|Agent|Api|Key|Token|Verified|Authenticated|Access";
+/** A middleware or handler name that authenticates the caller: requireAuth, requireChippStaff, requireAppRole, ... */
+const AUTH_NAME_RE = new RegExp(
+  `^(?:require\\w*(?:${AUTH_WORDS})\\w*|isAuthenticated|ensureAuth\\w*|authRequired|` +
+    "\\w*(?:Auth|Token|Signature|Hmac|HMAC|ApiKey|Apikey|Bearer|Secret)(?:Middleware|Guard|Gate|Check)?|" +
+    "verify\\w+|basicAuth|bearerAuth|jwt)$",
+);
+/** The same names called inside an inline middleware or handler (`return await requireChippStaff(c, next)`). */
+const AUTH_CALL_RE = new RegExp(`\\b(?:require\\w*(?:${AUTH_WORDS})\\w*|verify\\w*(?:Token|Signature|Session|Secret|Key)\\w*)\\s*\\(`);
+/** Reads a session when there is one; never rejects, so never a guard. */
+const OPTIONAL_NAME_RE = /^(?:optional\w*|maybe\w*|soft\w*|authMiddleware|attach\w*|load\w*|populate\w*|resolveOptional\w*|withOptional\w*)$/;
+/** Code that rejects an unauthenticated caller. */
+const REJECTS_RE =
+  /\bgetUser\s*\(|\bUnauthorizedError\b|\bForbiddenError\b|\b(?:status|code)\s*[:=(]\s*40[13]\b|,\s*40[13]\s*\)|\brequireAuth\b|\bverify\w*\s*\(|\btimingSafeEqual\b/;
+/** Code that reads or writes data (or calls something that might). */
+const TOUCHES_DATA_RE =
+  /\b(?:db|trx|tx|kysely)\s*\.|\.\s*(?:selectFrom|insertInto|updateTable|deleteFrom|selectAll|executeTakeFirst\w*|execute)\s*\(|\bsql\s*`|\bawait\b/;
+/** Field names that are personal data when a public route returns them. */
+const PERSONAL_FIELD_RE =
+  /\b(email|emails|e_mail|emailAddress|email_address|phone|phoneNumber|phone_number|mobile|address|streetAddress|street_address|street|postalCode|postal_code|zipCode|zip_code|firstName|first_name|lastName|last_name|fullName|full_name|dateOfBirth|date_of_birth|dob|birthDate|birth_date|ssn|passwordHash|password_hash|password|accessToken|access_token|refreshToken|refresh_token|apiKey|api_key|secret|ipAddress|ip_address)\b/gi;
+
+export interface RouteInfo {
+  file: string;
+  line: number;
+  method: string;
+  /** Full path when the mount chain from app.ts resolved, else the router-local path. */
+  path: string | null;
+  /** True when the router is reachable from app.ts through `.route()` mounts. */
+  mounted: boolean;
+  guard: "auth" | "inline" | "public" | "none";
+  /** What guards it (middleware name, "getUser", "inline check") or the public reason. */
+  guardBy?: string;
+  touchesData: boolean;
+  /** Personal field names the route selects or returns ("*" = selectAll). */
+  personalFields: string[];
+  templateOwned: boolean;
+  /** True when the handler body was not found (a function from another file). */
+  handlerUnseen: boolean;
+  /** FNV-1a of the registration source, so a changed route gets a new key. */
+  hash: string;
+}
+
+/** Index of the last character of a string, template, comment or regex starting at i; i when none starts there. */
+function skipToken(text: string, i: number): number {
+  const ch = text[i];
+  if (ch === "/" && text[i + 1] === "/") {
+    const nl = text.indexOf("\n", i);
+    return nl < 0 ? text.length - 1 : nl - 1;
+  }
+  if (ch === "/" && text[i + 1] === "*") {
+    const end = text.indexOf("*/", i + 2);
+    return end < 0 ? text.length - 1 : end + 1;
+  }
+  if (ch === '"' || ch === "'") {
+    for (let j = i + 1; j < text.length; j++) {
+      if (text[j] === "\\") j++;
+      else if (text[j] === ch || text[j] === "\n") return j;
+    }
+    return text.length - 1;
+  }
+  if (ch === "`") {
+    for (let j = i + 1; j < text.length; j++) {
+      if (text[j] === "\\") j++;
+      else if (text[j] === "`") return j;
+      else if (text[j] === "$" && text[j + 1] === "{") {
+        const end = matchBracket(text, j + 1);
+        if (end < 0) return text.length - 1;
+        j = end;
+      }
+    }
+    return text.length - 1;
+  }
+  if (ch === "/") {
+    // A regex literal, when the previous significant character cannot end an operand.
+    let k = i - 1;
+    while (k >= 0 && /\s/.test(text[k])) k--;
+    const prev = k >= 0 ? text[k] : "";
+    const prevWord = /\w/.test(prev) ? (text.slice(0, k + 1).match(/(\w+)$/)?.[1] ?? "") : "";
+    if (prev === "" || "(,=:[!&|?{};+-*%<>~^".includes(prev) || ["return", "typeof", "case"].includes(prevWord)) {
+      let inClass = false;
+      for (let j = i + 1; j < text.length; j++) {
+        const c = text[j];
+        if (c === "\n") return i;
+        if (c === "\\") j++;
+        else if (c === "[") inClass = true;
+        else if (c === "]") inClass = false;
+        else if (c === "/" && !inClass) return j;
+      }
+    }
+  }
+  return i;
+}
+
+/** Index of the bracket that closes the one at `open`, or -1. */
+function matchBracket(text: string, open: number): number {
+  const close: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+  const stack: string[] = [];
+  for (let i = open; i < text.length; i++) {
+    const skipped = skipToken(text, i);
+    if (skipped !== i) {
+      i = skipped;
+      continue;
+    }
+    const ch = text[i];
+    if (close[ch]) stack.push(close[ch]);
+    else if (ch === ")" || ch === "]" || ch === "}") {
+      if (stack.pop() !== ch) return -1;
+      if (stack.length === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Top-level comma-separated arguments between `open` and `close` (exclusive). */
+function splitArgs(text: string, open: number, close: number): string[] {
+  const args: string[] = [];
+  let start = open + 1;
+  for (let i = open + 1; i < close; i++) {
+    const skipped = skipToken(text, i);
+    if (skipped !== i) {
+      i = skipped;
+      continue;
+    }
+    const ch = text[i];
+    if (ch === "(" || ch === "[" || ch === "{") {
+      const end = matchBracket(text, i);
+      if (end < 0) break;
+      i = end;
+    } else if (ch === ",") {
+      args.push(text.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  const last = text.slice(start, close).trim();
+  if (last) args.push(last);
+  return args;
+}
+
+/** The value of a string literal argument; null for anything computed. */
+function literalString(arg: string | undefined): string | null {
+  if (!arg) return null;
+  const m = arg.match(/^(["'`])([^"'`$\\]*)\1$/);
+  return m ? m[2] : null;
+}
+
+function fnv1a(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+function joinPath(prefix: string, path: string): string {
+  const p = `${prefix.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+  return p.length > 1 ? p.replace(/\/+$/, "") || "/" : "/";
+}
+
+/** Does Hono path pattern `pattern` match (or cover) route path `path`? */
+function patternCovers(pattern: string, path: string | null): boolean {
+  if (pattern === "*" || pattern === "/*" || pattern === "/") return pattern !== "/" || path === "/";
+  if (path === null) return false;
+  const ps = pattern.split("/").filter(Boolean);
+  const rs = path.split("/").filter(Boolean);
+  for (let i = 0; i < ps.length; i++) {
+    if (ps[i] === "*") return true;
+    if (i >= rs.length) return false;
+    if (ps[i].startsWith(":") || rs[i].startsWith(":")) continue;
+    if (ps[i] !== rs[i]) return false;
+  }
+  return ps.length === rs.length;
+}
+
+interface UseEvent {
+  kind: "use";
+  router: string;
+  index: number;
+  path: string | null;
+  args: string[];
+}
+interface RouteEvent {
+  kind: "route";
+  router: string;
+  index: number;
+  line: number;
+  method: string;
+  path: string | null;
+  args: string[];
+  source: string;
+  marker: string | null;
+}
+interface MountEvent {
+  kind: "mount";
+  router: string;
+  index: number;
+  prefix: string | null;
+  child: string;
+}
+type RouterEvent = UseEvent | RouteEvent | MountEvent;
+
+interface FileModel {
+  path: string;
+  text: string;
+  routers: Set<string>;
+  events: RouterEvent[];
+  /** local name -> [resolved file, exported name or "default"] */
+  imports: Map<string, [string, string]>;
+  /** exported name (or "default") -> local name */
+  exports: Map<string, string>;
+  /** local function or const name -> its source text */
+  functions: Map<string, string>;
+}
+
+function resolveSpecifier(from: string, spec: string): string | null {
+  let target: string;
+  if (spec.startsWith("@/")) target = `src/${spec.slice(2)}`;
+  else if (spec.startsWith("./") || spec.startsWith("../")) {
+    const parts = from.split("/").slice(0, -1);
+    for (const seg of spec.split("/")) {
+      if (seg === "..") parts.pop();
+      else if (seg !== ".") parts.push(seg);
+    }
+    target = parts.join("/");
+  } else return null;
+  return /\.(ts|js|mts|mjs)$/.test(target) ? target : `${target}.ts`;
+}
+
+function parseFileModel(path: string, text: string): FileModel {
+  const model: FileModel = {
+    path,
+    text,
+    routers: new Set(),
+    events: [],
+    imports: new Map(),
+    exports: new Map(),
+    functions: new Map(),
+  };
+  for (const m of text.matchAll(new RegExp(`\\b(export\\s+)?(?:const|let|var)\\s+(${IDENT})\\s*(?::[^=;]+)?=\\s*new\\s+(?:OpenAPI)?Hono\\b`, "g"))) {
+    model.routers.add(m[2]);
+    if (m[1]) model.exports.set(m[2], m[2]);
+  }
+  for (const m of text.matchAll(/^\s*import\s+(?!type\s)([\s\S]*?)\s+from\s+["']([^"']+)["']/gm)) {
+    const file = resolveSpecifier(path, m[2]);
+    if (!file) continue;
+    const clause = m[1].trim();
+    const braces = clause.match(/\{([\s\S]*)\}/);
+    const def = clause.replace(/\{[\s\S]*\}/, "").replace(/,/g, " ").trim().split(/\s+/)[0];
+    if (def && /^[A-Za-z_$][\w$]*$/.test(def)) model.imports.set(def, [file, "default"]);
+    if (braces) {
+      for (const part of braces[1].split(",")) {
+        const [name, alias] = part.replace(/^\s*type\s+/, "").trim().split(/\s+as\s+/);
+        if (name) model.imports.set((alias ?? name).trim(), [file, name.trim()]);
+      }
+    }
+  }
+  for (const m of text.matchAll(/\bexport\s*\{([^}]*)\}(?!\s*from)/g)) {
+    for (const part of m[1].split(",")) {
+      const [local, alias] = part.trim().split(/\s+as\s+/);
+      if (local) model.exports.set((alias ?? local).trim(), local.trim());
+    }
+  }
+  const def = text.match(new RegExp(`\\bexport\\s+default\\s+(${IDENT})\\s*;?\\s*$`, "m"));
+  if (def) model.exports.set("default", def[1]);
+  for (const m of text.matchAll(new RegExp(`\\b(?:async\\s+)?function\\s+(${IDENT})\\s*\\(|\\b(?:const|let)\\s+(${IDENT})\\s*(?::[^=;]+)?=\\s*`, "g"))) {
+    const name = m[1] ?? m[2];
+    const at = (m.index ?? 0) + m[0].length;
+    const open = text.slice(at).search(/[({]/);
+    if (open < 0 || open > 200) continue;
+    let end = matchBracket(text, at + open);
+    if (end < 0) continue;
+    // An arrow function: the params were the first bracket, the body follows `=>`.
+    const arrow = text.slice(end + 1).match(/^\s*(?::[^=]*?)?=>\s*/);
+    if (arrow) {
+      const bodyAt = end + 1 + arrow[0].length;
+      if (text[bodyAt] === "{" || text[bodyAt] === "(") {
+        const bodyEnd = matchBracket(text, bodyAt);
+        if (bodyEnd > 0) end = bodyEnd;
+      } else {
+        const nl = text.indexOf("\n", bodyAt);
+        end = nl < 0 ? text.length - 1 : nl;
+      }
+    } else if (m[1]) {
+      // function name(params) { body }
+      const bodyAt = text.indexOf("{", end);
+      if (bodyAt > 0) {
+        const bodyEnd = matchBracket(text, bodyAt);
+        if (bodyEnd > 0) end = bodyEnd;
+      }
+    }
+    if (!model.functions.has(name)) model.functions.set(name, text.slice(m.index ?? 0, end + 1));
+  }
+  if (model.routers.size === 0) return model;
+  const callRe = new RegExp(`\\b(${IDENT})\\s*\\.\\s*(get|post|put|patch|delete|all|on|use|route)\\s*\\(`, "g");
+  for (const m of text.matchAll(callRe)) {
+    const router = m[1];
+    if (!model.routers.has(router)) continue;
+    const index = m.index ?? 0;
+    // Skip matches inside comments or strings: the line up to the match has a // or an odd quote count.
+    const lineStart = text.lastIndexOf("\n", index) + 1;
+    const before = text.slice(lineStart, index);
+    if (/\/\/|^\s*\*/.test(before)) continue;
+    const open = index + m[0].length - 1;
+    const close = matchBracket(text, open);
+    if (close < 0) continue;
+    const args = splitArgs(text, open, close);
+    const verb = m[2];
+    if (verb === "use") {
+      const path = literalString(args[0]);
+      const isPathArg = path !== null || /^[`"']/.test(args[0] ?? "") ||
+        /^(?:prefix|path|base\w*)$|Path$|PATH$/.test(args[0] ?? "");
+      model.events.push({ kind: "use", router, index, path: isPathArg ? path : "*", args: isPathArg ? args.slice(1) : args });
+    } else if (verb === "route") {
+      model.events.push({ kind: "mount", router, index, prefix: literalString(args[0]), child: (args[1] ?? "").trim() });
+    } else if (ROUTE_METHODS.has(verb)) {
+      let method = verb.toUpperCase();
+      let rest = args;
+      if (verb === "on") {
+        method = (literalString(args[0]) ?? "ON").toUpperCase();
+        rest = args.slice(1);
+      }
+      if (rest.length < 2) continue;
+      const prevLineEnd = lineStart - 1;
+      const prevLine = prevLineEnd > 0 ? text.slice(text.lastIndexOf("\n", prevLineEnd - 1) + 1, prevLineEnd) : "";
+      const marker = prevLine.match(/\/\/\s*chipp:public\b(.*)$/);
+      model.events.push({
+        kind: "route",
+        router,
+        index,
+        line: lineOf(text, index),
+        method,
+        path: literalString(rest[0]),
+        args: rest.slice(1),
+        source: text.slice(index, close + 1),
+        marker: marker ? marker[1].trim() : null,
+      });
+    }
+  }
+  return model;
+}
+
+/** How one middleware argument guards, or null when it does not. */
+function middlewareGuard(arg: string, model: FileModel): { by: string; public?: string } | null {
+  const a = arg.replace(/^\.\.\./, "").trim();
+  const pub = a.match(/^publicRoute\s*\(\s*(?:(["'`])([\s\S]*?)\1)?\s*\)$/);
+  if (pub) return { by: "publicRoute", public: (pub[2] ?? "").trim() };
+  const head = a.match(new RegExp(`^(${IDENT})`))?.[1] ?? "";
+  if (head && OPTIONAL_NAME_RE.test(head)) return null;
+  if (head && AUTH_NAME_RE.test(head)) return { by: head };
+  if (/^(?:async\s*)?(?:\(|function\b|[A-Za-z_$][\w$]*\s*=>)/.test(a) || /^createMiddleware\s*\(/.test(a)) {
+    return REJECTS_RE.test(a) || AUTH_CALL_RE.test(a) ? { by: "inline check" } : null;
+  }
+  const body = head ? model.functions.get(head) : undefined;
+  if (body && (REJECTS_RE.test(body) || AUTH_CALL_RE.test(body))) return { by: head };
+  return null;
+}
+
+function personalFieldsIn(code: string): string[] {
+  const found = new Set<string>();
+  if (/\.\s*selectAll\s*\(/.test(code)) found.add("*");
+  const scopes: string[] = [];
+  for (const m of code.matchAll(/\.\s*(?:select|returning)\s*\(|\bc\.json\s*\(/g)) {
+    const open = (m.index ?? 0) + m[0].length - 1;
+    const close = matchBracket(code, open);
+    if (close > open) scopes.push(code.slice(open, close + 1));
+  }
+  for (const s of scopes) for (const f of s.matchAll(PERSONAL_FIELD_RE)) found.add(f[1]);
+  return [...found].sort();
+}
+
+/**
+ * Every route registration in the repo, with how it is guarded. Pure: takes
+ * the server source files (repo-relative path -> text). The live exposure
+ * scanner on the platform reads the same list to pick what to probe.
+ */
+export function analyzeRoutes(files: Map<string, string>): RouteInfo[] {
+  const models = new Map<string, FileModel>();
+  for (const [path, text] of files) {
+    if (!/\.(ts|js|mts|mjs)$/.test(path)) continue;
+    if (path.includes("__tests__/") || /\.test\.(ts|js)$/.test(path)) continue;
+    if (path !== "app.ts" && !path.startsWith("src/")) continue;
+    models.set(path, parseFileModel(path, text));
+  }
+  interface Ctx {
+    prefix: string | null;
+    inherited: Array<{ pattern: string; by: string; public?: string }>;
+  }
+  const contexts = new Map<string, Ctx[]>();
+  const resolveChild = (model: FileModel, ident: string): string | null => {
+    if (model.routers.has(ident)) return `${model.path}#${ident}`;
+    const imp = model.imports.get(ident);
+    if (!imp) return null;
+    const target = models.get(imp[0]) ?? models.get(imp[0].replace(/\.ts$/, "/index.ts"));
+    if (!target) return null;
+    const local = target.exports.get(imp[1]) ?? (target.routers.has(imp[1]) ? imp[1] : null);
+    return local && target.routers.has(local) ? `${target.path}#${local}` : null;
+  };
+  const visit = (key: string, ctx: Ctx, depth: number) => {
+    if (depth > 12) return;
+    const list = contexts.get(key) ?? [];
+    if (list.some((c) => c.prefix === ctx.prefix)) return;
+    list.push(ctx);
+    contexts.set(key, list);
+    const [file, router] = key.split("#");
+    const model = models.get(file)!;
+    const uses: Ctx["inherited"] = [...ctx.inherited];
+    for (const ev of model.events) {
+      if (ev.router !== router) continue;
+      if (ev.kind === "use") {
+        for (const arg of ev.args) {
+          const g = middlewareGuard(arg, model);
+          if (!g) continue;
+          // A `use` with a computed path counts as covering everything: the
+          // check leans to "guarded" there, and the live probe covers the rest.
+          const wide = ev.path === null || ev.path === "*" || ev.path === "/*";
+          const pattern = wide ? joinPath(ctx.prefix ?? "", "*") : joinPath(ctx.prefix ?? "", ev.path!);
+          uses.push({ pattern, ...g });
+        }
+      } else if (ev.kind === "mount") {
+        const child = resolveChild(model, ev.child);
+        if (!child) continue;
+        const prefix = ctx.prefix === null || ev.prefix === null ? null : joinPath(ctx.prefix, ev.prefix);
+        visit(child, { prefix, inherited: [...uses] }, depth + 1);
+      }
+    }
+  };
+  const app = models.get("app.ts");
+  if (app) for (const r of app.routers) visit(`app.ts#${r}`, { prefix: "", inherited: [] }, 0);
+
+  const routes: RouteInfo[] = [];
+  for (const model of models.values()) {
+    for (const router of model.routers) {
+      const key = `${model.path}#${router}`;
+      const ctxs = contexts.get(key) ?? [{ prefix: null, inherited: [] }];
+      const mounted = contexts.has(key);
+      for (const ctx of ctxs) {
+        const own: Ctx["inherited"] = [];
+        for (const ev of model.events) {
+          if (ev.router !== router) continue;
+          if (ev.kind === "use") {
+            for (const arg of ev.args) {
+              const g = middlewareGuard(arg, model);
+              if (g) own.push({ pattern: ev.path === null || ev.path === "*" || ev.path === "/*" ? "*" : ev.path, ...g });
+            }
+            continue;
+          }
+          if (ev.kind !== "route") continue;
+          const local = ev.path;
+          const full = local === null ? null : ctx.prefix === null ? local : joinPath(ctx.prefix, local);
+          let guard: RouteInfo["guard"] = "none";
+          let guardBy: string | undefined;
+          const pubFromMarker = ev.marker !== null ? ev.marker : undefined;
+          for (const arg of ev.args.slice(0, -1)) {
+            const g = middlewareGuard(arg, model);
+            if (!g) continue;
+            if (g.public !== undefined) {
+              guard = "public";
+              guardBy = g.public;
+              break;
+            }
+            if (guard === "none") {
+              guard = "auth";
+              guardBy = g.by;
+            }
+          }
+          if (pubFromMarker !== undefined && guard === "none") {
+            guard = "public";
+            guardBy = pubFromMarker;
+          }
+          if (guard === "none") {
+            const hit = [...ctx.inherited.filter((u) => patternCovers(u.pattern, full)),
+              ...own.filter((u) => patternCovers(u.pattern, local))].find((u) => u.public === undefined);
+            if (hit) {
+              guard = "auth";
+              guardBy = hit.by;
+            }
+          }
+          const handlerArg = ev.args[ev.args.length - 1] ?? "";
+          const handlerName = handlerArg.match(new RegExp(`^(${IDENT})$`))?.[1];
+          const handlerBody = handlerName ? model.functions.get(handlerName) : handlerArg;
+          const handlerUnseen = handlerName !== undefined && handlerBody === undefined;
+          // Local helpers the handler calls (one level), so a handler that
+          // delegates to a function in the same file is still read.
+          let code = handlerBody ?? "";
+          for (const call of code.matchAll(new RegExp(`\\b(${IDENT})\\s*\\(`, "g"))) {
+            const fn = model.functions.get(call[1]);
+            if (fn && fn !== handlerBody && code.length < 200_000) code += `\n${fn}`;
+          }
+          if (guard === "none" && handlerBody !== undefined) {
+            if (/\bgetUser\s*\(/.test(handlerBody)) {
+              guard = "auth";
+              guardBy = "getUser";
+            } else if (REJECTS_RE.test(handlerBody) || AUTH_CALL_RE.test(handlerBody)) {
+              guard = "inline";
+              guardBy = "inline check";
+            }
+          }
+          routes.push({
+            file: model.path,
+            line: ev.line,
+            method: ev.method,
+            path: full,
+            mounted,
+            guard,
+            ...(guardBy !== undefined ? { guardBy } : {}),
+            touchesData: handlerUnseen || TOUCHES_DATA_RE.test(code),
+            personalFields: personalFieldsIn(code),
+            templateOwned: TEMPLATE_ROUTE_FILES.some((p) => model.path === p || (p.endsWith("/") && model.path.startsWith(p))),
+            handlerUnseen,
+            hash: fnv1a(ev.source.replace(/\s+/g, " ")),
+          });
+        }
+      }
+    }
+  }
+  return routes.sort((a, b) =>
+    a.file.localeCompare(b.file) || a.line - b.line || (a.path ?? "").localeCompare(b.path ?? "")
+  );
+}
+
+/** GET paths that may trigger work when called, so the live probe never calls them. */
+const SIDE_EFFECT_PATH_RE =
+  /(logout|log-out|login|signin|sign-in|signup|callback|webhook|unsubscribe|tick|cron|trigger|send|\brun\b|reset|seed|sync|delete|remove|confirm|verify|approve|cancel|accept|claim|redeem|stream|sse|\/ws\b|realtime|oauth|authorize|token|impersonate|wake)/i;
+
+/**
+ * The routes the platform's recurring exposure probe calls WITHOUT a session
+ * (src/alchemist/services/exposure-scan/). The build stores this list on the
+ * deploy row, so the probe never reads the repo. Only GET, only a literal
+ * path with no `:param` or `*`, only under /api/, never /api/dev/ and never a
+ * path whose name suggests it does something (logout, webhook, send, ...).
+ * Sorted, unique, capped at 100.
+ */
+export function livenessProbeTargets(routes: RouteInfo[]): string[] {
+  const out = new Set<string>();
+  for (const r of routes) {
+    if (r.method !== "GET" || !r.path || !r.mounted) continue;
+    if (!r.path.startsWith("/api/") || r.path.startsWith("/api/dev/") || /[:*]/.test(r.path)) continue;
+    if (SIDE_EFFECT_PATH_RE.test(r.path)) continue;
+    out.add(r.path);
+  }
+  return [...out].sort().slice(0, 100);
+}
+
+/** The conformance findings for a route list (see "Route access" above). */
+export function routeAccessFindings(routes: RouteInfo[]): Array<Omit<ConformanceFinding, "key"> & { subject: string }> {
+  const out: Array<Omit<ConformanceFinding, "key"> & { subject: string }> = [];
+  const safe = (s: string) => s.replace(/[^A-Za-z0-9._:/@+-]/g, "_");
+  for (const r of routes) {
+    if (r.templateOwned) continue;
+    const api = r.path === null ? r.file.startsWith("src/api/") : r.path.startsWith("/api/") || r.path === "/api";
+    if (!api) continue;
+    const where = `${r.file}:${r.line}`;
+    const label = `${r.method} ${r.path ?? "(path built at runtime)"}`;
+    const subject = `${safe(`${r.method}${r.path ?? `${r.file}:${r.line}`}`)}@${r.hash}`;
+    if (r.guard === "public") {
+      if (!r.guardBy) {
+        out.push({
+          rule: "route-auth.public-reason",
+          subject,
+          severity: "error",
+          message: `${label} (${where}) is marked public with no reason.`,
+          fix: 'Say why anyone on the internet may call it: publicRoute("contact form submissions") or `// chipp:public contact form submissions`. If only signed-in users need it, use requireAuth instead.',
+          file: r.file,
+          line: r.line,
+        });
+      }
+      const personal = r.personalFields;
+      if (personal.length > 0) {
+        out.push({
+          rule: "route-auth.public-personal",
+          subject,
+          severity: "error",
+          message: `${label} (${where}) is public and selects or returns personal fields (${personal.join(", ")}).`,
+          fix: personal.includes("*")
+            ? "Replace selectAll() with the exact non-personal columns the public page needs, or put the route behind requireAuth."
+            : `Drop ${personal.filter((f) => f !== "*").join(", ")} from what this route selects and returns, or put it behind requireAuth (and requireCapability for role checks).`,
+          file: r.file,
+          line: r.line,
+        });
+      }
+      continue;
+    }
+    if (r.guard !== "none" || !r.touchesData) continue;
+    const certain = r.mounted && r.path !== null && !r.handlerUnseen;
+    out.push({
+      rule: certain ? "route-auth.unguarded" : "route-auth.uncertain",
+      subject,
+      severity: certain ? "error" : "warning",
+      message: certain
+        ? `${label} (${where}) reads or writes data and anyone can call it: no auth middleware covers it and it is not marked public.`
+        : `${label} (${where}) has no auth check this check can see (${
+          !r.mounted ? "its router is not mounted from app.ts" : r.path === null ? "the path is built at runtime" : "the handler is defined in another file"
+        }).`,
+      fix: "Put it behind the template auth: add requireAuth to the route (or `<router>.use(\"*\", requireAuth)` before its routes), plus requireCapability(\"...\") when only some roles may call it. " +
+        'If it must be open to anyone, mark it public: publicRoute("<why it is public>") as its first middleware (src/api/middleware/route-access.ts), or, in a project without that file, a `// chipp:public <why it is public>` comment on the line above the route. A public route returns no personal fields.',
+      file: r.file,
+      line: r.line,
+    });
+  }
+  return out;
+}
 
 // ── The check ───────────────────────────────────────────────────────────────
 
@@ -648,12 +1350,29 @@ export async function runConformance(opts: RunOptions): Promise<ConformanceRepor
     });
   }
 
+  // 6. Route access: every data route is behind auth or marked public with a
+  //    reason, and public routes return no personal fields ("Route access").
+  const serverSources = new Map<string, string>();
+  for (const rel of files) {
+    if (rel !== "app.ts" && !rel.startsWith("src/")) continue;
+    if (!/\.(ts|js|mts|mjs)$/.test(rel) || rel.startsWith("src/__tests__/")) continue;
+    const text = await readText(rel);
+    if (text !== null) serverSources.set(rel, text);
+  }
+  const routes = analyzeRoutes(serverSources);
+  for (const f of routeAccessFindings(routes)) add(f);
+  const probeTargets = livenessProbeTargets(routes);
+
   // Sort, split, apply the baseline.
   const all = [...findings.values()].sort((a, b) => a.key.localeCompare(b.key));
   const errors = all.filter((f) => f.severity === "error");
   const warnings = all.filter((f) => f.severity === "warning");
   const baseline = opts.baseline;
-  const isOld = (key: string) => baseline === "*" || (baseline instanceof Set && baseline.has(key));
+  // A baseline entry ending in "*" grandfathers every key with that prefix
+  // ("route-auth.*" on the first build after the route check shipped).
+  const prefixes = baseline instanceof Set ? [...baseline].filter((k) => k.endsWith("*")).map((k) => k.slice(0, -1)) : [];
+  const isOld = (key: string) =>
+    baseline === "*" || (baseline instanceof Set && (baseline.has(key) || prefixes.some((p) => key.startsWith(p))));
   const grandfathered = errors.filter((e) => isOld(e.key)).map((e) => e.key);
   const blocking = errors.filter((e) => !isOld(e.key)).map((e) => e.key);
   return {
@@ -664,6 +1383,8 @@ export async function runConformance(opts: RunOptions): Promise<ConformanceRepor
     warnings,
     blocking,
     grandfathered,
+    checks: [...CHECKS],
+    probeTargets,
     filesScanned: files.length,
     docs: DOCS_URL,
   };

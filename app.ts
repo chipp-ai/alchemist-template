@@ -14,6 +14,7 @@ import { AppError } from "@/utils/errors.ts";
 import { log } from "@/lib/logger.ts";
 import { requestTimingMiddleware } from "@/api/middleware/request-timing.ts";
 import { verificationReadOnlyGuard } from "@/api/middleware/auth.ts";
+import { apiAuthByDefault } from "@/api/middleware/route-access.ts";
 import { recentActivityMiddleware } from "@/api/middleware/recent-activity.ts";
 import { chippInsightsMiddleware } from "@/api/middleware/chipp-insights.ts";
 import { demoNoindexHeaderMiddleware, demoRobotsTxtRoute } from "@/api/middleware/demo-noindex.ts";
@@ -188,6 +189,15 @@ if (devRoutesEnabled()) {
 // before every route so no handler (or recipe router) can forget it. See
 // src/api/routes/auth/verification-session.ts.
 app.use("*", verificationReadOnlyGuard);
+
+// Every API route requires sign-in unless it is marked public:
+// `publicRoute("<reason>")` as the route's first middleware. The template's
+// own API surfaces do their own checks and are listed in
+// TEMPLATE_API_PREFIXES. Mounted before every route, so a new route is
+// protected even when its author forgot requireAuth. Chipp's build checks
+// the same rule (`deno task conformance`, "Route access"). See
+// src/api/middleware/route-access.ts.
+app.use("/api/*", apiAuthByDefault);
 
 // ── Routes ──
 

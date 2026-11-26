@@ -61,6 +61,14 @@ error-class table.
 
 ## Auth on routes
 
+**Every route under `/api/` requires sign-in unless it is marked public.**
+`apiAuthByDefault` (`src/api/middleware/route-access.ts`, mounted in `app.ts`)
+runs `requireAuth` for any app route that has no `publicRoute("<reason>")`.
+Still list `requireAuth` on routes that call `getUser(c)`: it documents the
+route and costs nothing (the second check is skipped). A public route returns
+no personal fields. `deno task conformance` ("Route access") checks both
+rules, and the Chipp build refuses a new route that breaks them.
+
 Protected routes use `requireAuth` middleware, which populates
 `c.get("user")` and `c.get("session")`. Capability-gated routes use
 `requireCapability("...")`. Both live in `src/api/middleware/auth.ts` —

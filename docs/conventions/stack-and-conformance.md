@@ -48,6 +48,9 @@ deleting this one does not change the build.
 | `stack.runtime` | `deno.json` missing or not valid JSON |
 | `core.missing` | a core file is gone: `main.ts`, `app.ts`, `src/lib/logger.ts`, `src/lib/env.ts`, `src/db/client.ts`, `db/migrate.ts`, the three Insights modules, `src/api/routes/auth/index.ts` |
 | `core.bypassed` | a core file exists but is cut out: `main.ts` does not import `./app.ts`; `app.ts` has no `new Hono`, no `app.onError` or no Insights middleware; the logger does not export `log`; `src/db/client.ts` does not build Kysely |
+| `route-auth.unguarded` | an API route that reads or writes data, with no auth middleware covering it and no public marker (see "Route access" below) |
+| `route-auth.public-reason` | `publicRoute("")` or `// chipp:public` with no reason |
+| `route-auth.public-personal` | a public route that selects or returns personal fields (email, phone, address, names, date of birth, tokens, keys; `selectAll()` counts) |
 
 ### Warnings: publish goes ahead and returns them
 
@@ -61,9 +64,39 @@ deleting this one does not change the build.
 | `drift.base-file-missing` | `web/src/routes.ts`, the sidebar, `.alchemist/deployment.yaml`, `CLAUDE.md` or `AGENTS.md` is gone |
 | `drift.conformance-task-missing` | `deno.json` has no `conformance` task |
 | `drift.insights-inactive` | `chipp-insights.json` is missing (Chipp writes it when it creates the project) |
+| `route-auth.uncertain` | the route-access check could not decide (router not mounted from `app.ts`, a path built at runtime, a handler from another file) |
 
 Each finding has a stable `key` (`<rule>:<subject>`), a `message`, and a `fix`
 that says what to do. Fix the error; do not work around the rule.
+
+### Route access
+
+Every API route that touches data is behind sign-in, or marked public with a
+reason. Why: in a scan of 159,041 Lovable apps about 30% leaked their users'
+email addresses, and here one GET route without `requireAuth` leaks the same
+way. The check counts a route as guarded when `requireAuth`,
+`requireCapability(...)` or another `require...` auth middleware is in its
+registration, or in a `<router>.use(...)` registered BEFORE it (Hono runs
+middleware in order), or on a parent router before the `.route()` mount, or
+when the handler calls `getUser(c)` or returns 401/403. `authMiddleware` and
+`optionalSession` only read a session and never count.
+
+To make a route public, say why:
+
+```ts
+leadsRoutes.post("/", publicRoute("contact form on the marketing site"), handler);
+// or, in a project without src/api/middleware/route-access.ts:
+// chipp:public contact form on the marketing site
+leadsRoutes.post("/", handler);
+```
+
+A public route returns no personal fields. At runtime the template enforces
+the same default: `apiAuthByDefault` (`src/api/middleware/route-access.ts`,
+mounted in `app.ts`) answers 401 to a stranger on any app route under
+`/api/` that is not marked public.
+
+Chipp also calls every live app's public GET routes without signing in, once
+a day, and emails the owner when one returns personal records.
 
 ### What Chipp does with the result
 
@@ -72,6 +105,8 @@ that says what to do. Fix the error; do not work around the rule.
   goes live.
 - An app that was already live with a finding before the check existed keeps
   that finding as `grandfathered`. It does not block, but a NEW swap does.
+  Route-access keys include a hash of the route's source, so an old unguarded
+  route that you CHANGE is checked again and must get a guard or a marker.
 - Warnings are saved with the deploy and returned in the publish result.
 
 ## Why the logger matters most
