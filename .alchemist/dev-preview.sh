@@ -18,9 +18,17 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-API_PORT=8000
-VITE_PORT=5173          # the port the Builder's preview tunnel reaches
-DB_NAME=app_preview
+# The cloud sandbox sets none of the overrides below, so it keeps 8000, 5173
+# and app_preview. The Chipp desktop app runs this same recipe on a Mac
+# (chipp-deno alchemist-desktop/src-tauri/src/local_draft.rs
+# DEV_LAUNCH_SCRIPT) and passes the ports its preview watches (SANDBOX_API_PORT,
+# SANDBOX_VITE_PORT) and one database per draft (SANDBOX_DB_NAME). Before
+# 2026-11-26 these were fixed values, so on a Mac Vite bound 5173 while the
+# preview watched another port, every draft shared app_preview, and a second
+# open draft could not start at all (5173 taken, --strictPort).
+API_PORT="${SANDBOX_API_PORT:-8000}"
+VITE_PORT="${SANDBOX_VITE_PORT:-5173}"   # the port the Builder's preview tunnel reaches
+DB_NAME="${SANDBOX_DB_NAME:-app_preview}"
 PG_USER="${SANDBOX_PG_USER:-test}"
 PG_PASS="${SANDBOX_PG_PASSWORD:-test}"
 # The sandbox's Postgres is always on 5432; the override exists so this script
