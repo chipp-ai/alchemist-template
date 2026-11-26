@@ -124,7 +124,7 @@ function isPublicMarker(handler: unknown): boolean {
 export const apiAuthByDefault = createMiddleware(async (c, next) => {
   const path = c.req.path;
   if (!path.startsWith("/api/") || isTemplateApiPath(path)) return await next();
-  // deno-lint-ignore no-deprecated -- matchedRoutes(c) from hono/route needs a newer Hono than some projects pin
+  // matchedRoutes(c) from hono/route needs a newer Hono than some projects pin
   const matched = c.req.matchedRoutes;
   if (matched.some((r) => isPublicMarker(r.handler))) return await next();
   // Only middleware matched (method "ALL"): no route serves this path, let it 404.
